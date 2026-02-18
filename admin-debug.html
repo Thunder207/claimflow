@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Panel Diagnostics</title>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        .section { background: white; padding: 20px; margin: 15px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+        .warning { color: #ffc107; }
+        .info { color: #17a2b8; }
+        button { padding: 10px 15px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .log { background: #f8f9fa; padding: 10px; border-radius: 5px; margin: 10px 0; font-family: monospace; font-size: 12px; max-height: 200px; overflow-y: auto; }
+        input, select { padding: 8px; margin: 5px; border: 1px solid #ccc; border-radius: 4px; }
+        .employee-item { background: #f8f9fa; padding: 10px; margin: 5px 0; border-radius: 5px; border-left: 4px solid #007bff; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Admin Panel Diagnostics</h1>
+    
+    <div class="section">
+        <h3>🔐 Authentication Test</h3>
+        <div>
+            <input type="email" id="email" placeholder="Email" value="john.smith@company.com">
+            <input type="password" id="password" placeholder="Password" value="manager123">
+            <button onclick="testLogin()">Test Login</button>
+            <button onclick="testLogout()">Test Logout</button>
+        </div>
+        <div id="auth-result" class="log"></div>
+    </div>
+    
+    <div class="section">
+        <h3>👥 Employee Loading Test</h3>
+        <button onclick="testEmployees()">Load Employees</button>
+        <button onclick="clearEmployees()">Clear Results</button>
+        <div id="employees-result" class="log"></div>
+        <div id="employees-list"></div>
+    </div>
+    
+    <div class="section">
+        <h3>🧪 JavaScript Console Test</h3>
+        <button onclick="testJS()">Test Basic JS</button>
+        <button onclick="testFetch()">Test Fetch API</button>
+        <button onclick="testLocalStorage()">Test LocalStorage</button>
+        <div id="js-result" class="log"></div>
+    </div>
+    
+    <div class="section">
+        <h3>🔍 Session Debug</h3>
+        <button onclick="showSession()">Show Current Session</button>
+        <button onclick="clearSession()">Clear Session</button>
+        <button onclick="fixSession()">Fix Session</button>
+        <div id="session-result" class="log"></div>
+    </div>
+    
+    <div class="section">
+        <h3>📋 Current Issues</h3>
+        <div class="info">
+            <p><strong>Reported Problems:</strong></p>
+            <ul>
+                <li>Clicking supervisor Sara doesn't load profile</li>
+                <li>Shows "employee loading" indefinitely</li>
+                <li>Sign out button doesn't work</li>
+            </ul>
+            
+            <p><strong>Correct Credentials:</strong></p>
+            <ul>
+                <li><strong>Admin:</strong> john.smith@company.com / manager123</li>
+                <li><strong>Employee:</strong> david.wilson@company.com / david123</li>
+                <li><strong>Supervisor:</strong> sarah.johnson@company.com / sarah123</li>
+            </ul>
+        </div>
+    </div>
+    
+    <script>
+        let sessionId = localStorage.getItem('sessionId');
+        let currentUser = null;
+        
+        function log(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'info';
+            element.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            element.scrollTop = element.scrollHeight;
+        }
+        
+        async function testLogin() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            log('auth-result', `Attempting login with ${email}...`, 'info');
+            
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    sessionId = data.sessionId;
+                    currentUser = data.user;
+                    localStorage.setItem('sessionId', sessionId);
+                    localStorage.setItem('user', JSON.stringify(currentUser));
+                    log('auth-result', `✅ Login successful! Role: ${currentUser.role}`, 'success');
+                    log('auth-result', `Session: ${sessionId.substring(0,16)}...`, 'info');
+                } else {
+                    log('auth-result', `❌ Login failed: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                log('auth-result', `❌ Login error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testLogout() {
+            if (!sessionId) {
+                log('auth-result', '❌ No session to logout', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/auth/logout', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    log('auth-result', '✅ Logout successful', 'success');
+                    sessionId = null;
+                    currentUser = null;
+                    localStorage.removeItem('sessionId');
+                    localStorage.removeItem('user');
+                } else {
+                    log('auth-result', `❌ Logout failed: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                log('auth-result', `❌ Logout error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testEmployees() {
+            if (!sessionId) {
+                log('employees-result', '❌ No session - login first', 'error');
+                return;
+            }
+            
+            log('employees-result', 'Loading employees...', 'info');
+            
+            try {
+                const response = await fetch('/api/employees', {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const employees = await response.json();
+                log('employees-result', `✅ Loaded ${employees.length} employees`, 'success');
+                
+                // Display employees
+                const container = document.getElementById('employees-list');
+                container.innerHTML = employees.map(emp => `
+                    <div class="employee-item">
+                        <strong>${emp.name}</strong> (${emp.role})<br>
+                        <small>Email: ${emp.email} | Dept: ${emp.department} | ID: ${emp.id}</small>
+                    </div>
+                `).join('');
+                
+                // Find Sara specifically
+                const sara = employees.find(emp => emp.name.toLowerCase().includes('sara'));
+                if (sara) {
+                    log('employees-result', `✅ Found Sara: ${sara.name} (ID: ${sara.id})`, 'success');
+                } else {
+                    log('employees-result', '❌ Sara not found in employee list', 'warning');
+                }
+                
+            } catch (error) {
+                log('employees-result', `❌ Employee loading error: ${error.message}`, 'error');
+            }
+        }
+        
+        function clearEmployees() {
+            document.getElementById('employees-result').innerHTML = '';
+            document.getElementById('employees-list').innerHTML = '';
+        }
+        
+        function testJS() {
+            log('js-result', '✅ Basic JavaScript working', 'success');
+            log('js-result', `✅ Date/Time: ${new Date().toISOString()}`, 'info');
+            log('js-result', `✅ User Agent: ${navigator.userAgent}`, 'info');
+        }
+        
+        async function testFetch() {
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: 'test', password: 'test' })
+                });
+                
+                log('js-result', `✅ Fetch API working (status: ${response.status})`, 'success');
+            } catch (error) {
+                log('js-result', `❌ Fetch API error: ${error.message}`, 'error');
+            }
+        }
+        
+        function testLocalStorage() {
+            try {
+                localStorage.setItem('test', 'working');
+                const value = localStorage.getItem('test');
+                localStorage.removeItem('test');
+                log('js-result', `✅ LocalStorage working: ${value}`, 'success');
+            } catch (error) {
+                log('js-result', `❌ LocalStorage error: ${error.message}`, 'error');
+            }
+        }
+        
+        function showSession() {
+            const storedSession = localStorage.getItem('sessionId');
+            const storedUser = localStorage.getItem('user');
+            
+            log('session-result', `Current sessionId: ${storedSession || 'NONE'}`, storedSession ? 'success' : 'warning');
+            log('session-result', `Current user: ${storedUser || 'NONE'}`, storedUser ? 'success' : 'warning');
+            log('session-result', `Memory sessionId: ${sessionId || 'NONE'}`, sessionId ? 'success' : 'warning');
+        }
+        
+        function clearSession() {
+            localStorage.removeItem('sessionId');
+            localStorage.removeItem('user');
+            sessionId = null;
+            currentUser = null;
+            log('session-result', '✅ Session cleared', 'success');
+        }
+        
+        function fixSession() {
+            // Try to restore session from localStorage
+            const storedSession = localStorage.getItem('sessionId');
+            const storedUser = localStorage.getItem('user');
+            
+            if (storedSession && storedUser) {
+                sessionId = storedSession;
+                currentUser = JSON.parse(storedUser);
+                log('session-result', '✅ Session restored from localStorage', 'success');
+            } else {
+                log('session-result', '❌ No valid session to restore', 'warning');
+            }
+        }
+        
+        // Initialize
+        window.onload = function() {
+            showSession();
+            log('js-result', '✅ Page loaded, diagnostics ready', 'success');
+        };
+    </script>
+</body>
+</html>

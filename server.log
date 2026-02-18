@@ -1,0 +1,40 @@
+💼 GOVERNMENT EXPENSE TRACKER - FULL SYSTEM
+==========================================
+🚀 Server running at: http://localhost:3000
+👥 Admin dashboard: http://localhost:3000/admin
+📱 Mobile-optimized expense submission
+💰 NJC compliant meal rates
+📊 Complete admin dashboard with approvals
+📷 Receipt photo upload and management
+🗄️ SQLite database with full persistence
+
+✅ Features: Employee directory, approval workflow, role-based access
+⏹️  Press Ctrl+C to stop
+==========================================
+✅ Connected to SQLite database
+✅ Default data initialized
+✅ User logged in: Anna Lee (employee)
+✅ Trip created with ID: 33
+✅ Per diem expense committed: breakfast for 2026-03-01 by Anna Lee (ID: 44)
+✅ Per diem expense committed: lunch for 2026-03-01 by Anna Lee (ID: 45)
+✅ Expense submitted by Anna Lee with ID: 46
+✅ Trip 33 submitted for approval
+✅ User logged in: David Wilson (employee)
+✅ Trip created with ID: 34
+✅ Expense submitted by David Wilson with ID: 47
+✅ Expense submitted by David Wilson with ID: 48
+✅ Expense submitted by David Wilson with ID: 49
+✅ Trip 34 submitted for approval
+✅ Fetched 2 trips for employee 2
+✅ Expense submitted by David Wilson with ID: 50
+<anonymous_script>:0
+
+
+[Error: SQLITE_ERROR: cannot start a transaction within a transaction
+Emitted 'error' event on Statement instance at:
+] {
+  errno: 1,
+  code: 'SQLITE_ERROR'
+}
+
+Node.js v22.22.0

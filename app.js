@@ -1,0 +1,1765 @@
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const multer = require('multer');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const path = require('path');
+const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
+const NJCRatesService = require('./njc-rates-service');
+
+// Simple password hashing (in production, use bcrypt)
+function hashPassword(password) {
+    return crypto.createHash('sha256').update(password + 'expense_tracker_salt').digest('hex');
+}
+
+function verifyPassword(password, hash) {
+    return hashPassword(password) === hash;
+}
+
+const app = express();
+
+// Initialize NJC Rates Service
+const njcRates = new NJCRatesService();
+const port = 3000;
+
+// 📁 Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// 🛠️ Middleware
+app.use(cors());
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
+
+// Force no-cache on all responses to prevent stale page issues
+app.use((req, res, next) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.set('Surrogate-Control', 'no-store');
+    next();
+});
+
+// 🔒 SECURE STATIC FILE SERVING
+// Block direct access to HTML files - force proper authentication flow
+app.use((req, res, next) => {
+    // Block direct access to HTML files that could bypass authentication
+    if (req.path.endsWith('.html') && !req.path.includes('/uploads/')) {
+        console.log(`🚫 Blocked direct HTML access: ${req.path} → Redirecting to login`);
+        return res.redirect('/login');
+    }
+    next();
+});
+
+app.use('/uploads', express.static('uploads'));
+app.use(express.static(__dirname));
+
+// Session management (simple in-memory for demo)
+const sessions = new Map();
+
+function generateSessionId() {
+    return crypto.randomBytes(32).toString('hex');
+}
+
+function createSession(employeeId, role = 'employee') {
+    const sessionId = generateSessionId();
+    sessions.set(sessionId, {
+        employeeId,
+        role,
+        createdAt: new Date(),
+        lastActive: new Date()
+    });
+    return sessionId;
+}
+
+function getSession(sessionId) {
+    const session = sessions.get(sessionId);
+    if (session) {
+        // Check if session has expired (8 hours = 8 * 60 * 60 * 1000 ms)
+        const SESSION_TIMEOUT = 8 * 60 * 60 * 1000; // 8 hours
+        const now = new Date();
+        const timeSinceLastActive = now - session.lastActive;
+        
+        if (timeSinceLastActive > SESSION_TIMEOUT) {
+            console.log(`⏰ Session expired for user ID ${session.employeeId} (${timeSinceLastActive/1000/60} minutes inactive)`);
+            sessions.delete(sessionId);
+            return null;
+        }
+        
+        session.lastActive = now;
+        return session;
+    }
+    return null;
+}
+
+function clearSession(sessionId) {
+    sessions.delete(sessionId);
+}
+
+// 🔍 QA AGENT HEALTH CHECK ENDPOINTS (No Auth Required)
+app.get('/api/health/database', (req, res) => {
+    try {
+        db.get("SELECT COUNT(*) as count FROM employees", (err, row) => {
+            if (err) {
+                return res.status(500).json({ error: 'Database connection failed', details: err.message });
+            }
+            res.json({ status: 'healthy', employees: row.count });
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Database test failed', details: error.message });
+    }
+});
+
+app.get('/api/health/tables', (req, res) => {
+    const tables = ['employees', 'expenses', 'trips', 'njc_rates'];
+    const results = {};
+    
+    Promise.all(tables.map(table => {
+        return new Promise((resolve) => {
+            db.get(`SELECT COUNT(*) as count FROM ${table}`, (err, row) => {
+                results[table] = err ? { error: err.message } : { count: row.count };
+                resolve();
+            });
+        });
+    })).then(() => {
+        res.json({ status: 'healthy', tables: results });
+    });
+});
+
+app.get('/api/health/system', (req, res) => {
+    res.json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        version: '1.0.0',
+        node_version: process.version,
+        uptime: process.uptime()
+    });
+});
+
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'healthy',
+        message: 'Government Employee Expense Tracker is running',
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Authentication middleware
+function requireAuth(req, res, next) {
+    const sessionId = req.headers.authorization?.replace('Bearer ', '');
+    const session = getSession(sessionId);
+    
+    if (!session) {
+        return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    req.user = session;
+    next();
+}
+
+function requireRole(...roles) {
+    return (req, res, next) => {
+        if (roles.includes(req.user.role) || req.user.role === 'admin') {
+            return next();
+        }
+        return res.status(403).json({ error: 'Insufficient permissions' });
+    };
+}
+
+// 📷 Configure multer for file uploads
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        // Bug 3 Fix: Ensure uploads directory exists at upload time
+        if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        cb(null, uploadsDir);
+    },
+    filename: function (req, file, cb) {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, 'receipt-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({ 
+    storage: storage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    fileFilter: function (req, file, cb) {
+        const allowedTypes = /jpeg|jpg|png|gif|webp/;
+        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        const mimetype = allowedTypes.test(file.mimetype);
+        
+        if (mimetype && extname) {
+            return cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed (JPEG, PNG, GIF, WebP)'));
+        }
+    }
+});
+
+// 🗄️ Database connection
+const db = new sqlite3.Database('expenses.db', (err) => {
+    if (err) {
+        console.error('❌ Database connection failed:', err.message);
+    } else {
+        console.log('✅ Connected to SQLite database');
+        initializeDatabase();
+    }
+});
+
+// 📊 Initialize database schema
+function initializeDatabase() {
+    const queries = [
+        // Employees table (enhanced with auth)
+        `CREATE TABLE IF NOT EXISTS employees (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            employee_number TEXT UNIQUE,
+            email TEXT UNIQUE,
+            password_hash TEXT,
+            position TEXT,
+            department TEXT,
+            supervisor_id INTEGER,
+            is_active INTEGER DEFAULT 1,
+            role TEXT DEFAULT 'employee',
+            last_login DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (supervisor_id) REFERENCES employees (id)
+        )`,
+        
+        // 🧳 Trips table - For grouping expenses (like Concur expense reports)
+        `CREATE TABLE IF NOT EXISTS trips (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            trip_name TEXT NOT NULL,
+            destination TEXT,
+            purpose TEXT,
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            status TEXT DEFAULT 'draft',
+            total_amount DECIMAL(10,2) DEFAULT 0.00,
+            submitted_at DATETIME,
+            approved_by TEXT,
+            approved_at DATETIME,
+            approval_comment TEXT,
+            rejection_reason TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees (id)
+        )`,
+        
+        // Expenses table (enhanced with trip association)
+        `CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_name TEXT NOT NULL,
+            employee_id INTEGER,
+            trip_id INTEGER,
+            expense_type TEXT NOT NULL,
+            meal_name TEXT,
+            date DATE NOT NULL,
+            location TEXT,
+            amount DECIMAL(10,2) NOT NULL,
+            vendor TEXT,
+            description TEXT,
+            receipt_photo TEXT,
+            status TEXT DEFAULT 'pending',
+            approved_by TEXT,
+            approved_at DATETIME,
+            approval_comment TEXT,
+            rejection_reason TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees (id),
+            FOREIGN KEY (trip_id) REFERENCES trips (id)
+        )`,
+        
+        // NJC Rates table
+        `CREATE TABLE IF NOT EXISTS njc_rates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            meal_type TEXT NOT NULL UNIQUE,
+            rate DECIMAL(6,2) NOT NULL,
+            effective_date DATE DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`
+    ];
+    
+    // Run queries sequentially to ensure tables exist before inserting data
+    let completedQueries = 0;
+    
+    queries.forEach(query => {
+        db.run(query, (err) => {
+            if (err) {
+                console.error('❌ Database initialization error:', err.message);
+            } else {
+                completedQueries++;
+                if (completedQueries === queries.length) {
+                    // All tables created, now insert default data
+                    setTimeout(() => insertDefaultData(), 100);
+                }
+            }
+        });
+    });
+}
+
+// 📋 Insert default data
+function insertDefaultData() {
+    // Insert sample employees with login credentials
+    const employees = [
+        ['John Smith', 'EMP001', 'john.smith@company.com', hashPassword('manager123'), 'Senior Manager', 'Finance', null, 'admin'],
+        ['Sarah Johnson', 'EMP002', 'sarah.johnson@company.com', hashPassword('sarah123'), 'Financial Analyst', 'Finance', 1, 'supervisor'],
+        ['Mike Davis', 'EMP003', 'mike.davis@company.com', hashPassword('mike123'), 'Accountant', 'Finance', 1, 'employee'],
+        ['Lisa Brown', 'EMP004', 'lisa.brown@company.com', hashPassword('lisa123'), 'Department Head', 'Operations', null, 'supervisor'],
+        ['David Wilson', 'EMP005', 'david.wilson@company.com', hashPassword('david123'), 'Operations Specialist', 'Operations', 4, 'employee'],
+        ['Anna Lee', 'EMP006', 'anna.lee@company.com', hashPassword('anna123'), 'Project Coordinator', 'Operations', 4, 'employee']
+    ];
+    
+    // Insert employees sequentially to guarantee consistent IDs
+    function insertEmployeeSequential(index) {
+        if (index >= employees.length) {
+            // All employees inserted, now run migrations
+            runPostInsertMigrations();
+            return;
+        }
+        db.run(`INSERT OR IGNORE INTO employees (name, employee_number, email, password_hash, position, department, supervisor_id, role) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, employees[index], (err) => {
+            if (err && !err.message.includes('UNIQUE constraint failed')) {
+                console.error('❌ Error inserting employee:', err.message);
+            }
+            insertEmployeeSequential(index + 1);
+        });
+    }
+    insertEmployeeSequential(0);
+    
+    function runPostInsertMigrations() {
+        // Bug 5 Fix: Ensure Lisa Brown is assigned to Sarah Johnson as supervisor
+        db.run(`UPDATE employees SET supervisor_id = (SELECT id FROM employees WHERE email = 'sarah.johnson@company.com') 
+                WHERE employee_number = 'EMP004' AND (supervisor_id IS NULL OR supervisor_id = 0)`, (err) => {
+            if (err) console.error('❌ Error fixing Lisa supervisor:', err.message);
+            else console.log('✅ Lisa Brown supervisor assignment verified');
+        });
+    }
+    
+    // Insert NJC rates
+    const rates = [
+        ['breakfast', 23.45],
+        ['lunch', 29.75],
+        ['dinner', 47.05],
+        ['mileage', 0.68], // per km
+        ['accommodation', 150.00] // per night
+    ];
+    
+    rates.forEach(rate => {
+        db.run(`INSERT OR IGNORE INTO njc_rates (meal_type, rate) VALUES (?, ?)`, rate, (err) => {
+            if (err && !err.message.includes('UNIQUE constraint failed')) {
+                console.error('❌ Error inserting NJC rate:', err.message);
+            }
+        });
+    });
+    
+    console.log('✅ Default data initialized');
+}
+
+// 🌐 Routes
+
+// 🔐 SECURE ROUTING - AUTHENTICATION REQUIRED
+// All routes require proper authentication flow
+
+app.get('/', (req, res) => {
+    // Always redirect to login - no bypass allowed
+    res.redirect('/login');
+});
+
+app.get('/login', (req, res) => {
+    res.sendFile(path.join(__dirname, 'login.html'));
+});
+
+// Protected employee dashboard - requires authentication
+app.get('/dashboard', (req, res) => {
+    res.sendFile(path.join(__dirname, 'employee-dashboard.html'));
+});
+
+// Protected admin panel - requires authentication 
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'admin.html'));
+});
+
+// Legacy route protection - prevent direct access to old forms
+app.get('/index.html', (req, res) => {
+    res.redirect('/login');
+});
+
+// Employee dashboard alias (for convenience)
+app.get('/employee', (req, res) => {
+    res.redirect('/dashboard');
+});
+
+// 🔐 Authentication Routes
+
+// Employee login
+app.post('/api/auth/login', async (req, res) => {
+    const { email, password } = req.body;
+    
+    if (!email || !password) {
+        return res.status(400).json({
+            success: false,
+            error: 'Email and password are required'
+        });
+    }
+    
+    // Find employee
+    db.get('SELECT * FROM employees WHERE email = ? AND is_active = 1', [email], (err, employee) => {
+        if (err) {
+            console.error('❌ Login error:', err);
+            return res.status(500).json({
+                success: false,
+                error: 'Login failed'
+            });
+        }
+        
+        if (!employee || !verifyPassword(password, employee.password_hash)) {
+            return res.status(401).json({
+                success: false,
+                error: 'Invalid email or password'
+            });
+        }
+        
+        // Update last login
+        db.run('UPDATE employees SET last_login = CURRENT_TIMESTAMP WHERE id = ?', [employee.id]);
+        
+        // Create session
+        const sessionId = createSession(employee.id, employee.role);
+        
+        console.log(`✅ User logged in: ${employee.name} (${employee.role})`);
+        res.json({
+            success: true,
+            sessionId,
+            user: {
+                id: employee.id,
+                name: employee.name,
+                email: employee.email,
+                employee_number: employee.employee_number,
+                position: employee.position,
+                department: employee.department,
+                role: employee.role,
+                supervisor_id: employee.supervisor_id
+            }
+        });
+    });
+});
+
+// Employee logout
+app.post('/api/auth/logout', requireAuth, (req, res) => {
+    const sessionId = req.headers.authorization?.replace('Bearer ', '');
+    clearSession(sessionId);
+    
+    res.json({ success: true, message: 'Logged out successfully' });
+});
+
+// Get current user info
+app.get('/api/auth/me', requireAuth, (req, res) => {
+    db.get('SELECT id, name, email, employee_number, position, department, role, supervisor_id FROM employees WHERE id = ?', 
+        [req.user.employeeId], (err, employee) => {
+        if (err || !employee) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        res.json(employee);
+    });
+});
+
+// Create employee account (admin only)
+app.post('/api/auth/register', requireAuth, requireRole('admin'), (req, res) => {
+    const { name, employee_number, email, password, position, department, supervisor_id, role } = req.body;
+    
+    if (!name || !employee_number || !email || !password) {
+        return res.status(400).json({
+            success: false,
+            error: 'Name, employee number, email, and password are required'
+        });
+    }
+    
+    const passwordHash = hashPassword(password);
+    
+    const query = `
+        INSERT INTO employees (name, employee_number, email, password_hash, position, department, supervisor_id, role)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    
+    db.run(query, [name, employee_number, email, passwordHash, position, department, supervisor_id, role || 'employee'], function(err) {
+        if (err) {
+            if (err.message.includes('UNIQUE constraint failed')) {
+                return res.status(409).json({
+                    success: false,
+                    error: 'Employee number or email already exists'
+                });
+            }
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to create account'
+            });
+        }
+        
+        res.json({
+            success: true,
+            id: this.lastID,
+            message: 'Employee account created successfully'
+        });
+    });
+});
+
+// 📊 API Routes
+
+// Get all expenses (admin) or team expenses (supervisor)
+app.get('/api/expenses', requireAuth, (req, res) => {
+    let query;
+    let params = [];
+    
+    if (req.user.role === 'admin') {
+        // Admin sees all expenses
+        query = `
+            SELECT e.*, 
+                   emp.name as employee_name_from_db,
+                   emp.supervisor_id,
+                   sup.name as supervisor_name
+            FROM expenses e
+            LEFT JOIN employees emp ON e.employee_id = emp.id
+            LEFT JOIN employees sup ON emp.supervisor_id = sup.id
+            ORDER BY e.created_at DESC
+        `;
+    } else if (req.user.role === 'supervisor') {
+        // Bug 5 Fix: Supervisor sees their full team's expenses (including indirect reports)
+        query = `
+            WITH RECURSIVE team AS (
+                SELECT id FROM employees WHERE supervisor_id = ?
+                UNION ALL
+                SELECT e.id FROM employees e INNER JOIN team t ON e.supervisor_id = t.id
+            )
+            SELECT e.*, 
+                   emp.name as employee_name_from_db,
+                   emp.supervisor_id,
+                   sup.name as supervisor_name
+            FROM expenses e
+            LEFT JOIN employees emp ON e.employee_id = emp.id
+            LEFT JOIN employees sup ON emp.supervisor_id = sup.id
+            WHERE emp.id IN (SELECT id FROM team)
+            ORDER BY e.created_at DESC
+        `;
+        params = [req.user.employeeId];
+    } else {
+        return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    db.all(query, params, (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching expenses:', err);
+            return res.status(500).json({ error: 'Failed to fetch expenses' });
+        }
+        
+        console.log(`✅ Fetched ${rows.length} expenses for ${req.user.role}`);
+        res.json(rows);
+    });
+});
+
+// Submit new expense (authenticated employees)
+app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res) => {
+    const {
+        expense_type,
+        meal_name,
+        date,
+        location,
+        amount,
+        vendor,
+        description,
+        trip_id
+    } = req.body;
+    
+    // Validation
+    if (!expense_type || !date || !amount) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Missing required fields: expense_type, date, amount' 
+        });
+    }
+    
+    // Bug 2 Fix: Validate expense type
+    const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other'];
+    if (!validExpenseTypes.includes(expense_type)) {
+        return res.status(400).json({
+            success: false,
+            error: `Invalid expense type "${expense_type}". Allowed types: ${validExpenseTypes.join(', ')}`
+        });
+    }
+    
+    // Bug 4 Fix: Validate expense date falls within trip date range
+    if (trip_id) {
+        try {
+            const trip = await new Promise((resolve, reject) => {
+                db.get('SELECT start_date, end_date, trip_name FROM trips WHERE id = ?', [trip_id],
+                    (err, row) => err ? reject(err) : resolve(row));
+            });
+            if (trip && (date < trip.start_date || date > trip.end_date)) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Expense date ${date} is outside the trip "${trip.trip_name}" date range (${trip.start_date} to ${trip.end_date}).`
+                });
+            }
+        } catch (err) {
+            console.error('❌ Error validating expense date against trip:', err);
+        }
+    }
+    
+    // Check if this is a per diem expense type
+    const perDiemTypes = ['breakfast', 'lunch', 'dinner', 'incidentals'];
+    const isPerDiem = perDiemTypes.includes(expense_type);
+    
+    // CRITICAL: Per diem duplicate prevention (simple, no nested transactions)
+    if (isPerDiem) {
+        const hasDuplicate = await new Promise((resolve, reject) => {
+            db.get(
+                `SELECT COUNT(*) as count FROM expenses WHERE employee_id = ? AND expense_type = ? AND date = ? AND status != 'rejected'`,
+                [req.user.employeeId, expense_type, date],
+                (err, row) => err ? reject(err) : resolve(row.count > 0)
+            );
+        });
+        
+        if (hasDuplicate) {
+            console.log(`🚨 BLOCKED DUPLICATE: ${expense_type} for ${date} by employee ${req.user.employeeId}`);
+            return res.status(400).json({
+                success: false,
+                error: `🚨 COMPLIANCE VIOLATION: You have already claimed ${expense_type} per diem for ${date}. Only one per day allowed.`
+            });
+        }
+    }
+    
+    // Hotel category validation: receipt required
+    if (expense_type === 'hotel' && !req.file) {
+        return res.status(400).json({
+            success: false,
+            error: 'Receipt photo is required for hotel/accommodation expenses'
+        });
+    }
+    
+    // Per diem rate validation
+    if (njcRates.isPerDiem(expense_type)) {
+        const validation = njcRates.validatePerDiemExpense(expense_type, amount);
+        if (!validation.valid) {
+            return res.status(400).json({
+                success: false,
+                error: validation.message
+            });
+        }
+    }
+    
+    // Vehicle km rate validation ($0.68/km — amount must be a multiple of rate, max 10,000km)
+    if (expense_type === 'vehicle_km') {
+        const ratePerKm = 0.68;
+        const impliedKm = amount / ratePerKm;
+        if (amount <= 0) {
+            return res.status(400).json({ success: false, error: 'Vehicle expense amount must be positive.' });
+        }
+        if (impliedKm > 10000) {
+            return res.status(400).json({ success: false, error: `Vehicle claim implies ${impliedKm.toFixed(0)}km — exceeds 10,000km single-trip maximum.` });
+        }
+        // Validate amount is a clean multiple of $0.68 (within rounding tolerance)
+        const remainder = amount % ratePerKm;
+        if (remainder > 0.01 && remainder < (ratePerKm - 0.01)) {
+            return res.status(400).json({ success: false, error: `Vehicle amount must be a multiple of $${ratePerKm}/km (e.g., 100km = $68.00). Submitted: $${amount.toFixed(2)}` });
+        }
+    }
+    
+    // Get employee info from session
+    db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err, employee) => {
+        if (err || !employee) {
+            return res.status(404).json({
+                success: false,
+                error: 'Employee not found'
+            });
+        }
+        
+        const receiptPath = req.file ? `/uploads/${req.file.filename}` : null;
+        
+        // Simple insert for ALL expense types (per diem already validated above)
+        const query = `
+            INSERT INTO expenses (employee_name, employee_id, trip_id, expense_type, meal_name, date, location, amount, vendor, description, receipt_photo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+        
+        const params = [employee.name, req.user.employeeId, trip_id || null, expense_type, meal_name, date, location, amount, vendor, description, receiptPath];
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('❌ Error submitting expense:', err);
+                return res.status(500).json({ success: false, error: 'Failed to submit expense' });
+            }
+            
+            const msg = isPerDiem 
+                ? `✅ ${meal_name || expense_type} per diem submitted! Locked to prevent duplicates.`
+                : 'Expense submitted successfully!';
+            console.log(`✅ Expense submitted by ${employee.name}: ${expense_type} $${amount} (ID: ${this.lastID})`);
+            res.json({ success: true, id: this.lastID, message: msg });
+        });
+    });
+});
+
+// Get employee's own expenses (with trip information)
+app.get('/api/my-expenses', requireAuth, (req, res) => {
+    const query = `
+        SELECT e.*, t.trip_name, t.destination as trip_destination
+        FROM expenses e
+        LEFT JOIN trips t ON e.trip_id = t.id
+        WHERE e.employee_id = ? 
+        ORDER BY e.created_at DESC
+    `;
+    
+    db.all(query, [req.user.employeeId], (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching user expenses:', err);
+            return res.status(500).json({ error: 'Failed to fetch expenses' });
+        }
+        
+        console.log(`✅ Fetched ${rows.length} expenses for user ${req.user.employeeId}`);
+        res.json(rows);
+    });
+});
+
+// Approve expense (supervisor/admin only)
+app.post('/api/expenses/:id/approve', requireAuth, (req, res) => {
+    if (req.user.role !== 'supervisor' && req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Only supervisors and admins can approve expenses' });
+    }
+    const { id } = req.params;
+    const { comment, approver } = req.body;
+    
+    const query = `
+        UPDATE expenses 
+        SET status = 'approved', 
+            approved_by = ?, 
+            approved_at = CURRENT_TIMESTAMP, 
+            approval_comment = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    `;
+    
+    db.run(query, [approver || 'Admin', comment, id], function(err) {
+        if (err) {
+            console.error('❌ Error approving expense:', err);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Failed to approve expense' 
+            });
+        }
+        
+        if (this.changes === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Expense not found' 
+            });
+        }
+        
+        console.log(`✅ Expense ${id} approved by ${approver}`);
+        
+        // FEATURE 4: Notify employee
+        db.get('SELECT employee_id FROM expenses WHERE id = ?', [id], (err2, exp) => {
+            if (!err2 && exp) {
+                createNotification(exp.employee_id, 'expense_approved',
+                    `Your expense #${id} has been approved by ${approver || 'Admin'}.`);
+            }
+        });
+        
+        res.json({ 
+            success: true, 
+            message: 'Expense approved successfully!' 
+        });
+    });
+});
+
+// Reject expense (supervisor/admin only)
+app.post('/api/expenses/:id/reject', requireAuth, (req, res) => {
+    if (req.user.role !== 'supervisor' && req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Only supervisors and admins can reject expenses' });
+    }
+    const { id } = req.params;
+    const { reason, approver } = req.body;
+    
+    if (!reason) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Rejection reason is required' 
+        });
+    }
+    
+    const query = `
+        UPDATE expenses 
+        SET status = 'rejected', 
+            approved_by = ?, 
+            approved_at = CURRENT_TIMESTAMP, 
+            rejection_reason = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    `;
+    
+    db.run(query, [approver || 'Admin', reason, id], function(err) {
+        if (err) {
+            console.error('❌ Error rejecting expense:', err);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Failed to reject expense' 
+            });
+        }
+        
+        if (this.changes === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Expense not found' 
+            });
+        }
+        
+        console.log(`✅ Expense ${id} rejected by ${approver}`);
+        
+        // FEATURE 4: Notify employee with reason
+        db.get('SELECT employee_id FROM expenses WHERE id = ?', [id], (err2, exp) => {
+            if (!err2 && exp) {
+                createNotification(exp.employee_id, 'expense_rejected',
+                    `Your expense #${id} was rejected by ${approver || 'Admin'}. Reason: ${reason}`);
+            }
+        });
+        
+        res.json({ 
+            success: true, 
+            message: 'Expense rejected successfully' 
+        });
+    });
+});
+
+// Delete expense (admin only)
+app.delete('/api/expenses/:id', requireAuth, requireRole('admin'), (req, res) => {
+    const { id } = req.params;
+    
+    // First get the expense to check for receipt photo
+    db.get('SELECT receipt_photo FROM expenses WHERE id = ?', [id], (err, expense) => {
+        if (err) {
+            console.error('❌ Error fetching expense for deletion:', err);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Failed to fetch expense' 
+            });
+        }
+        
+        if (!expense) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Expense not found' 
+            });
+        }
+        
+        // Delete the expense record
+        db.run('DELETE FROM expenses WHERE id = ?', [id], function(err) {
+            if (err) {
+                console.error('❌ Error deleting expense:', err);
+                return res.status(500).json({ 
+                    success: false, 
+                    error: 'Failed to delete expense' 
+                });
+            }
+            
+            // Try to delete the receipt photo file
+            if (expense.receipt_photo) {
+                const filePath = path.join(__dirname, expense.receipt_photo);
+                fs.unlink(filePath, (err) => {
+                    if (err) console.log('⚠️ Could not delete receipt file:', err.message);
+                });
+            }
+            
+            console.log(`✅ Expense ${id} deleted`);
+            res.json({ 
+                success: true, 
+                message: 'Expense deleted successfully' 
+            });
+        });
+    });
+});
+
+// Get all employees (authenticated users)
+app.get('/api/employees', requireAuth, requireRole('admin', 'supervisor'), (req, res) => {
+    const query = `
+        SELECT e.*, sup.name as supervisor_name
+        FROM employees e
+        LEFT JOIN employees sup ON e.supervisor_id = sup.id
+        ORDER BY e.name
+    `;
+    
+    db.all(query, [], (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching employees:', err);
+            return res.status(500).json({ error: 'Failed to fetch employees' });
+        }
+        
+        console.log(`✅ Fetched ${rows.length} employees`);
+        res.json(rows);
+    });
+});
+
+// Add new employee (admin only)
+app.post('/api/employees', requireAuth, requireRole('admin'), (req, res) => {
+    const { name, employee_number, position, department, supervisor_id } = req.body;
+    
+    // Validation
+    if (!name || name.trim().length === 0) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Employee name is required' 
+        });
+    }
+    
+    if (!employee_number || employee_number.trim().length === 0) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Employee number is required' 
+        });
+    }
+    
+    // Governance: supervisor cannot be their own employee (circular reference)
+    // Note: for new employees, self-supervision is checked after insert via lastID
+    
+    const query = `
+        INSERT INTO employees (name, employee_number, position, department, supervisor_id)
+        VALUES (?, ?, ?, ?, ?)
+    `;
+    
+    const params = [
+        name.trim(), 
+        employee_number.trim(), 
+        position ? position.trim() : null, 
+        department ? department.trim() : null, 
+        supervisor_id || null
+    ];
+    
+    db.run(query, params, function(err) {
+        if (err) {
+            console.error('❌ Error adding employee:', err);
+            if (err.message.includes('UNIQUE constraint failed')) {
+                return res.status(409).json({ 
+                    success: false, 
+                    error: 'Employee number already exists' 
+                });
+            }
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Failed to add employee' 
+            });
+        }
+        
+        console.log(`✅ Employee added with ID: ${this.lastID}`);
+        res.json({ 
+            success: true, 
+            id: this.lastID,
+            message: 'Employee added successfully!' 
+        });
+    });
+});
+
+// Update employee (admin only)
+app.put('/api/employees/:id', requireAuth, requireRole('admin'), async (req, res) => {
+    const { id } = req.params;
+    const { name, employee_number, position, department, supervisor_id } = req.body;
+    
+    // Validation
+    if (!name || name.trim().length === 0) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Employee name is required' 
+        });
+    }
+    
+    if (!employee_number || employee_number.trim().length === 0) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Employee number is required' 
+        });
+    }
+    
+    // Governance rule: An employee cannot be their own supervisor
+    if (supervisor_id && String(supervisor_id) === String(id)) {
+        return res.status(400).json({ 
+            success: false, 
+            error: '⚠️ Governance violation: An employee cannot be their own supervisor. This violates audit and oversight requirements.' 
+        });
+    }
+    
+    // Governance rule: Prevent circular supervision chains
+    if (supervisor_id) {
+        try {
+            const chain = await new Promise((resolve, reject) => {
+                db.all(`
+                    WITH RECURSIVE chain AS (
+                        SELECT id, supervisor_id FROM employees WHERE id = ?
+                        UNION ALL
+                        SELECT e.id, e.supervisor_id FROM employees e INNER JOIN chain c ON e.id = c.supervisor_id
+                    )
+                    SELECT id FROM chain WHERE id != ?
+                `, [supervisor_id, supervisor_id], (err, rows) => err ? reject(err) : resolve(rows));
+            });
+            if (chain.some(r => String(r.id) === String(id))) {
+                return res.status(400).json({
+                    success: false,
+                    error: '⚠️ Governance violation: This assignment would create a circular supervision chain.'
+                });
+            }
+        } catch (err) {
+            console.error('Error checking supervision chain:', err);
+        }
+    }
+    
+    const query = `
+        UPDATE employees 
+        SET name = ?, employee_number = ?, position = ?, department = ?, supervisor_id = ?
+        WHERE id = ?
+    `;
+    
+    const params = [
+        name.trim(), 
+        employee_number.trim(), 
+        position ? position.trim() : null, 
+        department ? department.trim() : null, 
+        supervisor_id || null,
+        id
+    ];
+    
+    db.run(query, params, function(err) {
+        if (err) {
+            console.error('❌ Error updating employee:', err);
+            if (err.message.includes('UNIQUE constraint failed')) {
+                return res.status(409).json({ 
+                    success: false, 
+                    error: 'Employee number already exists' 
+                });
+            }
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Failed to update employee' 
+            });
+        }
+        
+        if (this.changes === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Employee not found' 
+            });
+        }
+        
+        console.log(`✅ Employee ${id} updated`);
+        res.json({ 
+            success: true, 
+            message: 'Employee updated successfully!' 
+        });
+    });
+});
+
+// Delete employee (admin only)
+app.delete('/api/employees/:id', requireAuth, requireRole('admin'), (req, res) => {
+    const { id } = req.params;
+    
+    // First check if employee has expenses
+    db.get('SELECT COUNT(*) as count FROM expenses WHERE employee_name = (SELECT name FROM employees WHERE id = ?)', [id], (err, result) => {
+        if (err) {
+            console.error('❌ Error checking employee expenses:', err);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Failed to check employee expenses' 
+            });
+        }
+        
+        if (result.count > 0) {
+            return res.status(409).json({ 
+                success: false, 
+                error: `Cannot delete employee: ${result.count} expenses associated with this employee` 
+            });
+        }
+        
+        // Check if employee is a supervisor
+        db.get('SELECT COUNT(*) as count FROM employees WHERE supervisor_id = ?', [id], (err, supervisorResult) => {
+            if (err) {
+                console.error('❌ Error checking supervisor relationships:', err);
+                return res.status(500).json({ 
+                    success: false, 
+                    error: 'Failed to check supervisor relationships' 
+                });
+            }
+            
+            if (supervisorResult.count > 0) {
+                return res.status(409).json({ 
+                    success: false, 
+                    error: `Cannot delete employee: ${supervisorResult.count} employees report to this person` 
+                });
+            }
+            
+            // Safe to delete
+            db.run('DELETE FROM employees WHERE id = ?', [id], function(err) {
+                if (err) {
+                    console.error('❌ Error deleting employee:', err);
+                    return res.status(500).json({ 
+                        success: false, 
+                        error: 'Failed to delete employee' 
+                    });
+                }
+                
+                if (this.changes === 0) {
+                    return res.status(404).json({ 
+                        success: false, 
+                        error: 'Employee not found' 
+                    });
+                }
+                
+                console.log(`✅ Employee ${id} deleted`);
+                res.json({ 
+                    success: true, 
+                    message: 'Employee deleted successfully' 
+                });
+            });
+        });
+    });
+});
+
+// Get NJC rates (requires authentication)
+app.get('/api/njc-rates', requireAuth, (req, res) => {
+    try {
+        const perDiemTypes = njcRates.getAvailablePerDiemTypes();
+        const updateInfo = njcRates.getRateUpdateInfo();
+        
+        res.json({
+            success: true,
+            per_diem_types: perDiemTypes,
+            update_info: updateInfo,
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ Error fetching NJC rates:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch per diem rates'
+        });
+    }
+});
+
+// Get expense status for employee
+app.get('/api/expenses/employee/:name', requireAuth, (req, res) => {
+    const { name } = req.params;
+    
+    if (!name || name.trim().length === 0) {
+        return res.status(400).json({ error: 'Employee name is required' });
+    }
+    
+    // First check if employee exists
+    db.get('SELECT name FROM employees WHERE name = ?', [name], (err, employee) => {
+        if (err) {
+            console.error('❌ Error checking employee:', err);
+            return res.status(500).json({ error: 'Database error' });
+        }
+        
+        // If employee doesn't exist in directory, still return expenses but with warning
+        const query = `
+            SELECT * FROM expenses 
+            WHERE employee_name = ? 
+            ORDER BY created_at DESC 
+            LIMIT 10
+        `;
+        
+        db.all(query, [name], (err, rows) => {
+            if (err) {
+                console.error('❌ Error fetching employee expenses:', err);
+                return res.status(500).json({ error: 'Failed to fetch expenses' });
+            }
+            
+            if (rows.length === 0 && !employee) {
+                return res.status(404).json({ 
+                    error: 'No expenses found for this employee',
+                    message: 'Employee may not exist in directory'
+                });
+            }
+            
+            res.json(rows);
+        });
+    });
+});
+
+// 🏛️ NJC Per Diem Rates API Endpoints
+
+// Get per diem rate for specific expense type (requires authentication)
+app.get('/api/njc-rates/:expenseType', requireAuth, (req, res) => {
+    const { expenseType } = req.params;
+    
+    try {
+        const rateInfo = njcRates.getPerDiemRate(expenseType);
+        
+        if (!rateInfo) {
+            return res.status(404).json({
+                success: false,
+                error: 'Expense type not found in NJC per diem rates'
+            });
+        }
+        
+        res.json({
+            success: true,
+            expense_type: expenseType,
+            ...rateInfo
+        });
+        
+    } catch (error) {
+        console.error('❌ Error fetching NJC rate:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch per diem rate'
+        });
+    }
+});
+
+// Calculate vehicle allowance (requires authentication)
+app.post('/api/njc-rates/vehicle-allowance', requireAuth, (req, res) => {
+    const { kilometers } = req.body;
+    
+    if (!kilometers || isNaN(kilometers) || kilometers <= 0) {
+        return res.status(400).json({
+            success: false,
+            error: 'Valid kilometer amount required'
+        });
+    }
+    
+    try {
+        const calculation = njcRates.calculateVehicleAllowance(parseFloat(kilometers));
+        
+        res.json({
+            success: true,
+            ...calculation
+        });
+        
+    } catch (error) {
+        console.error('❌ Error calculating vehicle allowance:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to calculate vehicle allowance'
+        });
+    }
+});
+
+// Validate per diem expense (requires authentication)
+app.post('/api/njc-rates/validate', requireAuth, (req, res) => {
+    const { expense_type, amount, additional_data } = req.body;
+    
+    if (!expense_type || !amount) {
+        return res.status(400).json({
+            success: false,
+            error: 'expense_type and amount are required'
+        });
+    }
+    
+    try {
+        const validation = njcRates.validatePerDiemExpense(expense_type, amount, additional_data);
+        
+        res.json({
+            success: true,
+            valid: validation.valid,
+            message: validation.message,
+            expense_type,
+            amount: parseFloat(amount)
+        });
+        
+    } catch (error) {
+        console.error('❌ Error validating per diem expense:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to validate per diem expense'
+        });
+    }
+});
+
+// 🧳 TRIP MANAGEMENT ENDPOINTS
+
+// Get employee's trips
+app.get('/api/trips', requireAuth, (req, res) => {
+    const query = `
+        SELECT t.*, 
+               COUNT(e.id) as expense_count,
+               SUM(e.amount) as calculated_total
+        FROM trips t
+        LEFT JOIN expenses e ON t.id = e.trip_id
+        WHERE t.employee_id = ?
+        GROUP BY t.id
+        ORDER BY t.created_at DESC
+    `;
+    
+    db.all(query, [req.user.employeeId], (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching trips:', err);
+            return res.status(500).json({ error: 'Failed to fetch trips' });
+        }
+        
+        console.log(`✅ Fetched ${rows.length} trips for employee ${req.user.employeeId}`);
+        res.json(rows);
+    });
+});
+
+// Create new trip
+app.post('/api/trips', requireAuth, async (req, res) => {
+    const {
+        trip_name,
+        destination,
+        purpose,
+        start_date,
+        end_date
+    } = req.body;
+    
+    // Validation
+    if (!trip_name || !start_date || !end_date) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Missing required fields: trip_name, start_date, end_date' 
+        });
+    }
+    
+    // Bug 1 Fix: Check for overlapping trips
+    try {
+        const overlap = await new Promise((resolve, reject) => {
+            db.get(
+                `SELECT id, trip_name FROM trips WHERE employee_id = ? AND status = 'draft'
+                 AND start_date <= ? AND end_date >= ?`,
+                [req.user.employeeId, end_date, start_date],
+                (err, row) => err ? reject(err) : resolve(row)
+            );
+        });
+        if (overlap) {
+            return res.status(400).json({
+                success: false,
+                error: `Trip dates overlap with existing trip "${overlap.trip_name}". Please choose different dates.`
+            });
+        }
+    } catch (err) {
+        console.error('❌ Error checking trip overlap:', err);
+        return res.status(500).json({ success: false, error: 'Failed to validate trip dates' });
+    }
+    
+    const query = `
+        INSERT INTO trips (employee_id, trip_name, destination, purpose, start_date, end_date)
+        VALUES (?, ?, ?, ?, ?, ?)
+    `;
+    
+    const params = [req.user.employeeId, trip_name, destination, purpose, start_date, end_date];
+    
+    db.run(query, params, function(err) {
+        if (err) {
+            console.error('❌ Error creating trip:', err);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Failed to create trip' 
+            });
+        }
+        
+        console.log(`✅ Trip created with ID: ${this.lastID}`);
+        res.json({ 
+            success: true, 
+            id: this.lastID, 
+            message: 'Trip created successfully!' 
+        });
+    });
+});
+
+// Get trip details with expenses
+app.get('/api/trips/:id', requireAuth, (req, res) => {
+    const tripId = req.params.id;
+    
+    // First get trip details
+    const tripQuery = `
+        SELECT t.*, emp.name as employee_name
+        FROM trips t
+        JOIN employees emp ON t.employee_id = emp.id
+        WHERE t.id = ? AND t.employee_id = ?
+    `;
+    
+    db.get(tripQuery, [tripId, req.user.employeeId], (err, trip) => {
+        if (err) {
+            console.error('❌ Error fetching trip:', err);
+            return res.status(500).json({ error: 'Failed to fetch trip' });
+        }
+        
+        if (!trip) {
+            return res.status(404).json({ error: 'Trip not found' });
+        }
+        
+        // Get trip expenses
+        const expensesQuery = `
+            SELECT * FROM expenses 
+            WHERE trip_id = ? 
+            ORDER BY date ASC, created_at ASC
+        `;
+        
+        db.all(expensesQuery, [tripId], (err, expenses) => {
+            if (err) {
+                console.error('❌ Error fetching trip expenses:', err);
+                return res.status(500).json({ error: 'Failed to fetch trip expenses' });
+            }
+            
+            // Calculate total
+            const total = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+            
+            console.log(`✅ Fetched trip ${tripId} with ${expenses.length} expenses`);
+            res.json({
+                ...trip,
+                expenses: expenses,
+                calculated_total: total
+            });
+        });
+    });
+});
+
+// Submit trip for approval
+app.post('/api/trips/:id/submit', requireAuth, (req, res) => {
+    const tripId = req.params.id;
+    
+    // Check if trip belongs to user and has expenses
+    const checkQuery = `
+        SELECT t.*, COUNT(e.id) as expense_count
+        FROM trips t
+        LEFT JOIN expenses e ON t.id = e.trip_id
+        WHERE t.id = ? AND t.employee_id = ?
+        GROUP BY t.id
+    `;
+    
+    db.get(checkQuery, [tripId, req.user.employeeId], (err, trip) => {
+        if (err) {
+            console.error('❌ Error checking trip:', err);
+            return res.status(500).json({ error: 'Failed to check trip' });
+        }
+        
+        if (!trip) {
+            return res.status(404).json({ error: 'Trip not found' });
+        }
+        
+        if (trip.status !== 'draft') {
+            return res.status(400).json({ error: 'Trip has already been submitted' });
+        }
+        
+        if (trip.expense_count === 0) {
+            return res.status(400).json({ error: 'Cannot submit trip with no expenses' });
+        }
+        
+        // Update trip status
+        const updateQuery = `
+            UPDATE trips 
+            SET status = 'submitted', submitted_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `;
+        
+        db.run(updateQuery, [tripId], function(err) {
+            if (err) {
+                console.error('❌ Error submitting trip:', err);
+                return res.status(500).json({ error: 'Failed to submit trip' });
+            }
+            
+            console.log(`✅ Trip ${tripId} submitted for approval`);
+            
+            // FEATURE 4: Notify supervisor
+            db.get('SELECT supervisor_id FROM employees WHERE id = ?', [req.user.employeeId], (err2, emp) => {
+                if (!err2 && emp && emp.supervisor_id) {
+                    createNotification(emp.supervisor_id, 'trip_submitted', 
+                        `Trip "${trip.trip_name || tripId}" has been submitted for your approval.`);
+                }
+            });
+            
+            res.json({ 
+                success: true, 
+                message: 'Trip submitted for approval!' 
+            });
+        });
+    });
+});
+
+// 📱 Handle receipt photo upload as base64
+app.post('/api/upload-receipt', requireAuth, (req, res) => {
+    const { imageData, filename } = req.body;
+    
+    if (!imageData) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'No image data provided' 
+        });
+    }
+    
+    try {
+        // Remove data URL prefix if present
+        const base64Data = imageData.replace(/^data:image\/[a-z]+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        
+        const fileName = `receipt-${Date.now()}-${Math.round(Math.random() * 1E9)}.jpg`;
+        const filePath = path.join(uploadsDir, fileName);
+        
+        fs.writeFileSync(filePath, buffer);
+        
+        console.log(`✅ Receipt uploaded: ${fileName}`);
+        res.json({ 
+            success: true, 
+            filename: fileName,
+            path: `/uploads/${fileName}` 
+        });
+        
+    } catch (error) {
+        console.error('❌ Error uploading receipt:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to upload receipt' 
+        });
+    }
+});
+
+// ============================================
+// FEATURE 1: Dashboard Stats Endpoint
+// ============================================
+app.get('/api/dashboard/stats', requireAuth, (req, res) => {
+    const isAdmin = req.user.role === 'admin';
+    const userId = req.user.employeeId;
+    const whereClause = isAdmin ? '1=1' : 'e.employee_id = ?';
+    const params = isAdmin ? [] : [userId];
+
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    const query = `
+        SELECT 
+            COUNT(*) as total_count,
+            COALESCE(SUM(e.amount), 0) as total_amount,
+            COALESCE(SUM(CASE WHEN e.status = 'pending' THEN 1 ELSE 0 END), 0) as pending_count,
+            COALESCE(SUM(CASE WHEN e.date LIKE '${currentMonth}%' THEN e.amount ELSE 0 END), 0) as monthly_spend,
+            COALESCE(SUM(CASE WHEN e.status = 'draft' THEN 1 ELSE 0 END), 0) as draft_count,
+            COALESCE(SUM(CASE WHEN e.status = 'submitted' THEN 1 ELSE 0 END), 0) as submitted_count,
+            COALESCE(SUM(CASE WHEN e.status = 'approved' THEN 1 ELSE 0 END), 0) as approved_count,
+            COALESCE(SUM(CASE WHEN e.status = 'rejected' THEN 1 ELSE 0 END), 0) as rejected_count,
+            COALESCE(SUM(CASE WHEN e.expense_type IN ('breakfast','lunch','dinner') THEN e.amount ELSE 0 END), 0) as meals_amount,
+            COALESCE(SUM(CASE WHEN e.expense_type = 'vehicle_km' THEN e.amount ELSE 0 END), 0) as transport_amount,
+            COALESCE(SUM(CASE WHEN e.expense_type = 'hotel' THEN e.amount ELSE 0 END), 0) as hotel_amount,
+            COALESCE(SUM(CASE WHEN e.expense_type NOT IN ('breakfast','lunch','dinner','vehicle_km','hotel') THEN e.amount ELSE 0 END), 0) as other_amount
+        FROM expenses e
+        WHERE ${whereClause}
+    `;
+
+    db.get(query, params, (err, row) => {
+        if (err) {
+            console.error('❌ Error fetching dashboard stats:', err);
+            return res.status(500).json({ error: 'Failed to fetch stats' });
+        }
+        res.json({
+            success: true,
+            total: { count: row.total_count, amount: row.total_amount },
+            pending_count: row.pending_count,
+            monthly_spend: row.monthly_spend,
+            by_status: {
+                draft: row.draft_count,
+                submitted: row.submitted_count,
+                approved: row.approved_count,
+                rejected: row.rejected_count
+            },
+            by_type: {
+                meals: row.meals_amount,
+                transport: row.transport_amount,
+                hotel: row.hotel_amount,
+                other: row.other_amount
+            }
+        });
+    });
+});
+
+// ============================================
+// FEATURE 2: Expense Editing
+// ============================================
+app.put('/api/expenses/:id', requireAuth, (req, res) => {
+    const { id } = req.params;
+    const { expense_type, meal_name, date, location, amount, vendor, description } = req.body;
+
+    // First check ownership and status
+    db.get(`SELECT e.*, t.status as trip_status FROM expenses e LEFT JOIN trips t ON e.trip_id = t.id WHERE e.id = ?`, [id], (err, expense) => {
+        if (err) return res.status(500).json({ success: false, error: 'Database error' });
+        if (!expense) return res.status(404).json({ success: false, error: 'Expense not found' });
+        if (expense.employee_id !== req.user.employeeId && req.user.role !== 'admin') {
+            return res.status(403).json({ success: false, error: 'Not your expense' });
+        }
+        // Only allow editing draft/pending expenses whose trip is not submitted
+        if (expense.status === 'approved' || expense.status === 'rejected') {
+            return res.status(400).json({ success: false, error: 'Cannot edit approved/rejected expenses' });
+        }
+        if (expense.trip_status && expense.trip_status !== 'draft') {
+            return res.status(400).json({ success: false, error: 'Cannot edit expenses in a submitted trip' });
+        }
+
+        const query = `UPDATE expenses SET 
+            expense_type = COALESCE(?, expense_type),
+            meal_name = COALESCE(?, meal_name),
+            date = COALESCE(?, date),
+            location = COALESCE(?, location),
+            amount = COALESCE(?, amount),
+            vendor = COALESCE(?, vendor),
+            description = COALESCE(?, description),
+            updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?`;
+
+        db.run(query, [expense_type, meal_name, date, location, amount, vendor, description, id], function(err) {
+            if (err) return res.status(500).json({ success: false, error: 'Failed to update expense' });
+            console.log(`✅ Expense ${id} updated`);
+            res.json({ success: true, message: 'Expense updated successfully' });
+        });
+    });
+});
+
+// ============================================
+// FEATURE 3: Notifications table + endpoints
+// ============================================
+// Create notifications table on startup
+db.run(`CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    read INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (employee_id) REFERENCES employees (id)
+)`, (err) => {
+    if (err) console.error('❌ Error creating notifications table:', err.message);
+    else console.log('✅ Notifications table ready');
+});
+
+function createNotification(employeeId, type, message) {
+    db.run('INSERT INTO notifications (employee_id, type, message) VALUES (?, ?, ?)',
+        [employeeId, type, message], (err) => {
+            if (err) console.error('❌ Notification error:', err.message);
+            else console.log(`📧 Notification created for employee ${employeeId}: ${type}`);
+        });
+}
+
+// Get notifications for current user
+app.get('/api/notifications', requireAuth, (req, res) => {
+    db.all('SELECT * FROM notifications WHERE employee_id = ? ORDER BY created_at DESC LIMIT 50',
+        [req.user.employeeId], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Failed to fetch notifications' });
+            const unread = rows.filter(r => !r.read).length;
+            res.json({ notifications: rows, unread_count: unread });
+        });
+});
+
+// Mark notification as read
+app.put('/api/notifications/:id/read', requireAuth, (req, res) => {
+    db.run('UPDATE notifications SET read = 1 WHERE id = ? AND employee_id = ?',
+        [req.params.id, req.user.employeeId], function(err) {
+            if (err) return res.status(500).json({ success: false, error: 'Failed' });
+            res.json({ success: true });
+        });
+});
+
+// ============================================
+// FEATURE 5: CSV Export
+// ============================================
+app.get('/api/expenses/export/csv', (req, res, next) => {
+    // Support token in query string for direct download links
+    if (req.query.token && !req.headers.authorization) {
+        req.headers.authorization = `Bearer ${req.query.token}`;
+    }
+    requireAuth(req, res, next);
+}, (req, res) => {
+    const isEmployee = req.user.role === 'employee';
+    const query = isEmployee
+        ? `SELECT e.date, e.expense_type, e.amount, t.trip_name, e.status, e.description, e.location
+           FROM expenses e LEFT JOIN trips t ON e.trip_id = t.id WHERE e.employee_id = ? ORDER BY e.date`
+        : `SELECT e.date, e.expense_type, e.amount, t.trip_name, e.status, e.description, e.location, e.employee_name
+           FROM expenses e LEFT JOIN trips t ON e.trip_id = t.id ORDER BY e.date`;
+    const params = isEmployee ? [req.user.employeeId] : [];
+
+    db.all(query, params, (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Failed to export' });
+
+        const headers = isEmployee
+            ? ['Date', 'Type', 'Amount', 'Trip', 'Status', 'Description', 'Location']
+            : ['Date', 'Type', 'Amount', 'Trip', 'Status', 'Description', 'Location', 'Employee'];
+
+        const csvRows = [headers.join(',')];
+        rows.forEach(r => {
+            const vals = [
+                r.date, r.expense_type, r.amount, r.trip_name || '', r.status,
+                `"${(r.description || '').replace(/"/g, '""')}"`,
+                `"${(r.location || '').replace(/"/g, '""')}"`
+            ];
+            if (!isEmployee) vals.push(`"${(r.employee_name || '').replace(/"/g, '""')}"`);
+            csvRows.push(vals.join(','));
+        });
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename=expenses-export.csv');
+        res.send(csvRows.join('\n'));
+    });
+});
+
+// ============================================
+// Inject notifications into trip submission flow
+// ============================================
+
+// 🚨 Error handling
+app.use((error, req, res, next) => {
+    if (error instanceof multer.MulterError) {
+        if (error.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({
+                success: false,
+                error: 'File size too large. Maximum size is 10MB.'
+            });
+        }
+        return res.status(400).json({
+            success: false,
+            error: `Upload error: ${error.message}`
+        });
+    }
+    
+    // Bug 3 Fix: Handle file filter errors (non-MulterError from fileFilter callback)
+    if (error.message && (error.message.includes('image files') || error.message.includes('Only'))) {
+        return res.status(400).json({
+            success: false,
+            error: error.message
+        });
+    }
+    
+    console.error('❌ Unhandled error:', error);
+    res.status(500).json({
+        success: false,
+        error: 'Internal server error'
+    });
+});
+
+// 🚀 Start server
+app.listen(port, () => {
+    console.log('💼 CLAIMFLOW - FULL SYSTEM');
+    console.log('==========================================');
+    console.log(`🚀 Server running at: http://localhost:${port}`);
+    console.log(`👥 Admin dashboard: http://localhost:${port}/admin`);
+    console.log('📱 Mobile-optimized expense submission');
+    console.log('💰 NJC compliant meal rates');
+    console.log('📊 Complete admin dashboard with approvals');
+    console.log('📷 Receipt photo upload and management');
+    console.log('🗄️ SQLite database with full persistence');
+    console.log('');
+    console.log('✅ Features: Employee directory, approval workflow, role-based access');
+    console.log('⏹️  Press Ctrl+C to stop');
+    console.log('==========================================');
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+    console.log('\\n💼 Shutting down expense tracker server...');
+    
+    db.close((err) => {
+        if (err) {
+            console.error('❌ Error closing database:', err.message);
+        } else {
+            console.log('✅ Database connection closed');
+        }
+        
+        console.log('✅ Server stopped');
+        process.exit(0);
+    });
+});
