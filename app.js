@@ -452,6 +452,63 @@ function insertDefaultData() {
     });
     
     console.log('✅ Default data initialized (including Sage 300 GL mappings)');
+    
+    // Seed additional employees and demo data if DB is fresh
+    setTimeout(() => {
+        db.get('SELECT COUNT(*) as count FROM employees', (err, row) => {
+            if (row && row.count <= 6) {
+                console.log('🌱 Seeding additional employees and demo data...');
+                const extraEmployees = [
+                    ['Rachel Chen', 'EMP007', 'rachel.chen@company.com', hashPassword('rachel123'), 'Team Lead', 'Engineering', null, 'supervisor'],
+                    ['Marcus Thompson', 'EMP008', 'marcus.thompson@company.com', hashPassword('marcus123'), 'Team Lead', 'Marketing', null, 'supervisor'],
+                    ['Priya Patel', 'EMP009', 'priya.patel@company.com', hashPassword('priya123'), 'Team Lead', 'Finance', null, 'supervisor'],
+                    ['James Carter', 'EMP010', 'james.carter@company.com', hashPassword('james123'), 'Software Developer', 'Engineering', null, 'employee'],
+                    ['Emily Zhang', 'EMP011', 'emily.zhang@company.com', hashPassword('emily123'), 'Data Analyst', 'Engineering', null, 'employee'],
+                    ['Omar Hassan', 'EMP012', 'omar.hassan@company.com', hashPassword('omar123'), 'UX Designer', 'Engineering', null, 'employee'],
+                    ['Sophie Martin', 'EMP013', 'sophie.martin@company.com', hashPassword('sophie123'), 'Marketing Specialist', 'Marketing', null, 'employee'],
+                    ['Tyler Brooks', 'EMP014', 'tyler.brooks@company.com', hashPassword('tyler123'), 'Content Manager', 'Marketing', null, 'employee'],
+                    ['Nina Kowalski', 'EMP015', 'nina.kowalski@company.com', hashPassword('nina123'), 'Social Media Lead', 'Marketing', null, 'employee'],
+                    ['Alex Rivera', 'EMP016', 'alex.rivera@company.com', hashPassword('alex123'), 'Financial Analyst', 'Finance', null, 'employee'],
+                    ['Fatima Al-Rashid', 'EMP017', 'fatima.alrashid@company.com', hashPassword('fatima123'), 'Accountant', 'Finance', null, 'employee'],
+                    ["Ben O'Connor", 'EMP018', 'ben.oconnor@company.com', hashPassword('ben123'), 'Budget Officer', 'Finance', null, 'employee'],
+                    ['Diana Reyes', 'EMP019', 'diana.reyes@company.com', hashPassword('diana123'), 'Policy Analyst', 'Operations', null, 'employee']
+                ];
+                let inserted = 0;
+                extraEmployees.forEach(emp => {
+                    db.run(`INSERT OR IGNORE INTO employees (name, employee_number, email, password_hash, position, department, supervisor_id, role) VALUES (?,?,?,?,?,?,?,?)`, emp, (err) => {
+                        inserted++;
+                        if (inserted === extraEmployees.length) {
+                            // Fix supervisor assignments
+                            db.all('SELECT id, email FROM employees', (err, rows) => {
+                                if (!rows) return;
+                                const byEmail = {};
+                                rows.forEach(r => byEmail[r.email] = r.id);
+                                const sarah = byEmail['sarah.johnson@company.com'];
+                                const rachel = byEmail['rachel.chen@company.com'];
+                                const marcus = byEmail['marcus.thompson@company.com'];
+                                const priya = byEmail['priya.patel@company.com'];
+                                const lisa = byEmail['lisa.brown@company.com'];
+                                // Supervisors report to Sarah (top-level supervisor)
+                                if (rachel) db.run('UPDATE employees SET supervisor_id = ? WHERE id = ?', [sarah, rachel]);
+                                if (marcus) db.run('UPDATE employees SET supervisor_id = ? WHERE id = ?', [sarah, marcus]);
+                                if (priya) db.run('UPDATE employees SET supervisor_id = ? WHERE id = ?', [sarah, priya]);
+                                // Employees to their supervisors
+                                ['james.carter','emily.zhang','omar.hassan'].forEach(e => { if (byEmail[e+'@company.com']) db.run('UPDATE employees SET supervisor_id = ? WHERE id = ?', [rachel, byEmail[e+'@company.com']]); });
+                                ['sophie.martin','tyler.brooks','nina.kowalski'].forEach(e => { if (byEmail[e+'@company.com']) db.run('UPDATE employees SET supervisor_id = ? WHERE id = ?', [marcus, byEmail[e+'@company.com']]); });
+                                ['alex.rivera','fatima.alrashid','ben.oconnor'].forEach(e => { if (byEmail[e+'@company.com']) db.run('UPDATE employees SET supervisor_id = ? WHERE id = ?', [priya, byEmail[e+'@company.com']]); });
+                                if (byEmail['diana.reyes@company.com']) db.run('UPDATE employees SET supervisor_id = ? WHERE id = ?', [lisa, byEmail['diana.reyes@company.com']]);
+                                // Remove admin as supervisor
+                                const admin = byEmail['john.smith@company.com'];
+                                db.run('UPDATE employees SET supervisor_id = NULL WHERE supervisor_id = ? AND email != ?', [admin, 'sarah.johnson@company.com']);
+                                db.run('UPDATE employees SET supervisor_id = NULL WHERE email = ?', ['sarah.johnson@company.com']);
+                                console.log('✅ 13 additional employees seeded with proper supervisor chain');
+                            });
+                        }
+                    });
+                });
+            }
+        });
+    }, 2000);
 }
 
 // 🌐 Routes
