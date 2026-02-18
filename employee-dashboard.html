@@ -258,6 +258,7 @@
         
         .status-approved { background: #d4edda; color: #155724; }
         .status-rejected { background: #f8d7da; color: #721c24; }
+        .status-returned { background: #ffeaa7; color: #b8860b; }
         .status-pending { background: #fff3cd; color: #856404; }
         .status-submitted { background: #cce5ff; color: #004085; }
         .status-draft { background: #e2e3e5; color: #383d41; }
@@ -679,6 +680,8 @@
             </form>
         </div>
     </div>
+
+    <!-- Receipt preview handled by existing viewReceipt() function -->
 
     <script>
         /* 
@@ -1944,7 +1947,8 @@
                     vendor: sanitizeForDisplay(expense.vendor || ''),
                     description: sanitizeForDisplay(expense.description || ''),
                     approval_comment: sanitizeForDisplay(expense.approval_comment || ''),
-                    rejection_reason: sanitizeForDisplay(expense.rejection_reason || '')
+                    rejection_reason: sanitizeForDisplay(expense.rejection_reason || ''),
+                    return_reason: sanitizeForDisplay(expense.return_reason || '')
                 }));
                 
                 updateStats(sanitizedExpenses);
@@ -2050,6 +2054,7 @@
             const map = {
                 'approved': { cls: 'status-approved', text: '✅ Approved' },
                 'rejected': { cls: 'status-rejected', text: '❌ Rejected' },
+                'returned': { cls: 'status-returned', text: '↩️ Needs Correction' },
                 'pending': { cls: 'status-pending', text: '⏳ Pending' },
                 'submitted': { cls: 'status-submitted', text: '📤 Submitted' },
                 'draft': { cls: 'status-draft', text: '📝 Draft' },
@@ -2061,9 +2066,11 @@
         
         function renderExpenseItem(expense) {
             const statusClass = expense.status === 'approved' ? 'status-approved' : 
-                              expense.status === 'rejected' ? 'status-rejected' : 'status-pending';
+                              expense.status === 'rejected' ? 'status-rejected' :
+                              expense.status === 'returned' ? 'status-returned' : 'status-pending';
             const statusText = expense.status === 'approved' ? '✅ Approved' :
-                             expense.status === 'rejected' ? '❌ Rejected' : '⏳ Pending';
+                             expense.status === 'rejected' ? '❌ Rejected' :
+                             expense.status === 'returned' ? '↩️ Needs Correction' : '⏳ Pending';
             
             return `
                 <div class="expense-item" style="margin: 0; border-radius: 0; border-top: 1px solid #eee;">
@@ -2083,6 +2090,7 @@
                             ${expense.description ? `<div style="font-size: 12px; color: #888; margin-top: 4px;">📋 ${expense.description}</div>` : ''}
                             ${expense.approval_comment ? `<div style="font-size: 12px; color: #155724; margin-top: 4px; padding: 6px 10px; background: #d4edda; border-radius: 6px;">✅ ${expense.approval_comment}</div>` : ''}
                             ${expense.rejection_reason ? `<div style="font-size: 12px; color: #721c24; margin-top: 4px; padding: 6px 10px; background: #f8d7da; border-radius: 6px;">❌ <strong>Rejected:</strong> ${expense.rejection_reason}</div>` : ''}
+                            ${expense.return_reason ? `<div style="font-size: 12px; color: #b8860b; margin-top: 4px; padding: 6px 10px; background: #ffeaa7; border-radius: 6px;">↩️ <strong>Needs Correction:</strong> ${expense.return_reason} <br><small>Please make the requested changes and resubmit.</small></div>` : ''}
                             ${expense.status === 'draft' ? `<button onclick="editExpense(${expense.id})" style="margin-top:6px; background:#ffc107; color:#212529; border:none; padding:5px 12px; border-radius:6px; font-size:12px; cursor:pointer; font-weight:600;">✏️ Edit</button>` : ''}
                         </div>
                         ${expense.receipt_photo ? `

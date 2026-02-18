@@ -75,6 +75,7 @@
         .status-badge { padding: 6px 12px; border-radius: 15px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
         .status-approved { background: #d4edda; color: #155724; }
         .status-rejected { background: #f8d7da; color: #721c24; }
+        .status-returned { background: #ffeaa7; color: #b8860b; }
         .status-pending { background: #fff3cd; color: #856404; }
         .form-group { margin-bottom: 15px; }
         .form-control { width: 100%; padding: 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 14px; transition: border-color 0.3s; }
@@ -669,15 +670,18 @@
                 
                 container.innerHTML = expenses.map(expense => {
                     const statusClass = expense.status === 'approved' ? 'status-approved' : 
-                                      expense.status === 'rejected' ? 'status-rejected' : 'status-pending';
+                                      expense.status === 'rejected' ? 'status-rejected' : 
+                                      expense.status === 'returned' ? 'status-returned' : 'status-pending';
                     const statusText = expense.status === 'approved' ? '✅ Approved' :
-                                     expense.status === 'rejected' ? '❌ Rejected' : '⏳ Pending';
+                                     expense.status === 'rejected' ? '❌ Rejected' :
+                                     expense.status === 'returned' ? '↩️ Returned for Correction' : '⏳ Pending';
                     
                     let actionButtons = '';
                     if (expense.status === 'pending') {
                         if (currentUserRole === 'supervisor') {
                             actionButtons = `
                                 <button class="btn btn-success" onclick="approveExpense(${expense.id})">✅ Approve</button>
+                                <button class="btn btn-warning" onclick="returnExpense(${expense.id})" style="background: #fd7e14; color: white;">↩️ Return for Correction</button>
                                 <button class="btn btn-danger" onclick="rejectExpense(${expense.id})">❌ Reject</button>
                             `;
                         } else if (currentUserRole === 'admin') {
@@ -1360,6 +1364,47 @@
             } catch (error) {
                 console.error('❌ Error rejecting expense:', error);
                 showMessage('danger', '❌ Failed to reject expense');
+            }
+        }
+
+        // CONCUR ENHANCEMENT: Return expense for correction
+        async function returnExpense(expenseId) {
+            const reason = prompt(`↩️ Return for Correction (Required)\n\nThis is a positive action that asks the employee to make corrections and resubmit.\n\nPlease provide specific guidance on what needs to be corrected:\n\nCommon corrections needed:\n• Add missing receipt photo\n• Correct expense date or amount\n• Add business purpose description\n• Fix expense category\n\nEmployee will see this message and can resubmit:`);
+            
+            if (!reason || !reason.trim()) {
+                showMessage('danger', '⚠️ Correction guidance is required to help the employee fix the issue.');
+                return;
+            }
+            
+            if (reason.trim().length < 10) {
+                showMessage('danger', '⚠️ Please provide detailed guidance (at least 10 characters) so the employee knows what to fix.');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/expenses/${expenseId}/return`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionId}`
+                    },
+                    body: JSON.stringify({ 
+                        reason: reason.trim(),
+                        approver: currentUserRole === 'supervisor' ? currentSupervisorName : 'System Administrator'
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage('success', '↩️ Expense returned for correction. Employee will be notified with guidance on what to fix.');
+                    loadExpensesWithSearch();
+                } else {
+                    showMessage('danger', result.error || 'Failed to return expense for correction');
+                }
+            } catch (error) {
+                console.error('❌ Error returning expense:', error);
+                showMessage('danger', '❌ Failed to return expense for correction');
             }
         }
 

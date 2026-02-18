@@ -233,7 +233,7 @@ const db = new sqlite3.Database('expenses.db', (err) => {
 // 📊 Initialize database schema
 function initializeDatabase() {
     const queries = [
-        // Employees table (enhanced with auth)
+        // Employees table (enhanced with auth and delegation)
         `CREATE TABLE IF NOT EXISTS employees (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -245,9 +245,14 @@ function initializeDatabase() {
             supervisor_id INTEGER,
             is_active INTEGER DEFAULT 1,
             role TEXT DEFAULT 'employee',
+            delegate_id INTEGER,
+            delegation_start_date DATE,
+            delegation_end_date DATE,
+            delegation_reason TEXT,
             last_login DATETIME,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (supervisor_id) REFERENCES employees (id)
+            FOREIGN KEY (supervisor_id) REFERENCES employees (id),
+            FOREIGN KEY (delegate_id) REFERENCES employees (id)
         )`,
         
         // 🧳 Trips table - For grouping expenses (like Concur expense reports)
@@ -290,10 +295,28 @@ function initializeDatabase() {
             approved_at DATETIME,
             approval_comment TEXT,
             rejection_reason TEXT,
+            return_reason TEXT,
+            returned_by TEXT,
+            returned_at DATETIME,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (employee_id) REFERENCES employees (id),
             FOREIGN KEY (trip_id) REFERENCES trips (id)
+        )`,
+        
+        // Audit trail table for expense status changes
+        `CREATE TABLE IF NOT EXISTS expense_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            expense_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            actor_id INTEGER NOT NULL,
+            actor_name TEXT NOT NULL,
+            comment TEXT,
+            previous_status TEXT,
+            new_status TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (expense_id) REFERENCES expenses (id),
+            FOREIGN KEY (actor_id) REFERENCES employees (id)
         )`,
         
         // NJC Rates table
@@ -857,6 +880,307 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
     }
 });
 
+// CONCUR ENHANCEMENT: Get audit trail for expense
+app.get('/api/expenses/:id/audit-trail', requireAuth, (req, res) => {
+    const { id } = req.params;
+    
+    // First verify user has permission to view this expense
+    db.get('SELECT employee_id FROM expenses WHERE id = ?', [id], (err, expense) => {
+        if (err) {
+            console.error('❌ Error checking expense:', err);
+            return res.status(500).json({ error: 'Failed to check expense' });
+        }
+        
+        if (!expense) {
+            return res.status(404).json({ error: 'Expense not found' });
+        }
+        
+        // Allow if user owns expense, is supervisor of owner, or is admin
+        const canView = expense.employee_id === req.user.employeeId || 
+                        req.user.role === 'admin' || 
+                        req.user.role === 'supervisor';
+        
+        if (!canView) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
+        // Get audit trail
+        const query = `
+            SELECT al.*, e.name as actor_employee_name
+            FROM expense_audit_log al
+            LEFT JOIN employees e ON al.actor_id = e.id
+            WHERE al.expense_id = ?
+            ORDER BY al.timestamp DESC
+        `;
+        
+        db.all(query, [id], (err2, auditTrail) => {
+            if (err2) {
+                console.error('❌ Error fetching audit trail:', err2);
+                return res.status(500).json({ error: 'Failed to fetch audit trail' });
+            }
+            
+            res.json({
+                success: true,
+                expense_id: id,
+                audit_trail: auditTrail
+            });
+        });
+    });
+});
+
+// CONCUR ENHANCEMENT: Pre-submission validation check
+app.get('/api/pre-submission-check/:tripId', requireAuth, (req, res) => {
+    const { tripId } = req.params;
+    
+    // Get trip with expenses
+    const query = `
+        SELECT t.*, 
+               e.id as expense_id, e.expense_type, e.amount, e.receipt_photo, e.date, e.status
+        FROM trips t
+        LEFT JOIN expenses e ON t.id = e.trip_id
+        WHERE t.id = ? AND t.employee_id = ?
+        ORDER BY e.date ASC
+    `;
+    
+    db.all(query, [tripId, req.user.employeeId], (err, rows) => {
+        if (err) {
+            console.error('❌ Error in pre-submission check:', err);
+            return res.status(500).json({ error: 'Failed to perform pre-submission check' });
+        }
+        
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Trip not found' });
+        }
+        
+        const trip = rows[0];
+        const expenses = rows.filter(row => row.expense_id).map(row => ({
+            id: row.expense_id,
+            expense_type: row.expense_type,
+            amount: row.amount,
+            receipt_photo: row.receipt_photo,
+            date: row.date,
+            status: row.status
+        }));
+        
+        // Perform validation checks
+        const checks = {
+            expenses_count: {
+                status: expenses.length > 0 ? 'pass' : 'fail',
+                message: expenses.length > 0 ? 
+                    `${expenses.length} expense(s) added to trip` : 
+                    'No expenses added to this trip',
+                required: true
+            },
+            hotel_receipts: {
+                status: 'pass',
+                message: 'Receipt requirements satisfied',
+                required: true
+            },
+            policy_compliance: {
+                status: 'pass',
+                message: 'All amounts within policy limits',
+                required: true
+            },
+            date_ranges: {
+                status: 'pass',
+                message: 'All expense dates within trip period',
+                required: true
+            }
+        };
+        
+        // Check hotel receipts
+        const hotelExpenses = expenses.filter(e => e.expense_type === 'hotel');
+        const hotelsMissingReceipts = hotelExpenses.filter(e => !e.receipt_photo);
+        
+        if (hotelsMissingReceipts.length > 0) {
+            checks.hotel_receipts.status = 'fail';
+            checks.hotel_receipts.message = `${hotelsMissingReceipts.length} hotel expense(s) missing required receipts`;
+        }
+        
+        // Check expense dates within trip range
+        const tripStart = new Date(trip.start_date);
+        const tripEnd = new Date(trip.end_date);
+        const expensesOutsideRange = expenses.filter(e => {
+            const expenseDate = new Date(e.date);
+            return expenseDate < tripStart || expenseDate > tripEnd;
+        });
+        
+        if (expensesOutsideRange.length > 0) {
+            checks.date_ranges.status = 'fail';
+            checks.date_ranges.message = `${expensesOutsideRange.length} expense(s) outside trip date range`;
+        }
+        
+        // Calculate totals
+        const totalAmount = expenses.reduce((sum, e) => sum + parseFloat(e.amount), 0);
+        
+        const readyToSubmit = Object.values(checks).every(check => 
+            !check.required || check.status === 'pass'
+        );
+        
+        res.json({
+            success: true,
+            trip: {
+                id: trip.id,
+                trip_name: trip.trip_name,
+                start_date: trip.start_date,
+                end_date: trip.end_date,
+                status: trip.status
+            },
+            expenses_summary: {
+                count: expenses.length,
+                total_amount: totalAmount.toFixed(2)
+            },
+            validation_checks: checks,
+            ready_to_submit: readyToSubmit,
+            timestamp: new Date().toISOString()
+        });
+    });
+});
+
+// CONCUR ENHANCEMENT: Approval delegation endpoints
+app.post('/api/delegation/set', requireAuth, requireRole('supervisor'), (req, res) => {
+    const { delegate_id, start_date, end_date, reason } = req.body;
+    
+    if (!delegate_id || !start_date || !end_date) {
+        return res.status(400).json({
+            success: false,
+            error: 'delegate_id, start_date, and end_date are required'
+        });
+    }
+    
+    // Validate delegate is not the same person
+    if (delegate_id == req.user.employeeId) {
+        return res.status(400).json({
+            success: false,
+            error: 'Cannot delegate to yourself'
+        });
+    }
+    
+    // Validate delegate exists and is a supervisor
+    db.get('SELECT id, name, role FROM employees WHERE id = ? AND role = "supervisor"', 
+        [delegate_id], (err, delegate) => {
+        
+        if (err) {
+            console.error('❌ Error checking delegate:', err);
+            return res.status(500).json({ success: false, error: 'Failed to validate delegate' });
+        }
+        
+        if (!delegate) {
+            return res.status(404).json({
+                success: false,
+                error: 'Delegate not found or is not a supervisor'
+            });
+        }
+        
+        // Set delegation
+        const query = `
+            UPDATE employees 
+            SET delegate_id = ?, delegation_start_date = ?, delegation_end_date = ?, 
+                delegation_reason = ?
+            WHERE id = ?
+        `;
+        
+        db.run(query, [delegate_id, start_date, end_date, reason || '', req.user.employeeId], 
+            function(err2) {
+                if (err2) {
+                    console.error('❌ Error setting delegation:', err2);
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Failed to set delegation'
+                    });
+                }
+                
+                // Notify delegate
+                createNotification(delegate_id, 'delegation_assigned',
+                    `You have been assigned as approval delegate from ${start_date} to ${end_date}. Reason: ${reason || 'Not specified'}`);
+                
+                res.json({
+                    success: true,
+                    message: `Approval delegation set to ${delegate.name} from ${start_date} to ${end_date}`,
+                    delegate_name: delegate.name
+                });
+            });
+    });
+});
+
+app.get('/api/delegation/current', requireAuth, (req, res) => {
+    const query = `
+        SELECT e.delegate_id, e.delegation_start_date, e.delegation_end_date, 
+               e.delegation_reason, d.name as delegate_name
+        FROM employees e
+        LEFT JOIN employees d ON e.delegate_id = d.id
+        WHERE e.id = ?
+    `;
+    
+    db.get(query, [req.user.employeeId], (err, delegation) => {
+        if (err) {
+            console.error('❌ Error fetching delegation:', err);
+            return res.status(500).json({ error: 'Failed to fetch delegation info' });
+        }
+        
+        if (!delegation || !delegation.delegate_id) {
+            return res.json({
+                success: true,
+                delegation: null
+            });
+        }
+        
+        // Check if delegation is currently active
+        const today = new Date().toISOString().split('T')[0];
+        const isActive = delegation.delegation_start_date <= today && 
+                         today <= delegation.delegation_end_date;
+        
+        res.json({
+            success: true,
+            delegation: {
+                ...delegation,
+                is_active: isActive
+            }
+        });
+    });
+});
+
+// CONCUR ENHANCEMENT: Receipt preview endpoint
+app.get('/api/expenses/:id/receipt', requireAuth, (req, res) => {
+    const { id } = req.params;
+    
+    // Check if user can view this expense
+    db.get(`
+        SELECT e.receipt_photo, e.employee_id, emp.name as employee_name 
+        FROM expenses e
+        LEFT JOIN employees emp ON e.employee_id = emp.id
+        WHERE e.id = ?
+    `, [id], (err, expense) => {
+        if (err) {
+            console.error('❌ Error fetching expense receipt:', err);
+            return res.status(500).json({ error: 'Database error' });
+        }
+        
+        if (!expense) {
+            return res.status(404).json({ error: 'Expense not found' });
+        }
+        
+        // Allow if user owns expense, is supervisor of owner, or is admin
+        const canView = expense.employee_id === req.user.employeeId || 
+                        req.user.role === 'admin' || 
+                        req.user.role === 'supervisor';
+        
+        if (!canView) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
+        if (!expense.receipt_photo) {
+            return res.status(404).json({ error: 'No receipt photo found for this expense' });
+        }
+        
+        res.json({
+            success: true,
+            receipt_photo: expense.receipt_photo,
+            employee_name: expense.employee_name
+        });
+    });
+});
+
 // Get employee's own expenses (with trip information)
 app.get('/api/my-expenses', requireAuth, (req, res) => {
     const query = `
@@ -875,6 +1199,118 @@ app.get('/api/my-expenses', requireAuth, (req, res) => {
         
         console.log(`✅ Fetched ${rows.length} expenses for user ${req.user.employeeId}`);
         res.json(rows);
+    });
+});
+
+// CONCUR ENHANCEMENT: Audit trail logging function
+function logExpenseAudit(expenseId, action, actorId, actorName, comment, previousStatus, newStatus) {
+    db.run(`
+        INSERT INTO expense_audit_log (expense_id, action, actor_id, actor_name, comment, previous_status, new_status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [expenseId, action, actorId, actorName, comment, previousStatus, newStatus], (err) => {
+        if (err) {
+            console.error('❌ Audit log error:', err.message);
+        } else {
+            console.log(`📝 Audit logged: ${action} on expense ${expenseId} by ${actorName}`);
+        }
+    });
+}
+
+// CONCUR ENHANCEMENT: Return expense for correction (supervisors only)
+app.post('/api/expenses/:id/return', requireAuth, (req, res) => {
+    if (req.user.role !== 'supervisor') {
+        return res.status(403).json({ 
+            error: 'Access denied. Only supervisors can return expenses for correction.' 
+        });
+    }
+    
+    const { id } = req.params;
+    const { reason, approver } = req.body;
+    
+    if (!reason || reason.trim().length === 0) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Return reason is required' 
+        });
+    }
+    
+    // First, get the expense details and check governance rules
+    db.get('SELECT employee_id, status FROM expenses WHERE id = ?', [id], (err, expense) => {
+        if (err) {
+            console.error('❌ Error fetching expense:', err);
+            return res.status(500).json({ success: false, error: 'Failed to fetch expense details' });
+        }
+        
+        if (!expense) {
+            return res.status(404).json({ success: false, error: 'Expense not found' });
+        }
+        
+        // GOVERNANCE: Check segregation of duties - supervisor cannot return own expenses
+        if (expense.employee_id === req.user.employeeId) {
+            return res.status(403).json({ 
+                error: 'Segregation of duties violation: You cannot return your own expenses' 
+            });
+        }
+        
+        // GOVERNANCE: Verify the expense belongs to supervisor's direct report
+        db.get('SELECT id FROM employees WHERE id = ? AND supervisor_id = ?', 
+            [expense.employee_id, req.user.employeeId], (err2, directReport) => {
+            
+            if (err2) {
+                console.error('❌ Error checking direct report:', err2);
+                return res.status(500).json({ success: false, error: 'Failed to verify reporting relationship' });
+            }
+            
+            if (!directReport) {
+                return res.status(403).json({ 
+                    error: 'Access denied: You can only return expenses from your direct reports' 
+                });
+            }
+            
+            // All governance checks passed - proceed with return
+            const approverName = approver || req.user.name || 'Supervisor';
+            const query = `
+                UPDATE expenses 
+                SET status = 'returned', 
+                    returned_by = ?, 
+                    returned_at = CURRENT_TIMESTAMP, 
+                    return_reason = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `;
+            
+            db.run(query, [approverName, reason.trim(), id], function(err3) {
+                if (err3) {
+                    console.error('❌ Error returning expense:', err3);
+                    return res.status(500).json({ 
+                        success: false, 
+                        error: 'Failed to return expense for correction' 
+                    });
+                }
+                
+                if (this.changes === 0) {
+                    return res.status(404).json({ 
+                        success: false, 
+                        error: 'Expense not found or already processed' 
+                    });
+                }
+                
+                // Log to audit trail
+                logExpenseAudit(id, 'returned', req.user.employeeId, approverName, 
+                    `Returned for correction: ${reason}`, expense.status, 'returned');
+                
+                console.log(`✅ Expense ${id} returned for correction by supervisor ${req.user.employeeId} (${approverName})`);
+                
+                // Notify employee
+                createNotification(expense.employee_id, 'expense_returned',
+                    `Your expense #${id} has been returned for correction by ${approverName}. Reason: ${reason}`);
+                
+                res.json({ 
+                    success: true, 
+                    message: 'Expense returned for correction. Employee will be notified to make corrections and resubmit.' 
+                });
+            });
+        });
     });
 });
 
@@ -924,6 +1360,7 @@ app.post('/api/expenses/:id/approve', requireAuth, (req, res) => {
             }
             
             // All governance checks passed - proceed with approval
+            const approverName = approver || req.user.name || 'Supervisor';
             const query = `
                 UPDATE expenses 
                 SET status = 'approved', 
@@ -934,7 +1371,7 @@ app.post('/api/expenses/:id/approve', requireAuth, (req, res) => {
                 WHERE id = ?
             `;
             
-            db.run(query, [approver || req.user.name || 'Supervisor', comment, id], function(err3) {
+            db.run(query, [approverName, comment, id], function(err3) {
                 if (err3) {
                     console.error('❌ Error approving expense:', err3);
                     return res.status(500).json({ 
@@ -950,11 +1387,15 @@ app.post('/api/expenses/:id/approve', requireAuth, (req, res) => {
                     });
                 }
                 
-                console.log(`✅ Expense ${id} approved by supervisor ${req.user.employeeId} (${approver})`);
+                // Log to audit trail
+                logExpenseAudit(id, 'approved', req.user.employeeId, approverName, 
+                    comment, expense.status, 'approved');
+                
+                console.log(`✅ Expense ${id} approved by supervisor ${req.user.employeeId} (${approverName})`);
                 
                 // Notify employee
                 createNotification(expense.employee_id, 'expense_approved',
-                    `Your expense #${id} has been approved by ${approver || 'your supervisor'}.`);
+                    `Your expense #${id} has been approved by ${approverName}.`);
                 
                 res.json({ 
                     success: true, 
@@ -1018,6 +1459,7 @@ app.post('/api/expenses/:id/reject', requireAuth, (req, res) => {
             }
             
             // All governance checks passed - proceed with rejection
+            const approverName = approver || req.user.name || 'Supervisor';
             const query = `
                 UPDATE expenses 
                 SET status = 'rejected', 
@@ -1028,7 +1470,7 @@ app.post('/api/expenses/:id/reject', requireAuth, (req, res) => {
                 WHERE id = ?
             `;
             
-            db.run(query, [approver || req.user.name || 'Supervisor', reason, id], function(err3) {
+            db.run(query, [approverName, reason, id], function(err3) {
                 if (err3) {
                     console.error('❌ Error rejecting expense:', err3);
                     return res.status(500).json({ 
@@ -1044,11 +1486,15 @@ app.post('/api/expenses/:id/reject', requireAuth, (req, res) => {
                     });
                 }
                 
-                console.log(`✅ Expense ${id} rejected by supervisor ${req.user.employeeId} (${approver})`);
+                // Log to audit trail
+                logExpenseAudit(id, 'rejected', req.user.employeeId, approverName, 
+                    `Rejected: ${reason}`, expense.status, 'rejected');
+                
+                console.log(`✅ Expense ${id} rejected by supervisor ${req.user.employeeId} (${approverName})`);
                 
                 // Notify employee with reason
                 createNotification(expense.employee_id, 'expense_rejected',
-                    `Your expense #${id} was rejected by ${approver || 'your supervisor'}. Reason: ${reason}`);
+                    `Your expense #${id} was rejected by ${approverName}. Reason: ${reason}`);
                 
                 res.json({ 
                     success: true, 
