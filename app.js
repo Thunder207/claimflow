@@ -68,7 +68,7 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
     // Block direct access to HTML files that could bypass authentication
     if (req.path.endsWith('.html') && !req.path.includes('/uploads/')) {
-        console.log(`🚫 Blocked direct HTML access: ${req.path} → Redirecting to login`);
+
         return res.redirect('/login');
     }
     next();
@@ -110,7 +110,7 @@ function getSession(sessionId) {
         const timeSinceLastActive = now - session.lastActive;
         
         if (timeSinceLastActive > SESSION_TIMEOUT) {
-            console.log(`⏰ Session expired for user ID ${session.employeeId} (${timeSinceLastActive/1000/60} minutes inactive)`);
+
             sessions.delete(sessionId);
             return null;
         }
@@ -429,7 +429,7 @@ function insertDefaultData() {
         db.run(`UPDATE employees SET supervisor_id = (SELECT id FROM employees WHERE email = 'sarah.johnson@company.com') 
                 WHERE employee_number = 'EMP004' AND (supervisor_id IS NULL OR supervisor_id = 0)`, (err) => {
             if (err) console.error('❌ Error fixing Lisa supervisor:', err.message);
-            else console.log('✅ Lisa Brown supervisor assignment verified');
+
         });
     }
     
@@ -497,7 +497,7 @@ function insertDefaultData() {
     setTimeout(() => {
         db.get('SELECT COUNT(*) as count FROM employees', (err, row) => {
             if (row && row.count <= 6) {
-                console.log('🌱 Seeding additional employees and demo data...');
+
                 const extraEmployees = [
                     ['Rachel Chen', 'EMP007', 'rachel.chen@company.com', hashPassword('rachel123'), 'Team Lead', 'Engineering', null, 'supervisor'],
                     ['Marcus Thompson', 'EMP008', 'marcus.thompson@company.com', hashPassword('marcus123'), 'Team Lead', 'Marketing', null, 'supervisor'],
@@ -541,7 +541,7 @@ function insertDefaultData() {
                                 const admin = byEmail['john.smith@company.com'];
                                 db.run('UPDATE employees SET supervisor_id = NULL WHERE supervisor_id = ? AND email != ?', [admin, 'sarah.johnson@company.com']);
                                 db.run('UPDATE employees SET supervisor_id = NULL WHERE email = ?', ['sarah.johnson@company.com']);
-                                console.log('✅ 13 additional employees seeded with proper supervisor chain');
+
                             });
                         }
                     });
@@ -676,9 +676,7 @@ app.post('/api/auth/login', async (req, res) => {
         
         // Create session
         const sessionId = createSession(employee.id, employee.role);
-        
-        console.log(`✅ User logged in: ${employee.name} (${employee.role})`);
-        
+
         // Sanitize user data in response
         res.json({
             success: true,
@@ -804,8 +802,7 @@ app.get('/api/expenses', requireAuth, (req, res) => {
             console.error('❌ Error fetching expenses:', err);
             return res.status(500).json({ error: 'Failed to fetch expenses' });
         }
-        
-        console.log(`✅ Fetched ${rows.length} expenses for ${req.user.role}`);
+
         res.json(rows);
     });
 });
@@ -919,7 +916,7 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
         });
         
         if (hasDuplicate) {
-            console.log(`🚨 BLOCKED DUPLICATE: ${expense_type} for ${date} by employee ${req.user.employeeId}`);
+
             return res.status(400).json({
                 success: false,
                 error: `You've already claimed ${expense_type} for ${date}. Government policy allows only one ${expense_type} per diem per day. Please check your expense history.`
@@ -1010,7 +1007,7 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
             const msg = isPerDiem 
                 ? `✅ ${meal_name || expense_type} per diem submitted! Locked to prevent duplicates.`
                 : 'Expense submitted successfully!';
-            console.log(`✅ Expense submitted by ${employee.name}: ${expense_type} $${amount} (ID: ${expenseId})`);
+
             res.json({ success: true, id: expenseId, message: msg });
         });
     });
@@ -1339,8 +1336,7 @@ app.get('/api/my-expenses', requireAuth, (req, res) => {
             console.error('❌ Error fetching user expenses:', err);
             return res.status(500).json({ error: 'Failed to fetch expenses' });
         }
-        
-        console.log(`✅ Fetched ${rows.length} expenses for user ${req.user.employeeId}`);
+
         res.json(rows);
     });
 });
@@ -1354,7 +1350,7 @@ function logExpenseAudit(expenseId, action, actorId, actorName, comment, previou
         if (err) {
             console.error('❌ Audit log error:', err.message);
         } else {
-            console.log(`📝 Audit logged: ${action} on expense ${expenseId} by ${actorName}`);
+
         }
     });
 }
@@ -1369,7 +1365,7 @@ function logLoginAttempt(email, employeeId, success, failureReason, ipAddress, u
             console.error('❌ Login audit log error:', err.message);
         } else {
             const status = success ? 'SUCCESS' : 'FAILED';
-            console.log(`📝 Login ${status}: ${email} from ${ipAddress}`);
+
         }
     });
 }
@@ -1418,8 +1414,7 @@ app.get('/api/audit-log', requireAuth, requireRole('admin'), (req, res) => {
                 console.error('❌ Error fetching audit count:', err2);
                 return res.status(500).json({ error: 'Failed to fetch audit count' });
             }
-            
-            console.log(`✅ Admin fetched ${rows.length} audit log entries (${countRow.total} total)`);
+
             res.json({
                 success: true,
                 audit_log: rows,
@@ -1487,8 +1482,7 @@ app.get('/api/login-audit-log', requireAuth, requireRole('admin'), (req, res) =>
                 console.error('❌ Error fetching login audit count:', err2);
                 return res.status(500).json({ error: 'Failed to fetch login audit count' });
             }
-            
-            console.log(`✅ Admin fetched ${rows.length} login audit entries (${countRow.total} total)`);
+
             res.json({
                 success: true,
                 login_audit_log: rows,
@@ -1585,9 +1579,7 @@ app.post('/api/expenses/:id/return', requireAuth, (req, res) => {
                 // Log to audit trail
                 logExpenseAudit(id, 'returned', req.user.employeeId, approverName, 
                     `Returned for correction: ${reason}`, expense.status, 'returned');
-                
-                console.log(`✅ Expense ${id} returned for correction by supervisor ${req.user.employeeId} (${approverName})`);
-                
+
                 // Notify employee
                 createNotification(expense.employee_id, 'expense_returned',
                     `Your expense #${id} has been returned for correction by ${approverName}. Reason: ${reason}`);
@@ -1677,9 +1669,7 @@ app.post('/api/expenses/:id/approve', requireAuth, (req, res) => {
                 // Log to audit trail
                 logExpenseAudit(id, 'approved', req.user.employeeId, approverName, 
                     comment, expense.status, 'approved');
-                
-                console.log(`✅ Expense ${id} approved by supervisor ${req.user.employeeId} (${approverName})`);
-                
+
                 // Notify employee
                 createNotification(expense.employee_id, 'expense_approved',
                     `Your expense #${id} has been approved by ${approverName}.`);
@@ -1776,9 +1766,7 @@ app.post('/api/expenses/:id/reject', requireAuth, (req, res) => {
                 // Log to audit trail
                 logExpenseAudit(id, 'rejected', req.user.employeeId, approverName, 
                     `Rejected: ${reason}`, expense.status, 'rejected');
-                
-                console.log(`✅ Expense ${id} rejected by supervisor ${req.user.employeeId} (${approverName})`);
-                
+
                 // Notify employee with reason
                 createNotification(expense.employee_id, 'expense_rejected',
                     `Your expense #${id} was rejected by ${approverName}. Reason: ${reason}`);
@@ -1844,8 +1832,7 @@ app.delete('/api/expenses/:id', requireAuth, requireRole('admin'), (req, res) =>
                     if (err) console.log('⚠️ Could not delete receipt file:', err.message);
                 });
             }
-            
-            console.log(`✅ Expense ${id} deleted by admin ${req.user.employeeId} (status was: ${expense.status})`);
+
             res.json({ 
                 success: true, 
                 message: expense.status === 'approved' ? 
