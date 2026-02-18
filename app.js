@@ -850,15 +850,21 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
         }
         
         // Validate date format and range
-        const expenseDate = new Date(date);
-        const today = new Date();
-        const oneYearAgo = new Date();
-        oneYearAgo.setFullYear(today.getFullYear() - 1);
+        // Use date-only comparison to avoid timezone issues
+        const dateParts = date.split('-');
+        const expenseDate = new Date(Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2]));
+        const now = new Date();
+        const todayUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+        const oneYearAgo = new Date(todayUTC);
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+        // Allow up to 30 days in the future (for active trip pre-claims)
+        const maxFutureDate = new Date(todayUTC);
+        maxFutureDate.setDate(maxFutureDate.getDate() + 30);
         
-        if (isNaN(expenseDate.getTime()) || expenseDate > today || expenseDate < oneYearAgo) {
+        if (isNaN(expenseDate.getTime()) || expenseDate > maxFutureDate || expenseDate < oneYearAgo) {
             return res.status(400).json({
                 success: false,
-                error: 'Please enter a valid date within the last year'
+                error: 'Please enter a valid date (within the last year and up to 30 days ahead)'
             });
         }
         
