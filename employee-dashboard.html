@@ -8,6 +8,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Employee Dashboard - ClaimFlow</title>
+    <script src="/translations.js"></script>
     
     <!-- 
     ╔══════════════════════════════════════════════════════════════╗
@@ -32,6 +33,43 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
+            position: relative;
+        }
+        
+        /* Language toggle styles */
+        .language-toggle {
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            background: rgba(255,255,255,0.2);
+            border-radius: 20px;
+            padding: 2px;
+            font-size: 12px;
+            font-weight: 600;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+        }
+        
+        .language-toggle button {
+            padding: 8px 12px;
+            border: none;
+            background: transparent;
+            color: white;
+            cursor: pointer;
+            border-radius: 16px;
+            transition: all 0.2s ease;
+            font-weight: 600;
+            font-size: 12px;
+        }
+        
+        .language-toggle button.active {
+            background: rgba(255,255,255,0.3);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .language-toggle button:hover {
+            background: rgba(255,255,255,0.2);
         }
         
         .container {
@@ -360,23 +398,28 @@
     </style>
 </head>
 <body>
+    <div class="language-toggle">
+        <button id="lang-en" onclick="setLanguage('en')" data-i18n="english">EN</button>
+        <button id="lang-fr" onclick="setLanguage('fr')" data-i18n="french">FR</button>
+    </div>
+    
     <div class="container">
         <div class="header">
             <div class="header-info">
-                <h1 id="welcome-text">👤 Employee Dashboard</h1>
-                <p id="user-info">Loading...</p>
+                <h1 id="welcome-text" data-i18n="dashboard_title">👤 Employee Dashboard</h1>
+                <p id="user-info" data-i18n="loading">Loading...</p>
             </div>
             <div class="header-actions">
                 <div style="position: relative; display: inline-block; margin-right: 10px;">
                     <button class="btn btn-light" onclick="toggleNotifications()" id="notification-bell" title="Notifications">🔔 <span id="notif-badge" style="background: #dc3545; color: white; border-radius: 50%; padding: 2px 7px; font-size: 11px; display: none;">0</span></button>
                     <div id="notif-dropdown" style="display:none; position:absolute; right:0; top:45px; width:350px; max-height:400px; overflow-y:auto; background:white; border-radius:12px; box-shadow:0 8px 30px rgba(0,0,0,0.2); z-index:1000; padding:10px;">
                         <div style="font-weight:bold; color:#2c3e50; padding:10px; border-bottom:1px solid #eee;">🔔 Notifications</div>
-                        <div id="notif-list" style="padding:5px;"><p style="color:#999; text-align:center; padding:20px;">No notifications</p></div>
+                        <div id="notif-list" style="padding:5px;"><p style="color:#999; text-align:center; padding:20px;" data-i18n="no_results">No notifications</p></div>
                     </div>
                 </div>
-                <button id="supervisor-switch-btn" class="btn btn-supervisor supervisor-switch-btn" onclick="switchToSupervisorView()" title="Switch to Supervisor View">🔄 Supervisor View</button>
-                <button class="btn btn-light" onclick="exportCSV()" title="Export CSV">📥 CSV</button>
-                <button class="btn btn-light" onclick="logout()">🚪 Logout</button>
+                <button id="supervisor-switch-btn" class="btn btn-supervisor supervisor-switch-btn" onclick="switchToSupervisorView()" title="Switch to Supervisor View" data-i18n="supervisor_view">🔄 Supervisor View</button>
+                <button class="btn btn-light" onclick="exportCSV()" title="Export CSV" data-i18n="export_csv">📥 CSV</button>
+                <button class="btn btn-light" onclick="logout()" data-i18n="logout">🚪 Logout</button>
             </div>
         </div>
         
@@ -400,9 +443,9 @@
         </div>
         
         <div class="nav-tabs">
-            <button class="nav-tab active" onclick="showTab('submit')" title="Add new expenses to trips">📝 Submit Expense</button>
-            <button class="nav-tab" onclick="showTab('trips')" title="View your business trips">🧳 My Trips</button>
-            <button class="nav-tab" onclick="showTab('history')" title="Review submitted expenses">📋 Expense History</button>
+            <button class="nav-tab active" onclick="showTab('submit')" title="Add new expenses to trips" data-i18n="submit_expense">📝 Submit Expense</button>
+            <button class="nav-tab" onclick="showTab('trips')" title="View your business trips" data-i18n="my_trips">🧳 My Trips</button>
+            <button class="nav-tab" onclick="showTab('history')" title="Review submitted expenses" data-i18n="expense_history">📋 Expense History</button>
         </div>
         
         <div id="submit-tab" class="tab-content active">
@@ -450,7 +493,7 @@
                     </div>
                     
                     <div class="form-group">
-                        <label for="expense-date">Date *</label>
+                        <label for="expense-date" data-i18n="date">Date *</label>
                         <input type="date" id="expense-date" name="date" required>
                     </div>
                 </div>
@@ -534,20 +577,20 @@
                     </div>
                     
                     <div class="form-group">
-                        <label for="amount" id="amount-label">Amount Paid *</label>
-                        <input type="number" id="amount" name="amount" step="0.01" placeholder="25.50" required>
+                        <label for="amount" id="amount-label" data-i18n="amount">Amount Paid *</label>
+                        <input type="number" id="amount" name="amount" step="0.01" data-i18n="amount_placeholder" placeholder="25.50" required>
                         <div id="amount-info" style="margin-top: 5px; font-size: 12px; color: #666;"></div>
                     </div>
                 </div>
                 
                 <div class="form-group">
-                    <label for="vendor">Business name or details *</label>
-                    <input type="text" id="vendor" name="vendor" placeholder="e.g., Tim Hortons, Marriott Hotel, or travel details" required title="Enter the business name where you spent money, or details for vehicle expenses">
+                    <label for="vendor" data-i18n="vendor">Business name or details *</label>
+                    <input type="text" id="vendor" name="vendor" data-i18n="vendor_placeholder" placeholder="e.g., Tim Hortons, Marriott Hotel, or travel details" required title="Enter the business name where you spent money, or details for vehicle expenses">
                 </div>
                 
                 <div class="form-group">
-                    <label for="description">Business purpose or additional notes (Optional)</label>
-                    <textarea id="description" name="description" rows="3" placeholder="e.g., Business lunch with client John Smith to discuss Q3 budget, or Conference travel for mandatory training" title="Explain the business purpose - this helps with approval and audit compliance"></textarea>
+                    <label for="description" data-i18n="description">Business purpose or additional notes (Optional)</label>
+                    <textarea id="description" name="description" rows="3" data-i18n="description_placeholder" placeholder="e.g., Business lunch with client John Smith to discuss Q3 budget, or Conference travel for mandatory training" title="Explain the business purpose - this helps with approval and audit compliance"></textarea>
                     <div style="font-size: 12px; color: #666; margin-top: 4px;">💡 <strong>Tip:</strong> Adding business context helps supervisors approve faster</div>
                 </div>
                 
@@ -639,34 +682,34 @@
     <!-- 🧳 New Trip Modal -->
     <div id="new-trip-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
         <div style="background: white; padding: 30px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 90%; overflow-y: auto;">
-            <h3 style="margin-bottom: 20px; color: #2c3e50;">🧳 Create New Trip</h3>
+            <h3 style="margin-bottom: 20px; color: #2c3e50;" data-i18n="create_trip">🧳 Create New Trip</h3>
             
             <form id="new-trip-form" onsubmit="createNewTrip(event)">
                 <div class="form-group">
-                    <label for="trip-name">Trip Name *</label>
-                    <input type="text" id="trip-name" placeholder="e.g., Montreal to Toronto Training" required>
+                    <label for="trip-name" data-i18n="trip_name">Trip Name *</label>
+                    <input type="text" id="trip-name" data-i18n="trip_placeholder" placeholder="e.g., Montreal to Toronto Training" required>
                 </div>
                 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                     <div class="form-group">
-                        <label for="trip-start-date">Start Date *</label>
+                        <label for="trip-start-date" data-i18n="start_date">Start Date *</label>
                         <input type="date" id="trip-start-date" required>
                     </div>
                     
                     <div class="form-group">
-                        <label for="trip-end-date">End Date *</label>
+                        <label for="trip-end-date" data-i18n="end_date">End Date *</label>
                         <input type="date" id="trip-end-date" required>
                     </div>
                 </div>
                 
                 <div class="form-group">
-                    <label for="trip-destination">Destination</label>
-                    <input type="text" id="trip-destination" placeholder="e.g., Toronto, ON">
+                    <label for="trip-destination" data-i18n="destination">Destination</label>
+                    <input type="text" id="trip-destination" data-i18n="location_placeholder" placeholder="e.g., Toronto, ON">
                 </div>
                 
                 <div class="form-group">
-                    <label for="trip-purpose">Purpose</label>
-                    <textarea id="trip-purpose" placeholder="e.g., Annual training conference, business meetings" rows="3"></textarea>
+                    <label for="trip-purpose" data-i18n="purpose">Purpose</label>
+                    <textarea id="trip-purpose" data-i18n="purpose_placeholder" placeholder="e.g., Annual training conference, business meetings" rows="3"></textarea>
                 </div>
                 
                 <div style="margin-top: 30px; display: flex; gap: 15px; justify-content: flex-end;">

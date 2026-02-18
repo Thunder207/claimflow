@@ -5,7 +5,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#667eea">
     <title>ClaimFlow - Login</title>
+    <script src="/translations.js"></script>
     <style>
+        /* Language toggle styles */
+        .language-toggle {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            background: rgba(255,255,255,0.15);
+            border-radius: 20px;
+            padding: 2px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .language-toggle button {
+            padding: 8px 12px;
+            border: none;
+            background: transparent;
+            color: white;
+            cursor: pointer;
+            border-radius: 16px;
+            transition: all 0.2s ease;
+            font-weight: 600;
+            font-size: 12px;
+        }
+        
+        .language-toggle button.active {
+            background: rgba(255,255,255,0.3);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .language-toggle button:hover {
+            background: rgba(255,255,255,0.2);
+        }
         * {
             margin: 0;
             padding: 0;
@@ -20,6 +54,7 @@
             align-items: center;
             justify-content: center;
             padding: 20px;
+            position: relative;
         }
         
         .login-container {
@@ -238,44 +273,49 @@
     </style>
 </head>
 <body>
+    <div class="language-toggle">
+        <button id="lang-en" onclick="setLanguage('en')" data-i18n="english">EN</button>
+        <button id="lang-fr" onclick="setLanguage('fr')" data-i18n="french">FR</button>
+    </div>
+    
     <div class="login-container">
         <div class="header">
-            <div class="gov-badge">🇨🇦 Government of Canada</div>
-            <h1>💼 ClaimFlow</h1>
-            <p>NJC-Compliant Expense Management</p>
+            <div class="gov-badge" data-i18n="gov_badge">🇨🇦 Government of Canada</div>
+            <h1 data-i18n="login_title">💼 ClaimFlow</h1>
+            <p data-i18n="login_subtitle">NJC-Compliant Expense Management</p>
         </div>
         
         <div class="form-section">
             <div class="demo-accounts">
-                <h3>👥 Demo Accounts (Click to Login)</h3>
+                <h3 data-i18n="login_demo">👥 Demo Accounts (Click to Login)</h3>
                 
                 <div class="demo-account" onclick="quickLogin('john.smith@company.com', 'manager123')">
-                    <div class="role">🔧 John Smith - System Admin</div>
+                    <div class="role" data-i18n="demo_john_admin">🔧 John Smith - System Admin</div>
                     <div class="credentials">Email: john.smith@company.com | Password: manager123</div>
                 </div>
                 
                 <div class="demo-account" onclick="quickLogin('sarah.johnson@company.com', 'sarah123')">
-                    <div class="role">👔 Sarah Johnson - Supervisor (Finance)</div>
+                    <div class="role" data-i18n="demo_sarah_supervisor">👔 Sarah Johnson - Supervisor (Finance)</div>
                     <div class="credentials">Email: sarah.johnson@company.com | Password: sarah123</div>
                 </div>
                 
                 <div class="demo-account" onclick="quickLogin('lisa.brown@company.com', 'lisa123')">
-                    <div class="role">👔 Lisa Brown - Supervisor (Operations)</div>
+                    <div class="role" data-i18n="demo_lisa_supervisor">👔 Lisa Brown - Supervisor (Operations)</div>
                     <div class="credentials">Email: lisa.brown@company.com | Password: lisa123</div>
                 </div>
                 
                 <div class="demo-account" onclick="quickLogin('mike.davis@company.com', 'mike123')">
-                    <div class="role">👤 Mike Davis - Employee (Finance)</div>
+                    <div class="role" data-i18n="demo_mike_employee">👤 Mike Davis - Employee (Finance)</div>
                     <div class="credentials">Email: mike.davis@company.com | Password: mike123</div>
                 </div>
                 
                 <div class="demo-account" onclick="quickLogin('david.wilson@company.com', 'david123')">
-                    <div class="role">👤 David Wilson - Employee (Operations)</div>
+                    <div class="role" data-i18n="demo_david_employee">👤 David Wilson - Employee (Operations)</div>
                     <div class="credentials">Email: david.wilson@company.com | Password: david123</div>
                 </div>
                 
                 <div class="demo-account" onclick="quickLogin('anna.lee@company.com', 'anna123')">
-                    <div class="role">👤 Anna Lee - Employee (Operations)</div>
+                    <div class="role" data-i18n="demo_anna_employee">👤 Anna Lee - Employee (Operations)</div>
                     <div class="credentials">Email: anna.lee@company.com | Password: anna123</div>
                 </div>
             </div>
@@ -290,25 +330,25 @@
             
             <div class="loading-spinner" id="loading-spinner">
                 <div class="spinner"></div>
-                <p>Logging you in...</p>
+                <p data-i18n="login_loading">Logging you in...</p>
             </div>
             
             <form id="login-form">
                 <div class="form-group">
-                    <label for="email">Email Address</label>
-                    <input type="email" id="email" name="email" placeholder="your.name@company.com" required
+                    <label for="email" data-i18n="login_email">Email Address</label>
+                    <input type="email" id="email" name="email" data-i18n="email_placeholder" placeholder="your.name@company.com" required
                            autocomplete="email" maxlength="254" aria-describedby="email-error">
                     <div id="email-error" class="field-error" style="display: none; color: #dc3545; font-size: 12px; margin-top: 4px;" role="alert"></div>
                 </div>
                 
                 <div class="form-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" name="password" placeholder="Enter your password" required
+                    <label for="password" data-i18n="login_password">Password</label>
+                    <input type="password" id="password" name="password" data-i18n="password_placeholder" placeholder="Enter your password" required
                            autocomplete="current-password" maxlength="128" aria-describedby="password-error">
                     <div id="password-error" class="field-error" style="display: none; color: #dc3545; font-size: 12px; margin-top: 4px;" role="alert"></div>
                 </div>
                 
-                <button type="submit" class="login-btn" id="login-btn">
+                <button type="submit" class="login-btn" id="login-btn" data-i18n="login_button">
                     🔐 Login to Dashboard
                 </button>
             </form>
@@ -352,21 +392,21 @@
             let hasErrors = false;
             
             if (!email || email.length === 0) {
-                showFieldError('email', 'Email address is required');
+                showFieldError('email', t('login_error_email_required'));
                 hasErrors = true;
             } else if (email.length > 254) {
-                showFieldError('email', 'Email address is too long');
+                showFieldError('email', t('login_error_email_long'));
                 hasErrors = true;
             } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-                showFieldError('email', 'Please enter a valid email address');
+                showFieldError('email', t('login_error_email_invalid'));
                 hasErrors = true;
             }
             
             if (!password || password.length === 0) {
-                showFieldError('password', 'Password is required');
+                showFieldError('password', t('login_error_password_required'));
                 hasErrors = true;
             } else if (password.length > 128) {
-                showFieldError('password', 'Password is too long');
+                showFieldError('password', t('login_error_password_long'));
                 hasErrors = true;
             }
             
@@ -398,14 +438,14 @@
                 // Handle HTTP errors more specifically
                 if (!response.ok) {
                     const errorText = await response.text();
-                    let errorMessage = 'Login failed';
+                    let errorMessage = t('login_error_invalid');
                     
                     if (response.status === 401) {
-                        errorMessage = 'Invalid email or password. Please check your credentials.';
+                        errorMessage = t('login_error_invalid');
                     } else if (response.status === 429) {
-                        errorMessage = 'Too many login attempts. Please wait a moment and try again.';
+                        errorMessage = t('login_error_rate_limit');
                     } else if (response.status >= 500) {
-                        errorMessage = 'Server error. Please try again in a few minutes.';
+                        errorMessage = t('login_error_server');
                     }
                     
                     showMessage('error', errorMessage);
@@ -422,11 +462,11 @@
                         localStorage.setItem('sessionId', result.sessionId);
                         localStorage.setItem('user', JSON.stringify(result.user));
                     } catch (storageError) {
-                        showMessage('error', 'Unable to save login session. Please check your browser settings.');
+                        showMessage('error', t('login_error_storage'));
                         return;
                     }
                     
-                    showMessage('success', `Welcome back, ${sanitizeInput(result.user.name)}! Redirecting to your dashboard...`);
+                    showMessage('success', `${t('login_welcome_back')}, ${sanitizeInput(result.user.name)}! ${t('login_success')}`);
                     
                     // Redirect based on role with better error handling
                     setTimeout(() => {
@@ -443,7 +483,7 @@
                     }, 1500);
                     
                 } else {
-                    showMessage('error', sanitizeInput(result.error) || 'Login failed. Please try again.');
+                    showMessage('error', sanitizeInput(result.error) || t('login_error_invalid'));
                     loginBtn.disabled = false;
                     loadingSpinner.style.display = 'none';
                 }
@@ -453,10 +493,10 @@
                 loadingSpinner.style.display = 'none';
                 
                 if (error.name === 'AbortError') {
-                    showMessage('error', 'Login request timed out. Please check your internet connection and try again.');
+                    showMessage('error', t('login_error_timeout'));
                 } else {
                     console.error('Login error:', error);
-                    showMessage('error', 'Network error. Please check your connection and try again.');
+                    showMessage('error', t('login_error_network'));
                 }
             }
         }

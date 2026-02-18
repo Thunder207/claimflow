@@ -4,7 +4,44 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard - ClaimFlow</title>
+    <script src="/translations.js"></script>
     <style>
+        /* Language toggle styles */
+        .language-toggle {
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            background: rgba(255,255,255,0.9);
+            border-radius: 20px;
+            padding: 2px;
+            font-size: 12px;
+            font-weight: 600;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .language-toggle button {
+            padding: 8px 12px;
+            border: none;
+            background: transparent;
+            color: #333;
+            cursor: pointer;
+            border-radius: 16px;
+            transition: all 0.2s ease;
+            font-weight: 600;
+            font-size: 12px;
+        }
+        
+        .language-toggle button.active {
+            background: #667eea;
+            color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .language-toggle button:hover {
+            background: rgba(102, 126, 234, 0.1);
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8f9fa; padding: 20px; }
         .container { max-width: 1200px; margin: 0 auto; }
@@ -85,40 +122,45 @@
     </style>
 </head>
 <body>
+    <div class="language-toggle">
+        <button id="lang-en" onclick="setLanguage('en')" data-i18n="english">EN</button>
+        <button id="lang-fr" onclick="setLanguage('fr')" data-i18n="french">FR</button>
+    </div>
+    
     <div class="container">
         <div class="header">
             <div style="flex-grow: 1;">
-                <h1>🏛️ Government Expense Management System</h1>
-                <p>Comprehensive expense tracking and approval dashboard</p>
+                <h1 data-i18n="admin_title">🏛️ Government Expense Management System</h1>
+                <p data-i18n="admin_subtitle">Comprehensive expense tracking and approval dashboard</p>
             </div>
             <div style="text-align: right;">
-                <button onclick="exportAdminCSV()" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); margin-bottom: 10px;">📥 Export CSV</button>
-                <button onclick="logout()" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); margin-bottom: 10px;">🚪 Logout</button>
+                <button onclick="exportAdminCSV()" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); margin-bottom: 10px;" data-i18n="export_csv">📥 Export CSV</button>
+                <button onclick="logout()" class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); margin-bottom: 10px;" data-i18n="logout">🚪 Logout</button>
                 <br>
-                <a href="/dashboard" class="back-link" style="color: white; opacity: 0.9; font-size: 14px;">← Employee Portal</a>
+                <a href="/dashboard" class="back-link" style="color: white; opacity: 0.9; font-size: 14px;" data-i18n="employee_portal">← Employee Portal</a>
             </div>
         </div>
 
         <div class="role-selector">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
                 <div>
-                    <h4 style="color: #2c3e50; margin: 0 0 8px 0;">👤 Choose Your Dashboard View</h4>
-                    <p style="color: #7f8c8d; margin: 0; font-size: 14px;">Different roles see different data and have different capabilities</p>
-                    <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                    <h4 style="color: #2c3e50; margin: 0 0 8px 0;" data-i18n="choose_dashboard_view">👤 Choose Your Dashboard View</h4>
+                    <p style="color: #7f8c8d; margin: 0; font-size: 14px;" data-i18n="dashboard_view_desc">Different roles see different data and have different capabilities</p>
+                    <div style="font-size: 12px; color: #666; margin-top: 4px;" data-i18n="role_descriptions">
                         🔧 <strong>Admin:</strong> All employees, all expenses, full management
                         • 👔 <strong>Supervisor:</strong> Your team only, approval powers
                     </div>
                 </div>
                 <div style="display: flex; gap: 15px; align-items: center;">
                     <select id="role-selector" onchange="changeRole()" class="form-control" style="width: auto; min-width: 180px;">
-                        <option value="">Select Your Role...</option>
-                        <option value="admin">🔧 System Administrator</option>
-                        <option value="supervisor">👔 Supervisor/Manager</option>
+                        <option value="" data-i18n="select_role">Select Your Role...</option>
+                        <option value="admin" data-i18n="system_administrator">🔧 System Administrator</option>
+                        <option value="supervisor" data-i18n="supervisor_manager">👔 Supervisor/Manager</option>
                     </select>
                     <div id="supervisor-selector" style="display: none;">
-                        <div style="font-size: 12px; color: #666; margin-bottom: 5px;">Choose your name to see your team:</div>
+                        <div style="font-size: 12px; color: #666; margin-bottom: 5px;" data-i18n="choose_supervisor">Choose your name to see your team:</div>
                         <select id="supervisor-employee-selector" onchange="selectSupervisor()" class="form-control" style="width: auto; min-width: 200px;">
-                            <option value="">Select Your Name...</option>
+                            <option value="" data-i18n="select_name">Select Your Name...</option>
                         </select>
                     </div>
                     <div id="current-role" style="display: none; padding: 10px 16px; background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); border-radius: 8px; color: #155724; font-weight: 600; font-size: 14px;"></div>
@@ -128,37 +170,37 @@
 
         <div class="nav-tabs" id="nav-tabs" style="display: none;" role="tablist" aria-label="Dashboard sections">
             <button class="nav-tab active" onclick="showTab('expenses')" id="expenses-tab-btn" role="tab" aria-selected="true" 
-                    aria-controls="expenses-tab" tabindex="0">📊 Expenses Dashboard</button>
+                    aria-controls="expenses-tab" tabindex="0" data-i18n="expenses_tab">📊 Expenses Dashboard</button>
             <button class="nav-tab" onclick="showTab('employees')" id="employees-tab-btn" role="tab" aria-selected="false" 
-                    aria-controls="employees-tab" tabindex="-1">👥 Employee Directory</button>
+                    aria-controls="employees-tab" tabindex="-1" data-i18n="employees_tab">👥 Employee Directory</button>
             <button class="nav-tab" onclick="showTab('chart')" id="chart-tab-btn" role="tab" aria-selected="false" 
-                    aria-controls="chart-tab" tabindex="-1">🏢 Organization Chart</button>
+                    aria-controls="chart-tab" tabindex="-1" data-i18n="org_chart">🏢 Organization Chart</button>
             <button class="nav-tab" onclick="showTab('sage300')" id="sage300-tab-btn" style="display: none;" role="tab" 
-                    aria-selected="false" aria-controls="sage300-tab" tabindex="-1">💰 Sage 300</button>
+                    aria-selected="false" aria-controls="sage300-tab" tabindex="-1" data-i18n="sage_tab">💰 Sage 300</button>
             <button class="nav-tab" onclick="showTab('njc-rates')" id="njc-rates-tab-btn" role="tab" 
-                    aria-selected="false" aria-controls="njc-rates-tab" tabindex="-1">📋 NJC Rates</button>
+                    aria-selected="false" aria-controls="njc-rates-tab" tabindex="-1" data-i18n="njc_tab">📋 NJC Rates</button>
         </div>
 
         <div class="stats" id="dashboard-stats" style="display: none;">
             <div class="stat-card">
                 <div class="stat-value" id="total-expenses">-</div>
-                <div class="stat-label">Total Expenses</div>
+                <div class="stat-label" data-i18n="total_expenses">Total Expenses</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="total-amount">-</div>
-                <div class="stat-label">Total Amount</div>
+                <div class="stat-label" data-i18n="total_amount">Total Amount</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="approved-amount">-</div>
-                <div class="stat-label">Approved Amount</div>
+                <div class="stat-label" data-i18n="approved_amount">Approved Amount</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="pending-count">-</div>
-                <div class="stat-label">Pending Approval</div>
+                <div class="stat-label" data-i18n="pending_approval">Pending Approval</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="unique-employees">-</div>
-                <div class="stat-label" id="employees-stat-label">Employees</div>
+                <div class="stat-label" id="employees-stat-label" data-i18n="total_employees">Total Employees</div>
             </div>
         </div>
 
