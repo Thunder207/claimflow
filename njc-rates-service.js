@@ -55,7 +55,7 @@ class NJCRatesService {
             db.all(`
                 SELECT rate_type, amount, effective_date, notes
                 FROM njc_rates 
-                WHERE province = ? 
+                WHERE (province = ? OR province = 'ALL') 
                 AND effective_date <= ?
                 AND (end_date IS NULL OR end_date >= ?)
                 ORDER BY rate_type
@@ -79,7 +79,7 @@ class NJCRatesService {
             db.all(`
                 SELECT rate_type, amount, effective_date, end_date, notes
                 FROM njc_rates 
-                WHERE province = ?
+                WHERE (province = ? OR province = 'ALL')
                 AND effective_date <= ?
                 AND (end_date IS NULL OR end_date >= ?)
                 ORDER BY rate_type
@@ -102,7 +102,7 @@ class NJCRatesService {
             db.all(`
                 SELECT id, rate_type, amount, effective_date, end_date, notes, created_by, created_at
                 FROM njc_rates 
-                WHERE province = ?
+                WHERE (province = ? OR province = 'ALL')
                 ORDER BY rate_type, effective_date DESC
             `, [province], (err, rows) => {
                 db.close();

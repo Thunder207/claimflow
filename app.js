@@ -2371,7 +2371,7 @@ app.post('/api/njc-rates', requireAuth, requireRole('admin'), async (req, res) =
     }
     
     // Validate rate type
-    const validRateTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'private_vehicle'];
+    const validRateTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'private_vehicle', 'vehicle', 'vehicle_km'];
     if (!validRateTypes.includes(rate_type)) {
         return res.status(400).json({
             success: false,
