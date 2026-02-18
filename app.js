@@ -1826,7 +1826,7 @@ app.get('/api/employees', requireAuth, requireRole('admin', 'supervisor'), (req,
 
 // Add new employee (admin only)
 app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) => {
-    const { name, employee_number, position, department, supervisor_id } = req.body;
+    const { name, employee_number, position, department, supervisor_id, gl_account_id } = req.body;
     
     // Validation
     if (!name || name.trim().length === 0) {
@@ -1856,8 +1856,8 @@ app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) =
     }
     
     const query = `
-        INSERT INTO employees (name, employee_number, position, department, supervisor_id)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO employees (name, employee_number, position, department, supervisor_id, gl_account_id)
+        VALUES (?, ?, ?, ?, ?, ?)
     `;
     
     const params = [
@@ -1865,7 +1865,8 @@ app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) =
         employee_number.trim(), 
         position ? position.trim() : null, 
         department ? department.trim() : null, 
-        supervisor_id || null
+        supervisor_id || null,
+        gl_account_id || null
     ];
     
     db.run(query, params, function(err) {
@@ -1895,7 +1896,7 @@ app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) =
 // Update employee (admin only)
 app.put('/api/employees/:id', requireAuth, requireRole('admin'), async (req, res) => {
     const { id } = req.params;
-    const { name, employee_number, position, department, supervisor_id } = req.body;
+    const { name, employee_number, position, department, supervisor_id, gl_account_id } = req.body;
     
     // Validation
     if (!name || name.trim().length === 0) {
@@ -1958,7 +1959,7 @@ app.put('/api/employees/:id', requireAuth, requireRole('admin'), async (req, res
     
     const query = `
         UPDATE employees 
-        SET name = ?, employee_number = ?, position = ?, department = ?, supervisor_id = ?
+        SET name = ?, employee_number = ?, position = ?, department = ?, supervisor_id = ?, gl_account_id = ?
         WHERE id = ?
     `;
     
@@ -1968,6 +1969,7 @@ app.put('/api/employees/:id', requireAuth, requireRole('admin'), async (req, res
         position ? position.trim() : null, 
         department ? department.trim() : null, 
         supervisor_id || null,
+        gl_account_id || null,
         id
     ];
     
@@ -3048,6 +3050,28 @@ app.post('/api/sage/cost-centers', requireAuth, requireRole('admin'), (req, res)
                 return res.status(500).json({ success: false, error: 'Database error' });
             }
             res.json({ success: true, message: 'Cost center added successfully', id: this.lastID });
+    });
+});
+
+// Get count of approved expenses for export confirmation
+app.get('/api/sage/export-count', requireAuth, requireRole('admin'), (req, res) => {
+    const query = `
+        SELECT COUNT(*) as count
+        FROM expenses e
+        LEFT JOIN employees emp ON e.employee_id = emp.id
+        LEFT JOIN gl_accounts gl ON e.expense_type = gl.expense_type
+        LEFT JOIN department_cost_centers dc ON emp.department = dc.department
+        WHERE e.status = 'approved' 
+        AND gl.is_active = 1 
+        AND dc.is_active = 1
+    `;
+    
+    db.get(query, (err, row) => {
+        if (err) {
+            console.error('❌ Error counting export data:', err.message);
+            return res.status(500).json({ success: false, error: 'Database error' });
+        }
+        res.json({ success: true, count: row.count });
     });
 });
 

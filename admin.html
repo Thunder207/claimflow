@@ -289,6 +289,12 @@ try {
                             <option value="">No supervisor (Top Level)</option>
                         </select>
                     </div>
+                    <div class="form-group">
+                        <label for="new-employee-gl-account">GL Account</label>
+                        <select id="new-employee-gl-account" class="form-control">
+                            <option value="">Select GL Account</option>
+                        </select>
+                    </div>
                 </div>
                 <div style="margin-top: 15px;">
                     <button class="btn btn-success" onclick="addEmployee()">✅ Add Employee</button>
@@ -321,6 +327,12 @@ try {
                         <label for="edit-employee-supervisor">Reports To</label>
                         <select id="edit-employee-supervisor" class="form-control">
                             <option value="">No supervisor (Top Level)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-employee-gl-account">GL Account</label>
+                        <select id="edit-employee-gl-account" class="form-control">
+                            <option value="">Select GL Account</option>
                         </select>
                     </div>
                 </div>
@@ -1105,6 +1117,7 @@ try {
             document.getElementById('add-employee-form').style.display = 'block';
             document.getElementById('edit-employee-form').style.display = 'none';
             populateSupervisorDropdown('new-employee-supervisor');
+            populateGLAccountDropdown('new-employee-gl-account');
             document.getElementById('new-employee-name').focus();
         }
 
@@ -1116,6 +1129,7 @@ try {
             document.getElementById('new-employee-position').value = '';
             document.getElementById('new-employee-department').value = '';
             document.getElementById('new-employee-supervisor').value = '';
+            document.getElementById('new-employee-gl-account').value = '';
         }
 
         function editEmployee(employeeId) {
@@ -1138,6 +1152,9 @@ try {
             populateSupervisorDropdown('edit-employee-supervisor', employeeId);
             document.getElementById('edit-employee-supervisor').value = employee.supervisor_id || '';
             
+            populateGLAccountDropdown('edit-employee-gl-account');
+            document.getElementById('edit-employee-gl-account').value = employee.gl_account_id || '';
+            
             document.getElementById('edit-employee-name').focus();
         }
 
@@ -1158,12 +1175,33 @@ try {
             }
         }
 
+        async function populateGLAccountDropdown(selectId) {
+            const select = document.getElementById(selectId);
+            select.innerHTML = '<option value="">Select GL Account</option>';
+            
+            try {
+                const response = await fetch('/api/sage/gl-accounts', {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                const result = await response.json();
+                
+                if (result.success && result.data) {
+                    result.data.filter(gl => gl.is_active).forEach(gl => {
+                        select.innerHTML += `<option value="${gl.id}">${gl.gl_code} - ${gl.gl_name}</option>`;
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading GL accounts:', error);
+            }
+        }
+
         async function addEmployee() {
             const name = document.getElementById('new-employee-name').value.trim();
             const employeeNumber = document.getElementById('new-employee-number').value.trim();
             const position = document.getElementById('new-employee-position').value.trim();
             const department = document.getElementById('new-employee-department').value.trim();
             const supervisorId = document.getElementById('new-employee-supervisor').value;
+            const glAccountId = document.getElementById('new-employee-gl-account').value;
             
             if (!name) {
                 showMessage('danger', '❌ Employee name is required');
@@ -1189,7 +1227,8 @@ try {
                         employee_number: employeeNumber,
                         position: position || null,
                         department: department || null,
-                        supervisor_id: supervisorId || null
+                        supervisor_id: supervisorId || null,
+                        gl_account_id: glAccountId || null
                     })
                 });
                 
@@ -1215,6 +1254,7 @@ try {
             const position = document.getElementById('edit-employee-position').value.trim();
             const department = document.getElementById('edit-employee-department').value.trim();
             const supervisorId = document.getElementById('edit-employee-supervisor').value;
+            const glAccountId = document.getElementById('edit-employee-gl-account').value;
             
             if (!name) {
                 showMessage('danger', '❌ Employee name is required');
@@ -1240,7 +1280,8 @@ try {
                         employee_number: employeeNumber,
                         position: position || null,
                         department: department || null,
-                        supervisor_id: supervisorId || null
+                        supervisor_id: supervisorId || null,
+                        gl_account_id: glAccountId || null
                     })
                 });
                 
@@ -1953,6 +1994,26 @@ try {
 
         async function exportToSage() {
             try {
+                // First check how many approved expenses will be exported
+                const countResponse = await fetch('/api/sage/export-count', {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                
+                let expenseCount = 0;
+                if (countResponse.ok) {
+                    const countResult = await countResponse.json();
+                    expenseCount = countResult.count || 0;
+                }
+                
+                // Show confirmation dialog
+                const confirmMessage = expenseCount > 0 
+                    ? `Are you sure you want to export ${expenseCount} approved expenses to Sage 300?`
+                    : 'Are you sure you want to export approved expenses to Sage 300? (No approved expenses found)';
+                
+                if (!confirm(confirmMessage)) {
+                    return;
+                }
+                
                 const response = await fetch('/api/sage/export', {
                     headers: { 'Authorization': `Bearer ${sessionId}` }
                 });
@@ -1968,7 +2029,7 @@ try {
                     document.body.removeChild(a);
                     window.URL.revokeObjectURL(url);
                     
-                    showMessage('success', '✅ Sage 300 export downloaded successfully');
+                    showMessage('success', `✅ Sage 300 export downloaded successfully (${expenseCount} expenses)`);
                     closeExportPreview();
                 } else {
                     showMessage('danger', '❌ Error exporting data');
