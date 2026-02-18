@@ -2463,12 +2463,12 @@
                         saveDrafts();
                         showMessage('info', '🔄 Trip re-created automatically. Submitting...');
                     } else {
-                        alert('Failed to re-create trip: ' + (newTrip.error || 'Unknown error'));
+                        showMessage('error', '❌ Failed to re-create trip: ' + (newTrip.error || 'Unknown error'));
                         return;
                     }
                 }
             } catch(e) {
-                alert('Error checking trip: ' + e.message);
+                showMessage('error', '❌ Error checking trip: ' + e.message);
                 return;
             }
             
@@ -2917,24 +2917,8 @@
         
         // Attach submit/clear button handlers with proper error handling
         function attachTripButtons() {
-            const submitBtn = document.getElementById('btn-submit-trip');
-            const clearBtn = document.getElementById('btn-clear-draft');
-            
-            if (submitBtn) {
-                // Remove any existing listeners first
-                submitBtn.removeEventListener('click', handleSubmitTrip);
-                submitBtn.addEventListener('click', handleSubmitTrip);
-            } else {
-                console.warn('Submit trip button not found');
-            }
-            
-            if (clearBtn) {
-                // Remove any existing listeners first  
-                clearBtn.removeEventListener('click', handleClearDraft);
-                clearBtn.addEventListener('click', handleClearDraft);
-            } else {
-                console.warn('Clear draft button not found');
-            }
+            // Using event delegation - no need to reattach when buttons are recreated
+            console.log('Event delegation already set up - no need to reattach individual buttons');
         }
         
         function handleSubmitTrip(e) {
@@ -2957,7 +2941,28 @@
             clearTripDraft();
         }
         
-        // Call attachTripButtons after DOM is ready
+        // Set up event delegation for submit and clear buttons (works even when buttons are recreated)
+        document.addEventListener('click', function(e) {
+            if (e.target && e.target.id === 'btn-submit-trip') {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Submit trip button clicked via event delegation');
+                
+                submitTripForApproval().catch(function(err) {
+                    console.error('❌ Submit trip failed:', err);
+                    showMessage('error', `❌ Failed to submit trip: ${err.message}`);
+                });
+            }
+            
+            if (e.target && e.target.id === 'btn-clear-draft') {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Clear draft button clicked via event delegation');
+                clearTripDraft();
+            }
+        });
+
+        // Call attachTripButtons after DOM is ready (though it's now just a placeholder)
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', attachTripButtons);
         } else {

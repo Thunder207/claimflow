@@ -163,6 +163,28 @@
             <div class="section-header">
                 <span id="expenses-section-title">📊 All Expenses (Admin View)</span>
             </div>
+            
+            <!-- Search/Filter Box -->
+            <div style="margin-bottom: 20px; background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;">
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    <label for="expense-search" style="font-weight: 500; color: #495057;">🔍 Search:</label>
+                    <input type="text" 
+                           id="expense-search" 
+                           placeholder="Filter by employee name, expense type, status, or vendor..."
+                           style="flex: 1; min-width: 300px; padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px;"
+                           autocomplete="off">
+                    <button type="button" 
+                            id="clear-search" 
+                            style="padding: 8px 15px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;"
+                            title="Clear search filter">
+                        Clear
+                    </button>
+                </div>
+                <div style="margin-top: 8px; font-size: 13px; color: #6c757d;">
+                    Search across employee names, expense types (meal types), approval status, vendors, and amounts
+                </div>
+            </div>
+            
             <div id="expenses-container" aria-live="polite" aria-label="Expenses list">
                 <div class="loading">
                     <div class="spinner" role="status" aria-label="Loading expenses"></div>
@@ -509,7 +531,7 @@
             
             // Load tab-specific data
             if (tabName === 'expenses') {
-                loadExpenses();
+                loadExpensesWithSearch();
             } else if (tabName === 'employees') {
                 loadEmployees();
             } else if (tabName === 'chart') {
@@ -627,10 +649,193 @@
                             <div style="font-size: 48px; margin-bottom: 15px;">❌</div>
                             <h3>Error Loading Expenses</h3>
                             <p>Failed to load expenses: ${error.message}</p>
-                            <button class="btn btn-primary" onclick="loadExpenses()" style="margin-top: 15px;">🔄 Try Again</button>
+                            <button class="btn btn-primary" onclick="loadExpensesWithSearch()" style="margin-top: 15px;">🔄 Try Again</button>
                         </div>
                     </div>
                 `;
+            }
+        }
+
+        // Global expenses array for filtering
+        let allLoadedExpenses = [];
+
+        function filterExpenses() {
+            const searchTerm = document.getElementById('expense-search')?.value.toLowerCase().trim() || '';
+            
+            if (!searchTerm) {
+                displayFilteredExpenses(allLoadedExpenses);
+                return;
+            }
+            
+            const filtered = allLoadedExpenses.filter(expense => {
+                const searchableText = [
+                    expense.employee_name || '',
+                    expense.meal_name || '',
+                    expense.expense_type || '',
+                    expense.status || '',
+                    expense.vendor || '',
+                    expense.location || '',
+                    expense.description || '',
+                    expense.amount?.toString() || ''
+                ].join(' ').toLowerCase();
+                
+                return searchableText.includes(searchTerm);
+            });
+            
+            console.log(`🔍 Search: "${searchTerm}" found ${filtered.length}/${allLoadedExpenses.length} expenses`);
+            displayFilteredExpenses(filtered);
+        }
+
+        function clearSearch() {
+            const searchInput = document.getElementById('expense-search');
+            if (searchInput) {
+                searchInput.value = '';
+                displayFilteredExpenses(allLoadedExpenses);
+            }
+        }
+
+        function displayFilteredExpenses(expenses) {
+            const container = document.getElementById('expenses-container');
+            
+            if (expenses.length === 0) {
+                const searchTerm = document.getElementById('expense-search')?.value || '';
+                if (searchTerm.trim()) {
+                    container.innerHTML = `
+                        <div class="alert alert-info">
+                            <div style="text-align: center; padding: 20px;">
+                                <div style="font-size: 48px; margin-bottom: 15px;">🔍</div>
+                                <h3>No Results Found</h3>
+                                <p>No expenses match your search criteria: "<strong>${searchTerm}</strong>"</p>
+                                <button class="btn btn-secondary" onclick="clearSearch()" style="margin-top: 15px;">Clear Search</button>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    container.innerHTML = `
+                        <div class="alert alert-info">
+                            <div style="text-align: center; padding: 20px;">
+                                <div style="font-size: 48px; margin-bottom: 15px;">📋</div>
+                                <h3>No Expenses Found</h3>
+                                <p>${currentUserRole === 'supervisor' ? 'Your team has not submitted any expenses yet.' : 'No expenses have been submitted to the system yet.'}</p>
+                                <a href="/" class="btn btn-primary" style="margin-top: 15px; text-decoration: none;">➕ Submit First Expense</a>
+                            </div>
+                        </div>
+                    `;
+                }
+                return;
+            }
+            
+            container.innerHTML = expenses.map(expense => {
+                const statusClass = expense.status === 'approved' ? 'status-approved' : 
+                                  expense.status === 'rejected' ? 'status-rejected' : 'status-pending';
+                const statusText = expense.status === 'approved' ? '✅ Approved' :
+                                 expense.status === 'rejected' ? '❌ Rejected' : '⏳ Pending';
+                
+                let actionButtons = '';
+                if (expense.status === 'pending') {
+                    if (currentUserRole === 'supervisor') {
+                        actionButtons = `
+                            <button class="btn btn-success" onclick="approveExpense(${expense.id})">✅ Approve</button>
+                            <button class="btn btn-danger" onclick="rejectExpense(${expense.id})">❌ Reject</button>
+                        `;
+                    } else if (currentUserRole === 'admin') {
+                        actionButtons = `
+                            <button class="btn btn-success" onclick="approveExpense(${expense.id})">✅ Approve</button>
+                            <button class="btn btn-danger" onclick="rejectExpense(${expense.id})">❌ Reject</button>
+                            <button class="btn btn-warning" onclick="deleteExpense(${expense.id})">🗑️ Delete</button>
+                        `;
+                    }
+                }
+                
+                return `
+                    <div class="expense-item">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap;">
+                            <div style="flex-grow: 1; min-width: 300px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+                                    <div style="font-weight: bold; color: #2c3e50; font-size: 18px;">
+                                        ${expense.meal_name || expense.expense_type} • ${expense.employee_name}
+                                    </div>
+                                    <div class="status-badge ${statusClass}">
+                                        ${statusText}
+                                    </div>
+                                </div>
+                                <div style="color: #666; font-size: 14px; margin-bottom: 12px;">
+                                    <span style="color: #27ae60; font-size: 20px; font-weight: bold;">$${parseFloat(expense.amount).toFixed(2)}</span> • 
+                                    📅 ${expense.date} • 
+                                    📍 ${expense.location || 'No location'}
+                                    ${expense.vendor ? ` • 🏪 ${expense.vendor}` : ''}
+                                </div>
+                                ${expense.description ? `
+                                    <div style="font-size: 13px; color: #666; margin-bottom: 12px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px;">
+                                        📋 ${expense.description}
+                                    </div>
+                                ` : ''}
+                                ${expense.receipt_path ? `
+                                    <button class="btn btn-secondary" onclick="viewReceipt('${expense.receipt_path}')" style="font-size: 12px;">
+                                        📎 View Receipt
+                                    </button>
+                                ` : ''}
+                            </div>
+                            ${actionButtons ? `
+                                <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
+                                    ${actionButtons}
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function loadExpensesWithSearch() {
+            const container = document.getElementById('expenses-container');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading expenses...</p></div>';
+            
+            try {
+                const response = await fetch('/api/expenses', {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                
+                allLoadedExpenses = await response.json();
+                console.log(`✅ Loaded ${allLoadedExpenses.length} expenses`);
+                
+                await updateDashboardStats(allLoadedExpenses);
+                displayFilteredExpenses(allLoadedExpenses);
+                
+                // Setup search event listeners (only once)
+                setupSearchListeners();
+                
+            } catch (error) {
+                console.error('❌ Error loading expenses:', error);
+                container.innerHTML = `
+                    <div class="alert alert-danger">
+                        <div style="text-align: center; padding: 20px;">
+                            <div style="font-size: 48px; margin-bottom: 15px;">❌</div>
+                            <h3>Error Loading Expenses</h3>
+                            <p>Failed to load expenses: ${error.message}</p>
+                            <button class="btn btn-primary" onclick="loadExpensesWithSearch()" style="margin-top: 15px;">🔄 Try Again</button>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function setupSearchListeners() {
+            const searchInput = document.getElementById('expense-search');
+            const clearButton = document.getElementById('clear-search');
+            
+            if (searchInput && !searchInput.hasAttribute('data-listeners-attached')) {
+                searchInput.addEventListener('input', filterExpenses);
+                searchInput.addEventListener('keyup', filterExpenses);
+                searchInput.setAttribute('data-listeners-attached', 'true');
+                console.log('✅ Search listeners attached');
+            }
+            
+            if (clearButton && !clearButton.hasAttribute('data-listeners-attached')) {
+                clearButton.addEventListener('click', clearSearch);
+                clearButton.setAttribute('data-listeners-attached', 'true');
+                console.log('✅ Clear button listener attached');
             }
         }
 
@@ -1017,7 +1222,7 @@
                 
                 if (result.success) {
                     showMessage('success', '✅ Expense approved! Employee will be notified and expense is ready for payment.');
-                    loadExpenses();
+                    loadExpensesWithSearch();
                 } else {
                     showMessage('danger', result.error || 'Failed to approve expense - please try again');
                 }
@@ -1057,7 +1262,7 @@
                 
                 if (result.success) {
                     showMessage('success', '❌ Expense rejected successfully');
-                    loadExpenses();
+                    loadExpensesWithSearch();
                 } else {
                     showMessage('danger', result.error || 'Failed to reject expense');
                 }
@@ -1082,7 +1287,7 @@
                 
                 if (result.success) {
                     showMessage('success', '✅ Expense deleted successfully');
-                    loadExpenses();
+                    loadExpensesWithSearch();
                 } else {
                     showMessage('danger', result.error || 'Failed to delete expense');
                 }
