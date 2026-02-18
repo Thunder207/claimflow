@@ -2722,6 +2722,13 @@
                     } else {
                         dateField.value = trip.start_date;
                     }
+                    // Also constrain hotel check-in/check-out dates to trip range
+                    const hotelCheckin = document.getElementById('hotel-checkin');
+                    const hotelCheckout = document.getElementById('hotel-checkout');
+                    if (hotelCheckin && trip.start_date) hotelCheckin.min = trip.start_date;
+                    if (hotelCheckin && trip.end_date) hotelCheckin.max = trip.end_date;
+                    if (hotelCheckout && trip.start_date) hotelCheckout.min = trip.start_date;
+                    if (hotelCheckout && trip.end_date) hotelCheckout.max = trip.end_date;
                 }
             } catch (e) { /* silent */ }
         }
