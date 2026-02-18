@@ -362,6 +362,18 @@ function initializeDatabase() {
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`,
+        `CREATE TABLE IF NOT EXISTS njc_rates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rate_type TEXT NOT NULL,
+            amount REAL NOT NULL,
+            effective_date DATE NOT NULL,
+            end_date DATE,
+            province TEXT DEFAULT 'ALL',
+            notes TEXT,
+            created_by TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )`
     ];
     
@@ -421,9 +433,31 @@ function insertDefaultData() {
         });
     }
     
-    // NJC rates are now managed through the comprehensive rate management system
-    // Historical and current rates are pre-seeded in the database
-    
+    // Seed NJC rates with historical and current periods
+    const njcRates = [
+        // 2023 rates (historical)
+        ['breakfast', 23.00, '2023-04-01', '2024-03-31', 'ALL', '2023-2024 fiscal year rates', 'system'],
+        ['lunch', 28.50, '2023-04-01', '2024-03-31', 'ALL', '2023-2024 fiscal year rates', 'system'],
+        ['dinner', 45.75, '2023-04-01', '2024-03-31', 'ALL', '2023-2024 fiscal year rates', 'system'],
+        ['incidentals', 30.50, '2023-04-01', '2024-03-31', 'ALL', '2023-2024 fiscal year rates', 'system'],
+        ['vehicle', 0.61, '2023-04-01', '2024-03-31', 'ALL', '2023-2024 fiscal year km rate', 'system'],
+        // 2024-2025 current rates
+        ['breakfast', 23.45, '2024-04-01', null, 'ALL', '2024-2025 fiscal year rates', 'system'],
+        ['lunch', 29.75, '2024-04-01', null, 'ALL', '2024-2025 fiscal year rates', 'system'],
+        ['dinner', 47.05, '2024-04-01', null, 'ALL', '2024-2025 fiscal year rates', 'system'],
+        ['incidentals', 32.08, '2024-04-01', null, 'ALL', '2024-2025 fiscal year rates', 'system'],
+        ['vehicle', 0.68, '2024-04-01', null, 'ALL', '2024-2025 fiscal year km rate', 'system'],
+    ];
+
+    njcRates.forEach(rate => {
+        db.run(`INSERT OR IGNORE INTO njc_rates (rate_type, amount, effective_date, end_date, province, notes, created_by) 
+                VALUES (?, ?, ?, ?, ?, ?, ?)`, rate, (err) => {
+            if (err && !err.message.includes('UNIQUE constraint failed')) {
+                console.error('❌ Error inserting NJC rate:', err.message);
+            }
+        });
+    });
+
     // Insert default GL account mappings
     const glAccounts = [
         ['meals', '5410', 'Travel - Meals'],
