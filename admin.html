@@ -139,7 +139,7 @@ try {
     <div class="container">
         <div class="header">
             <div style="flex-grow: 1;">
-                <h1 data-i18n="admin_title">🏛️ Government Expense Management System</h1>
+                <h1 data-i18n="admin_title">🏛️ ClaimFlow</h1>
                 <p data-i18n="admin_subtitle">Comprehensive expense tracking and approval dashboard</p>
             </div>
             <div style="text-align: right;">
@@ -1605,10 +1605,19 @@ try {
                     // REMOVE role selector from DOM entirely — not just hide
                     const roleSelectorDiv = document.querySelector('.role-selector');
                     if (roleSelectorDiv) roleSelectorDiv.remove();
+                    // REMOVE supervisor name dropdown — they can only see their own team
+                    const supervisorSelector = document.getElementById('supervisor-selector');
+                    if (supervisorSelector) supervisorSelector.remove();
                     // Set supervisor context directly — no dropdown, no options to switch
                     currentUserRole = 'supervisor';
                     currentSupervisorId = user.id;
                     currentSupervisorName = user.name;
+                    // Show their name badge directly
+                    const currentRoleDiv = document.getElementById('current-role');
+                    if (currentRoleDiv) {
+                        currentRoleDiv.style.display = 'block';
+                        currentRoleDiv.textContent = '👤 ' + user.name + ' (Supervisor)';
+                    }
                     showDashboard();
                 } else {
                     await changeRole();
