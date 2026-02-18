@@ -1620,14 +1620,11 @@ try {
                     }
                     showDashboard();
                 } else if (user.role === 'admin') {
-                    // Admin: remove supervisor option — admin is system-only, not a supervisor
-                    const roleSelect = document.getElementById('role-selector');
-                    const supervisorOption = roleSelect.querySelector('option[value="supervisor"]');
-                    if (supervisorOption) supervisorOption.remove();
-                    // Also remove the "Select Your Role..." placeholder since there's only one option
-                    const placeholderOption = roleSelect.querySelector('option[value=""]');
-                    if (placeholderOption) placeholderOption.remove();
-                    await changeRole();
+                    // Admin: remove entire role selector — admin is the only role, no switching
+                    const roleSelectorDiv = document.querySelector('.role-selector');
+                    if (roleSelectorDiv) roleSelectorDiv.remove();
+                    currentUserRole = 'admin';
+                    showDashboard();
                 } else {
                     await changeRole();
                 }
