@@ -897,62 +897,102 @@ app.get('/api/my-expenses', requireAuth, (req, res) => {
     });
 });
 
-// Approve expense (supervisor/admin only)
+// Approve expense (governance-compliant: supervisors only, with segregation of duties)
 app.post('/api/expenses/:id/approve', requireAuth, (req, res) => {
-    if (req.user.role !== 'supervisor' && req.user.role !== 'admin') {
-        return res.status(403).json({ error: 'Only supervisors and admins can approve expenses' });
+    // GOVERNANCE: Only supervisors can approve expenses
+    if (req.user.role !== 'supervisor') {
+        return res.status(403).json({ 
+            error: 'Access denied. Only supervisors can approve expenses. Admin role is for system management only.' 
+        });
     }
+    
     const { id } = req.params;
     const { comment, approver } = req.body;
     
-    const query = `
-        UPDATE expenses 
-        SET status = 'approved', 
-            approved_by = ?, 
-            approved_at = CURRENT_TIMESTAMP, 
-            approval_comment = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-    `;
-    
-    db.run(query, [approver || 'Admin', comment, id], function(err) {
+    // First, get the expense details and check governance rules
+    db.get('SELECT employee_id FROM expenses WHERE id = ?', [id], (err, expense) => {
         if (err) {
-            console.error('❌ Error approving expense:', err);
-            return res.status(500).json({ 
-                success: false, 
-                error: 'Failed to approve expense' 
+            console.error('❌ Error fetching expense:', err);
+            return res.status(500).json({ success: false, error: 'Failed to fetch expense details' });
+        }
+        
+        if (!expense) {
+            return res.status(404).json({ success: false, error: 'Expense not found' });
+        }
+        
+        // GOVERNANCE: Check segregation of duties - supervisor cannot approve own expenses
+        if (expense.employee_id === req.user.employeeId) {
+            return res.status(403).json({ 
+                error: 'Segregation of duties violation: You cannot approve your own expenses' 
             });
         }
         
-        if (this.changes === 0) {
-            return res.status(404).json({ 
-                success: false, 
-                error: 'Expense not found' 
-            });
-        }
-        
-        console.log(`✅ Expense ${id} approved by ${approver}`);
-        
-        // FEATURE 4: Notify employee
-        db.get('SELECT employee_id FROM expenses WHERE id = ?', [id], (err2, exp) => {
-            if (!err2 && exp) {
-                createNotification(exp.employee_id, 'expense_approved',
-                    `Your expense #${id} has been approved by ${approver || 'Admin'}.`);
+        // GOVERNANCE: Verify the expense belongs to supervisor's direct report
+        db.get('SELECT id FROM employees WHERE id = ? AND supervisor_id = ?', 
+            [expense.employee_id, req.user.employeeId], (err2, directReport) => {
+            
+            if (err2) {
+                console.error('❌ Error checking direct report:', err2);
+                return res.status(500).json({ success: false, error: 'Failed to verify reporting relationship' });
             }
-        });
-        
-        res.json({ 
-            success: true, 
-            message: 'Expense approved successfully!' 
+            
+            if (!directReport) {
+                return res.status(403).json({ 
+                    error: 'Access denied: You can only approve expenses from your direct reports' 
+                });
+            }
+            
+            // All governance checks passed - proceed with approval
+            const query = `
+                UPDATE expenses 
+                SET status = 'approved', 
+                    approved_by = ?, 
+                    approved_at = CURRENT_TIMESTAMP, 
+                    approval_comment = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `;
+            
+            db.run(query, [approver || req.user.name || 'Supervisor', comment, id], function(err3) {
+                if (err3) {
+                    console.error('❌ Error approving expense:', err3);
+                    return res.status(500).json({ 
+                        success: false, 
+                        error: 'Failed to approve expense' 
+                    });
+                }
+                
+                if (this.changes === 0) {
+                    return res.status(404).json({ 
+                        success: false, 
+                        error: 'Expense not found or already processed' 
+                    });
+                }
+                
+                console.log(`✅ Expense ${id} approved by supervisor ${req.user.employeeId} (${approver})`);
+                
+                // Notify employee
+                createNotification(expense.employee_id, 'expense_approved',
+                    `Your expense #${id} has been approved by ${approver || 'your supervisor'}.`);
+                
+                res.json({ 
+                    success: true, 
+                    message: 'Expense approved successfully!' 
+                });
+            });
         });
     });
 });
 
-// Reject expense (supervisor/admin only)
+// Reject expense (governance-compliant: supervisors only, with segregation of duties)
 app.post('/api/expenses/:id/reject', requireAuth, (req, res) => {
-    if (req.user.role !== 'supervisor' && req.user.role !== 'admin') {
-        return res.status(403).json({ error: 'Only supervisors and admins can reject expenses' });
+    // GOVERNANCE: Only supervisors can reject expenses
+    if (req.user.role !== 'supervisor') {
+        return res.status(403).json({ 
+            error: 'Access denied. Only supervisors can reject expenses. Admin role is for system management only.' 
+        });
     }
+    
     const { id } = req.params;
     const { reason, approver } = req.body;
     
@@ -963,45 +1003,77 @@ app.post('/api/expenses/:id/reject', requireAuth, (req, res) => {
         });
     }
     
-    const query = `
-        UPDATE expenses 
-        SET status = 'rejected', 
-            approved_by = ?, 
-            approved_at = CURRENT_TIMESTAMP, 
-            rejection_reason = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-    `;
-    
-    db.run(query, [approver || 'Admin', reason, id], function(err) {
+    // First, get the expense details and check governance rules
+    db.get('SELECT employee_id FROM expenses WHERE id = ?', [id], (err, expense) => {
         if (err) {
-            console.error('❌ Error rejecting expense:', err);
-            return res.status(500).json({ 
-                success: false, 
-                error: 'Failed to reject expense' 
+            console.error('❌ Error fetching expense:', err);
+            return res.status(500).json({ success: false, error: 'Failed to fetch expense details' });
+        }
+        
+        if (!expense) {
+            return res.status(404).json({ success: false, error: 'Expense not found' });
+        }
+        
+        // GOVERNANCE: Check segregation of duties - supervisor cannot reject own expenses
+        if (expense.employee_id === req.user.employeeId) {
+            return res.status(403).json({ 
+                error: 'Segregation of duties violation: You cannot reject your own expenses' 
             });
         }
         
-        if (this.changes === 0) {
-            return res.status(404).json({ 
-                success: false, 
-                error: 'Expense not found' 
-            });
-        }
-        
-        console.log(`✅ Expense ${id} rejected by ${approver}`);
-        
-        // FEATURE 4: Notify employee with reason
-        db.get('SELECT employee_id FROM expenses WHERE id = ?', [id], (err2, exp) => {
-            if (!err2 && exp) {
-                createNotification(exp.employee_id, 'expense_rejected',
-                    `Your expense #${id} was rejected by ${approver || 'Admin'}. Reason: ${reason}`);
+        // GOVERNANCE: Verify the expense belongs to supervisor's direct report
+        db.get('SELECT id FROM employees WHERE id = ? AND supervisor_id = ?', 
+            [expense.employee_id, req.user.employeeId], (err2, directReport) => {
+            
+            if (err2) {
+                console.error('❌ Error checking direct report:', err2);
+                return res.status(500).json({ success: false, error: 'Failed to verify reporting relationship' });
             }
-        });
-        
-        res.json({ 
-            success: true, 
-            message: 'Expense rejected successfully' 
+            
+            if (!directReport) {
+                return res.status(403).json({ 
+                    error: 'Access denied: You can only reject expenses from your direct reports' 
+                });
+            }
+            
+            // All governance checks passed - proceed with rejection
+            const query = `
+                UPDATE expenses 
+                SET status = 'rejected', 
+                    approved_by = ?, 
+                    approved_at = CURRENT_TIMESTAMP, 
+                    rejection_reason = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `;
+            
+            db.run(query, [approver || req.user.name || 'Supervisor', reason, id], function(err3) {
+                if (err3) {
+                    console.error('❌ Error rejecting expense:', err3);
+                    return res.status(500).json({ 
+                        success: false, 
+                        error: 'Failed to reject expense' 
+                    });
+                }
+                
+                if (this.changes === 0) {
+                    return res.status(404).json({ 
+                        success: false, 
+                        error: 'Expense not found or already processed' 
+                    });
+                }
+                
+                console.log(`✅ Expense ${id} rejected by supervisor ${req.user.employeeId} (${approver})`);
+                
+                // Notify employee with reason
+                createNotification(expense.employee_id, 'expense_rejected',
+                    `Your expense #${id} was rejected by ${approver || 'your supervisor'}. Reason: ${reason}`);
+                
+                res.json({ 
+                    success: true, 
+                    message: 'Expense rejected successfully' 
+                });
+            });
         });
     });
 });
@@ -1075,7 +1147,7 @@ app.get('/api/employees', requireAuth, requireRole('admin', 'supervisor'), (req,
 });
 
 // Add new employee (admin only)
-app.post('/api/employees', requireAuth, requireRole('admin'), (req, res) => {
+app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) => {
     const { name, employee_number, position, department, supervisor_id } = req.body;
     
     // Validation
@@ -1093,8 +1165,17 @@ app.post('/api/employees', requireAuth, requireRole('admin'), (req, res) => {
         });
     }
     
-    // Governance: supervisor cannot be their own employee (circular reference)
-    // Note: for new employees, self-supervision is checked after insert via lastID
+    // Governance: admin cannot be a supervisor, supervisor cannot be set to report to an admin
+    if (supervisor_id) {
+        try {
+            const sup = await new Promise((resolve, reject) => {
+                db.get('SELECT id, role FROM employees WHERE id = ?', [supervisor_id], (err, row) => err ? reject(err) : resolve(row));
+            });
+            if (sup && sup.role === 'admin') {
+                return res.status(400).json({ success: false, error: '⚠️ Governance violation: An administrator cannot act as a supervisor. Assign a supervisor-role employee instead.' });
+            }
+        } catch (err) { console.error('Error checking supervisor role:', err); }
+    }
     
     const query = `
         INSERT INTO employees (name, employee_number, position, department, supervisor_id)
@@ -1151,6 +1232,18 @@ app.put('/api/employees/:id', requireAuth, requireRole('admin'), async (req, res
             success: false, 
             error: 'Employee number is required' 
         });
+    }
+    
+    // Governance rule: admin cannot act as supervisor
+    if (supervisor_id) {
+        try {
+            const sup = await new Promise((resolve, reject) => {
+                db.get('SELECT id, role FROM employees WHERE id = ?', [supervisor_id], (err, row) => err ? reject(err) : resolve(row));
+            });
+            if (sup && sup.role === 'admin') {
+                return res.status(400).json({ success: false, error: '⚠️ Governance violation: An administrator cannot act as a supervisor.' });
+            }
+        } catch (err) { console.error('Error checking supervisor role:', err); }
     }
     
     // Governance rule: An employee cannot be their own supervisor

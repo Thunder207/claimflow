@@ -85,6 +85,8 @@
         .btn-danger { background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color: white; }
         .btn-warning { background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%); color: #212529; }
         .btn-light { background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); }
+        .btn-supervisor { background: linear-gradient(135deg, #17a2b8 0%, #138496 100%); color: white; }
+        .supervisor-switch-btn { display: none; } /* Hidden by default, shown only for supervisors */
         
         .btn:hover {
             transform: translateY(-2px);
@@ -371,6 +373,7 @@
                         <div id="notif-list" style="padding:5px;"><p style="color:#999; text-align:center; padding:20px;">No notifications</p></div>
                     </div>
                 </div>
+                <button id="supervisor-switch-btn" class="btn btn-supervisor supervisor-switch-btn" onclick="switchToSupervisorView()" title="Switch to Supervisor View">🔄 Supervisor View</button>
                 <button class="btn btn-light" onclick="exportCSV()" title="Export CSV">📥 CSV</button>
                 <button class="btn btn-light" onclick="logout()">🚪 Logout</button>
             </div>
@@ -2967,6 +2970,31 @@
             document.addEventListener('DOMContentLoaded', attachTripButtons);
         } else {
             attachTripButtons();
+        }
+        
+        // Supervisor view functionality
+        function switchToSupervisorView() {
+            // Navigate to admin panel for supervisor functions
+            window.location.href = '/admin';
+        }
+
+        // Show supervisor switch button if user is a supervisor
+        function checkSupervisorRole() {
+            try {
+                const user = JSON.parse(localStorage.getItem('user'));
+                if (user && user.role === 'supervisor') {
+                    document.getElementById('supervisor-switch-btn').style.display = 'inline-block';
+                }
+            } catch (error) {
+                console.error('Error checking supervisor role:', error);
+            }
+        }
+
+        // Check supervisor role on page load
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', checkSupervisorRole);
+        } else {
+            checkSupervisorRole();
         }
         
     </script>

@@ -589,8 +589,7 @@
                             `;
                         } else if (currentUserRole === 'admin') {
                             actionButtons = `
-                                <button class="btn btn-success" onclick="approveExpense(${expense.id})">✅ Approve</button>
-                                <button class="btn btn-danger" onclick="rejectExpense(${expense.id})">❌ Reject</button>
+                                <div style="color: #6c757d; font-size: 12px; margin-bottom: 5px;">⚠️ Admin role: System management only</div>
                                 <button class="btn btn-warning" onclick="deleteExpense(${expense.id})">🗑️ Delete</button>
                             `;
                         }
@@ -740,8 +739,7 @@
                         `;
                     } else if (currentUserRole === 'admin') {
                         actionButtons = `
-                            <button class="btn btn-success" onclick="approveExpense(${expense.id})">✅ Approve</button>
-                            <button class="btn btn-danger" onclick="rejectExpense(${expense.id})">❌ Reject</button>
+                            <div style="color: #6c757d; font-size: 12px; margin-bottom: 5px;">⚠️ Admin role: System management only</div>
                             <button class="btn btn-warning" onclick="deleteExpense(${expense.id})">🗑️ Delete</button>
                         `;
                     }
@@ -1880,11 +1878,6 @@
             window.location.href = `/api/expenses/export/csv?token=${sessionId}`;
         }
 
-        // Initialize page
-        let sessionId = localStorage.getItem('sessionId');
-        if (!sessionId) {
-            window.location.href = '/login';
-        }
     </script>
 </body>
 </html>
