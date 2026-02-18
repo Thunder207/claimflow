@@ -124,6 +124,7 @@
             <button class="nav-tab active" onclick="showTab('expenses')" id="expenses-tab-btn">📊 Expenses Dashboard</button>
             <button class="nav-tab" onclick="showTab('employees')" id="employees-tab-btn">👥 Employee Directory</button>
             <button class="nav-tab" onclick="showTab('chart')" id="chart-tab-btn">🏢 Organization Chart</button>
+            <button class="nav-tab" onclick="showTab('sage300')" id="sage300-tab-btn" style="display: none;">💰 Sage 300</button>
         </div>
 
         <div class="stats" id="dashboard-stats" style="display: none;">
@@ -255,6 +256,55 @@
                 </div>
             </div>
         </div>
+
+        <!-- 💰 SAGE 300 TAB (Admin Only) -->
+        <div id="sage300-tab" class="tab-content">
+            <div class="section-header">
+                <span>💰 Sage 300 GL Account Mapping</span>
+            </div>
+            
+            <!-- GL Account Mapping Section -->
+            <div style="margin-bottom: 40px;">
+                <h3 style="margin-bottom: 20px; color: #2c3e50;">📊 GL Account Mapping</h3>
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <button class="btn btn-primary" onclick="addGLAccount()">+ Add GL Account</button>
+                    <button class="btn btn-warning" onclick="previewSageExport()">👁️ Preview Export</button>
+                    <button class="btn btn-success" onclick="exportToSage()">📥 Export to Sage 300</button>
+                </div>
+                <div id="gl-accounts-container">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>Loading GL accounts...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Cost Center Mapping Section -->
+            <div>
+                <h3 style="margin-bottom: 20px; color: #2c3e50;">🏢 Department Cost Centers</h3>
+                <div style="margin-bottom: 15px;">
+                    <button class="btn btn-primary" onclick="addCostCenter()">+ Add Cost Center</button>
+                </div>
+                <div id="cost-centers-container">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>Loading cost centers...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Export Preview Modal -->
+            <div id="export-preview-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000;">
+                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; max-width: 90%; max-height: 80%; overflow: auto;">
+                    <h3 style="margin-bottom: 20px;">📋 Sage 300 Export Preview</h3>
+                    <div id="export-preview-content" style="font-family: monospace; background: #f8f9fa; padding: 15px; border-radius: 8px; max-height: 400px; overflow: auto; white-space: pre-wrap;"></div>
+                    <div style="margin-top: 20px; text-align: right;">
+                        <button class="btn btn-primary" onclick="closeExportPreview()">Close</button>
+                        <button class="btn btn-success" onclick="exportToSage()">Download CSV</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -370,12 +420,14 @@
             const expensesBtn = document.getElementById('expenses-tab-btn');
             const employeesBtn = document.getElementById('employees-tab-btn');
             const chartBtn = document.getElementById('chart-tab-btn');
+            const sage300Btn = document.getElementById('sage300-tab-btn');
             const addEmployeeBtn = document.getElementById('add-employee-btn');
             
             if (currentUserRole === 'admin') {
                 expensesBtn.innerHTML = '📊 All Expenses';
                 employeesBtn.innerHTML = '👥 Employee Directory';
                 chartBtn.innerHTML = '🏢 Organization Chart';
+                sage300Btn.style.display = 'inline-block';
                 addEmployeeBtn.style.display = 'inline-block';
                 
                 document.getElementById('expenses-section-title').textContent = '📊 All System Expenses (Admin View)';
@@ -387,6 +439,7 @@
                 expensesBtn.innerHTML = '📊 Team Approvals';
                 employeesBtn.innerHTML = '👥 My Team';
                 chartBtn.innerHTML = '🏢 Team Structure';
+                sage300Btn.style.display = 'none'; // Supervisors cannot access Sage 300
                 addEmployeeBtn.style.display = 'none'; // Supervisors cannot manage employees
                 
                 // FIXED: Use fallback text if name is not available
@@ -422,6 +475,8 @@
                 loadEmployees();
             } else if (tabName === 'chart') {
                 loadOrganizationChart();
+            } else if (tabName === 'sage300') {
+                loadSage300Data();
             }
         }
 
@@ -1117,6 +1172,373 @@
             localStorage.removeItem('sessionId');
             localStorage.removeItem('user');
             window.location.href = '/login';
+        }
+
+        // 💰 SAGE 300 FUNCTIONALITY
+
+        async function loadSage300Data() {
+            if (currentUserRole !== 'admin') return;
+            
+            try {
+                await loadGLAccounts();
+                await loadCostCenters();
+            } catch (error) {
+                console.error('Error loading Sage 300 data:', error);
+            }
+        }
+
+        async function loadGLAccounts() {
+            try {
+                const response = await fetch('/api/sage/gl-accounts', {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayGLAccounts(data.data);
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (error) {
+                console.error('Error loading GL accounts:', error);
+                document.getElementById('gl-accounts-container').innerHTML = '<div class="alert alert-danger">Error loading GL accounts</div>';
+            }
+        }
+
+        function displayGLAccounts(accounts) {
+            const container = document.getElementById('gl-accounts-container');
+            
+            if (accounts.length === 0) {
+                container.innerHTML = '<div class="alert alert-info">No GL accounts found</div>';
+                return;
+            }
+            
+            let html = `
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; background: white;">
+                        <thead>
+                            <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                                <th style="padding: 12px; text-align: left; font-weight: 600;">Expense Type</th>
+                                <th style="padding: 12px; text-align: left; font-weight: 600;">GL Code</th>
+                                <th style="padding: 12px; text-align: left; font-weight: 600;">GL Name</th>
+                                <th style="padding: 12px; text-align: left; font-weight: 600;">Status</th>
+                                <th style="padding: 12px; text-align: center; font-weight: 600;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            accounts.forEach(account => {
+                html += `
+                    <tr style="border-bottom: 1px solid #dee2e6;" data-id="${account.id}">
+                        <td style="padding: 12px;">
+                            <input type="text" value="${account.expense_type}" 
+                                   class="form-input" data-field="expense_type" 
+                                   style="width: 100%; border: 1px solid #ddd; padding: 6px; border-radius: 4px;">
+                        </td>
+                        <td style="padding: 12px;">
+                            <input type="text" value="${account.gl_code}" 
+                                   class="form-input" data-field="gl_code"
+                                   style="width: 80px; border: 1px solid #ddd; padding: 6px; border-radius: 4px;">
+                        </td>
+                        <td style="padding: 12px;">
+                            <input type="text" value="${account.gl_name}" 
+                                   class="form-input" data-field="gl_name"
+                                   style="width: 100%; border: 1px solid #ddd; padding: 6px; border-radius: 4px;">
+                        </td>
+                        <td style="padding: 12px;">
+                            <select data-field="is_active" class="form-input" 
+                                    style="border: 1px solid #ddd; padding: 6px; border-radius: 4px;">
+                                <option value="1" ${account.is_active ? 'selected' : ''}>Active</option>
+                                <option value="0" ${!account.is_active ? 'selected' : ''}>Inactive</option>
+                            </select>
+                        </td>
+                        <td style="padding: 12px; text-align: center;">
+                            <button class="btn btn-success" onclick="saveGLAccount(${account.id})" 
+                                    style="padding: 6px 12px; margin-right: 5px;">💾 Save</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+        }
+
+        async function loadCostCenters() {
+            try {
+                const response = await fetch('/api/sage/cost-centers', {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayCostCenters(data.data);
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (error) {
+                console.error('Error loading cost centers:', error);
+                document.getElementById('cost-centers-container').innerHTML = '<div class="alert alert-danger">Error loading cost centers</div>';
+            }
+        }
+
+        function displayCostCenters(centers) {
+            const container = document.getElementById('cost-centers-container');
+            
+            if (centers.length === 0) {
+                container.innerHTML = '<div class="alert alert-info">No cost centers found</div>';
+                return;
+            }
+            
+            let html = `
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; background: white;">
+                        <thead>
+                            <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                                <th style="padding: 12px; text-align: left; font-weight: 600;">Department</th>
+                                <th style="padding: 12px; text-align: left; font-weight: 600;">Cost Center Code</th>
+                                <th style="padding: 12px; text-align: left; font-weight: 600;">Cost Center Name</th>
+                                <th style="padding: 12px; text-align: left; font-weight: 600;">Status</th>
+                                <th style="padding: 12px; text-align: center; font-weight: 600;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            centers.forEach(center => {
+                html += `
+                    <tr style="border-bottom: 1px solid #dee2e6;" data-id="${center.id}">
+                        <td style="padding: 12px;">
+                            <input type="text" value="${center.department}" 
+                                   class="form-input" data-field="department"
+                                   style="width: 100%; border: 1px solid #ddd; padding: 6px; border-radius: 4px;">
+                        </td>
+                        <td style="padding: 12px;">
+                            <input type="text" value="${center.cost_center_code}" 
+                                   class="form-input" data-field="cost_center_code"
+                                   style="width: 100px; border: 1px solid #ddd; padding: 6px; border-radius: 4px;">
+                        </td>
+                        <td style="padding: 12px;">
+                            <input type="text" value="${center.cost_center_name}" 
+                                   class="form-input" data-field="cost_center_name"
+                                   style="width: 100%; border: 1px solid #ddd; padding: 6px; border-radius: 4px;">
+                        </td>
+                        <td style="padding: 12px;">
+                            <select data-field="is_active" class="form-input"
+                                    style="border: 1px solid #ddd; padding: 6px; border-radius: 4px;">
+                                <option value="1" ${center.is_active ? 'selected' : ''}>Active</option>
+                                <option value="0" ${!center.is_active ? 'selected' : ''}>Inactive</option>
+                            </select>
+                        </td>
+                        <td style="padding: 12px; text-align: center;">
+                            <button class="btn btn-success" onclick="saveCostCenter(${center.id})" 
+                                    style="padding: 6px 12px; margin-right: 5px;">💾 Save</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+        }
+
+        async function saveGLAccount(id) {
+            const row = document.querySelector(`[data-id="${id}"]`);
+            const data = {};
+            
+            row.querySelectorAll('.form-input').forEach(input => {
+                data[input.getAttribute('data-field')] = input.value;
+            });
+            
+            try {
+                const response = await fetch(`/api/sage/gl-accounts/${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionId}`
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('GL account updated successfully', 'success');
+                } else {
+                    showAlert(result.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Error saving GL account:', error);
+                showAlert('Error saving GL account', 'danger');
+            }
+        }
+
+        async function saveCostCenter(id) {
+            const row = document.querySelector(`[data-id="${id}"]`);
+            const data = {};
+            
+            row.querySelectorAll('.form-input').forEach(input => {
+                data[input.getAttribute('data-field')] = input.value;
+            });
+            
+            try {
+                const response = await fetch(`/api/sage/cost-centers/${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionId}`
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('Cost center updated successfully', 'success');
+                } else {
+                    showAlert(result.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Error saving cost center:', error);
+                showAlert('Error saving cost center', 'danger');
+            }
+        }
+
+        async function addGLAccount() {
+            const expenseType = prompt('Enter expense type (e.g., meals, hotel, vehicle):');
+            if (!expenseType) return;
+            
+            const glCode = prompt('Enter GL code (e.g., 5410):');
+            if (!glCode) return;
+            
+            const glName = prompt('Enter GL name (e.g., Travel - Meals):');
+            if (!glName) return;
+            
+            try {
+                const response = await fetch('/api/sage/gl-accounts', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionId}`
+                    },
+                    body: JSON.stringify({
+                        expense_type: expenseType,
+                        gl_code: glCode,
+                        gl_name: glName
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('GL account added successfully', 'success');
+                    await loadGLAccounts();
+                } else {
+                    showAlert(result.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Error adding GL account:', error);
+                showAlert('Error adding GL account', 'danger');
+            }
+        }
+
+        async function addCostCenter() {
+            const department = prompt('Enter department name:');
+            if (!department) return;
+            
+            const costCenterCode = prompt('Enter cost center code (e.g., 100):');
+            if (!costCenterCode) return;
+            
+            const costCenterName = prompt('Enter cost center name:');
+            if (!costCenterName) return;
+            
+            try {
+                const response = await fetch('/api/sage/cost-centers', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionId}`
+                    },
+                    body: JSON.stringify({
+                        department: department,
+                        cost_center_code: costCenterCode,
+                        cost_center_name: costCenterName
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('Cost center added successfully', 'success');
+                    await loadCostCenters();
+                } else {
+                    showAlert(result.error, 'danger');
+                }
+            } catch (error) {
+                console.error('Error adding cost center:', error);
+                showAlert('Error adding cost center', 'danger');
+            }
+        }
+
+        async function previewSageExport() {
+            try {
+                const response = await fetch('/api/sage/export', {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                
+                if (response.headers.get('content-type').includes('text/csv')) {
+                    const csvContent = await response.text();
+                    const lines = csvContent.split('\n').slice(0, 10); // Show first 10 lines
+                    const preview = lines.join('\n') + (csvContent.split('\n').length > 10 ? '\n... (showing first 10 rows)' : '');
+                    
+                    document.getElementById('export-preview-content').textContent = preview;
+                    document.getElementById('export-preview-modal').style.display = 'block';
+                } else {
+                    showAlert('Error generating export preview', 'danger');
+                }
+            } catch (error) {
+                console.error('Error previewing export:', error);
+                showAlert('Error previewing export', 'danger');
+            }
+        }
+
+        function closeExportPreview() {
+            document.getElementById('export-preview-modal').style.display = 'none';
+        }
+
+        async function exportToSage() {
+            try {
+                const response = await fetch('/api/sage/export', {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `sage300_expenses_${new Date().toISOString().split('T')[0]}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showAlert('Sage 300 export downloaded successfully', 'success');
+                    closeExportPreview();
+                } else {
+                    showAlert('Error exporting data', 'danger');
+                }
+            } catch (error) {
+                console.error('Error exporting to Sage:', error);
+                showAlert('Error exporting to Sage', 'danger');
+            }
         }
     </script>
 </body>

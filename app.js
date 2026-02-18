@@ -284,6 +284,28 @@ function initializeDatabase() {
             rate DECIMAL(6,2) NOT NULL,
             effective_date DATE DEFAULT CURRENT_TIMESTAMP,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`,
+        
+        // 💰 GL Accounts table for Sage 300 mapping
+        `CREATE TABLE IF NOT EXISTS gl_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            expense_type TEXT NOT NULL UNIQUE,
+            gl_code TEXT NOT NULL,
+            gl_name TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`,
+        
+        // 🏢 Department Cost Centers table for Sage 300 mapping
+        `CREATE TABLE IF NOT EXISTS department_cost_centers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            department TEXT NOT NULL UNIQUE,
+            cost_center_code TEXT NOT NULL,
+            cost_center_name TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )`
     ];
     
@@ -360,7 +382,40 @@ function insertDefaultData() {
         });
     });
     
-    console.log('✅ Default data initialized');
+    // Insert default GL account mappings
+    const glAccounts = [
+        ['meals', '5410', 'Travel - Meals'],
+        ['hotel', '5420', 'Travel - Accommodation'],
+        ['vehicle', '5430', 'Travel - Vehicle'],
+        ['incidentals', '5440', 'Travel - Incidentals'],
+        ['other', '5490', 'Travel - Other Expenses']
+    ];
+    
+    glAccounts.forEach(account => {
+        db.run(`INSERT OR IGNORE INTO gl_accounts (expense_type, gl_code, gl_name) VALUES (?, ?, ?)`, account, (err) => {
+            if (err && !err.message.includes('UNIQUE constraint failed')) {
+                console.error('❌ Error inserting GL account:', err.message);
+            }
+        });
+    });
+    
+    // Insert default department cost centers (based on existing employees)
+    const costCenters = [
+        ['Finance', '100', 'Finance Department'],
+        ['Operations', '200', 'Operations Department'], 
+        ['Engineering', '300', 'Engineering Department'],
+        ['Marketing', '400', 'Marketing Department']
+    ];
+    
+    costCenters.forEach(center => {
+        db.run(`INSERT OR IGNORE INTO department_cost_centers (department, cost_center_code, cost_center_name) VALUES (?, ?, ?)`, center, (err) => {
+            if (err && !err.message.includes('UNIQUE constraint failed')) {
+                console.error('❌ Error inserting cost center:', err.message);
+            }
+        });
+    });
+    
+    console.log('✅ Default data initialized (including Sage 300 GL mappings)');
 }
 
 // 🌐 Routes
@@ -1728,6 +1783,164 @@ app.use((error, req, res, next) => {
     res.status(500).json({
         success: false,
         error: 'Internal server error'
+    });
+});
+
+// 💰 SAGE 300 GL MAPPING ENDPOINTS (Admin Only)
+
+// Get all GL accounts
+app.get('/api/sage/gl-accounts', requireAuth, requireRole('admin'), (req, res) => {
+    db.all(`SELECT * FROM gl_accounts ORDER BY expense_type`, (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching GL accounts:', err.message);
+            return res.status(500).json({ success: false, error: 'Database error' });
+        }
+        res.json({ success: true, data: rows });
+    });
+});
+
+// Update GL account
+app.put('/api/sage/gl-accounts/:id', requireAuth, requireRole('admin'), (req, res) => {
+    const { id } = req.params;
+    const { expense_type, gl_code, gl_name, is_active } = req.body;
+    
+    if (!expense_type || !gl_code || !gl_name) {
+        return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+    
+    db.run(`UPDATE gl_accounts SET expense_type = ?, gl_code = ?, gl_name = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [expense_type, gl_code, gl_name, is_active || 1, id], function(err) {
+            if (err) {
+                console.error('❌ Error updating GL account:', err.message);
+                return res.status(500).json({ success: false, error: 'Database error' });
+            }
+            if (this.changes === 0) {
+                return res.status(404).json({ success: false, error: 'GL account not found' });
+            }
+            res.json({ success: true, message: 'GL account updated successfully' });
+    });
+});
+
+// Add new GL account
+app.post('/api/sage/gl-accounts', requireAuth, requireRole('admin'), (req, res) => {
+    const { expense_type, gl_code, gl_name, is_active } = req.body;
+    
+    if (!expense_type || !gl_code || !gl_name) {
+        return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+    
+    db.run(`INSERT INTO gl_accounts (expense_type, gl_code, gl_name, is_active) VALUES (?, ?, ?, ?)`,
+        [expense_type, gl_code, gl_name, is_active || 1], function(err) {
+            if (err) {
+                console.error('❌ Error adding GL account:', err.message);
+                if (err.message.includes('UNIQUE constraint failed')) {
+                    return res.status(400).json({ success: false, error: 'Expense type already exists' });
+                }
+                return res.status(500).json({ success: false, error: 'Database error' });
+            }
+            res.json({ success: true, message: 'GL account added successfully', id: this.lastID });
+    });
+});
+
+// Get all cost centers
+app.get('/api/sage/cost-centers', requireAuth, requireRole('admin'), (req, res) => {
+    db.all(`SELECT * FROM department_cost_centers ORDER BY department`, (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching cost centers:', err.message);
+            return res.status(500).json({ success: false, error: 'Database error' });
+        }
+        res.json({ success: true, data: rows });
+    });
+});
+
+// Update cost center
+app.put('/api/sage/cost-centers/:id', requireAuth, requireRole('admin'), (req, res) => {
+    const { id } = req.params;
+    const { department, cost_center_code, cost_center_name, is_active } = req.body;
+    
+    if (!department || !cost_center_code || !cost_center_name) {
+        return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+    
+    db.run(`UPDATE department_cost_centers SET department = ?, cost_center_code = ?, cost_center_name = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [department, cost_center_code, cost_center_name, is_active || 1, id], function(err) {
+            if (err) {
+                console.error('❌ Error updating cost center:', err.message);
+                return res.status(500).json({ success: false, error: 'Database error' });
+            }
+            if (this.changes === 0) {
+                return res.status(404).json({ success: false, error: 'Cost center not found' });
+            }
+            res.json({ success: true, message: 'Cost center updated successfully' });
+    });
+});
+
+// Add new cost center
+app.post('/api/sage/cost-centers', requireAuth, requireRole('admin'), (req, res) => {
+    const { department, cost_center_code, cost_center_name, is_active } = req.body;
+    
+    if (!department || !cost_center_code || !cost_center_name) {
+        return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+    
+    db.run(`INSERT INTO department_cost_centers (department, cost_center_code, cost_center_name, is_active) VALUES (?, ?, ?, ?)`,
+        [department, cost_center_code, cost_center_name, is_active || 1], function(err) {
+            if (err) {
+                console.error('❌ Error adding cost center:', err.message);
+                if (err.message.includes('UNIQUE constraint failed')) {
+                    return res.status(400).json({ success: false, error: 'Department already exists' });
+                }
+                return res.status(500).json({ success: false, error: 'Database error' });
+            }
+            res.json({ success: true, message: 'Cost center added successfully', id: this.lastID });
+    });
+});
+
+// Export approved expenses as Sage 300 CSV
+app.get('/api/sage/export', requireAuth, requireRole('admin'), (req, res) => {
+    const query = `
+        SELECT 
+            e.date,
+            gl.gl_code,
+            dc.cost_center_code,
+            e.description,
+            e.amount,
+            emp.name as employee_name,
+            emp.department,
+            'EXP-' || e.id as reference,
+            e.expense_type,
+            e.vendor,
+            e.location
+        FROM expenses e
+        LEFT JOIN employees emp ON e.employee_id = emp.id
+        LEFT JOIN gl_accounts gl ON e.expense_type = gl.expense_type
+        LEFT JOIN department_cost_centers dc ON emp.department = dc.department
+        WHERE e.status = 'approved' 
+        AND gl.is_active = 1 
+        AND dc.is_active = 1
+        ORDER BY e.date DESC, emp.name
+    `;
+    
+    db.all(query, (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching export data:', err.message);
+            return res.status(500).json({ success: false, error: 'Database error' });
+        }
+        
+        // Generate CSV content
+        const csvHeader = 'Date,Account,Description,Amount,Employee,Department,Reference\n';
+        const csvRows = rows.map(row => {
+            const account = `${row.gl_code}-${row.cost_center_code}`;
+            const description = `${row.expense_type} - ${row.vendor || 'N/A'} - ${row.location || 'N/A'}`;
+            return `${row.date},"${account}","${description}",${row.amount},"${row.employee_name}","${row.department}","${row.reference}"`;
+        }).join('\n');
+        
+        const csvContent = csvHeader + csvRows;
+        
+        // Set headers for CSV download
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename="sage300_expenses_' + new Date().toISOString().split('T')[0] + '.csv"');
+        res.send(csvContent);
     });
 });
 
