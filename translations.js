@@ -116,7 +116,7 @@ const TRANSLATIONS = {
     total_expenses: "Total Expenses",
     
     // ===== ADMIN DASHBOARD =====
-    admin_title: "🏛️ Government Expense Management System",
+    admin_title: "🏛️ ClaimFlow",
     admin_subtitle: "Comprehensive expense tracking and approval dashboard",
     sys_admin: "System Administrator",
     choose_dashboard_view: "👤 Choose Your Dashboard View",
@@ -309,7 +309,7 @@ const TRANSLATIONS = {
     total_expenses: "Total des dépenses",
     
     // ===== TABLEAU DE BORD ADMIN =====
-    admin_title: "🏛️ Système de gestion des dépenses gouvernementales",
+    admin_title: "🏛️ ClaimFlow",
     admin_subtitle: "Tableau de bord complet de suivi et d'approbation des dépenses",
     sys_admin: "Administrateur système",
     choose_dashboard_view: "👤 Choisissez votre vue du tableau de bord",
