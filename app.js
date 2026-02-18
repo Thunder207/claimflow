@@ -75,6 +75,12 @@ app.use((req, res, next) => {
 });
 
 app.use('/uploads', express.static('uploads'));
+
+// Serve translations.js explicitly for bilingual support
+app.get('/translations.js', (req, res) => {
+    res.sendFile(path.join(__dirname, 'translations.js'));
+});
+
 app.use(express.static(__dirname));
 
 // Session management (simple in-memory for demo)
