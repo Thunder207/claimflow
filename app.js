@@ -2167,37 +2167,6 @@ app.get('/api/expenses/employee/:name', requireAuth, (req, res) => {
 
 // 🏛️ NJC Per Diem Rates API Endpoints
 
-// Get per diem rate for specific expense type (requires authentication)
-app.get('/api/njc-rates/:expenseType', requireAuth, async (req, res) => {
-    const { expenseType } = req.params;
-    const { date } = req.query; // Optional date parameter
-    
-    try {
-        const rateInfo = await njcRates.getPerDiemRate(expenseType, date);
-        
-        if (!rateInfo) {
-            return res.status(404).json({
-                success: false,
-                error: 'Expense type not found in NJC per diem rates'
-            });
-        }
-        
-        res.json({
-            success: true,
-            expense_type: expenseType,
-            query_date: date || 'current',
-            ...rateInfo
-        });
-        
-    } catch (error) {
-        console.error('❌ Error fetching NJC rate:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to fetch per diem rate'
-        });
-    }
-});
-
 // Calculate vehicle allowance (requires authentication)
 app.post('/api/njc-rates/vehicle-allowance', requireAuth, async (req, res) => {
     const { kilometers, expense_date } = req.body;
@@ -2354,6 +2323,37 @@ app.get('/api/njc-rates/for-date', requireAuth, async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Failed to retrieve NJC rates for specified date'
+        });
+    }
+});
+
+// Get per diem rate for specific expense type (MUST be after /current, /all, /for-date)
+app.get('/api/njc-rates/:expenseType', requireAuth, async (req, res) => {
+    const { expenseType } = req.params;
+    const { date } = req.query;
+    
+    try {
+        const rateInfo = await njcRates.getPerDiemRate(expenseType, date);
+        
+        if (!rateInfo) {
+            return res.status(404).json({
+                success: false,
+                error: 'Expense type not found in NJC per diem rates'
+            });
+        }
+        
+        res.json({
+            success: true,
+            expense_type: expenseType,
+            query_date: date || 'current',
+            ...rateInfo
+        });
+        
+    } catch (error) {
+        console.error('❌ Error fetching NJC rate:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch per diem rate'
         });
     }
 });
