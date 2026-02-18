@@ -122,6 +122,15 @@
     </style>
 </head>
 <body>
+<script>
+// Governance: immediately hide role selector for supervisors before page renders
+try {
+    const u = JSON.parse(localStorage.getItem('user') || '{}');
+    if (u.role === 'supervisor') {
+        document.write('<style>.role-selector{display:none!important}</style>');
+    }
+} catch(e) {}
+</script>
     <div class="language-toggle">
         <button id="lang-en" onclick="setLanguage('en')" data-i18n="english">EN</button>
         <button id="lang-fr" onclick="setLanguage('fr')" data-i18n="french">FR</button>
@@ -1552,12 +1561,13 @@
                 document.getElementById('role-selector').value = user.role;
                 // Governance: supervisors see ONLY their own team — no role switching, no impersonation
                 if (user.role === 'supervisor') {
-                    document.querySelector('.role-selector').style.display = 'none';
+                    // REMOVE role selector from DOM entirely — not just hide
+                    const roleSelectorDiv = document.querySelector('.role-selector');
+                    if (roleSelectorDiv) roleSelectorDiv.remove();
                     // Set supervisor context directly — no dropdown, no options to switch
                     currentUserRole = 'supervisor';
                     currentSupervisorId = user.id;
                     currentSupervisorName = user.name;
-                    document.getElementById('supervisor-selector').style.display = 'none';
                     showDashboard();
                 } else {
                     await changeRole();
