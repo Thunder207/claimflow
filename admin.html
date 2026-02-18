@@ -101,16 +101,21 @@
         <div class="role-selector">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
                 <div>
-                    <h4 style="color: #2c3e50; margin: 0 0 8px 0;">👤 Access Level</h4>
-                    <p style="color: #7f8c8d; margin: 0; font-size: 14px;">Select your role to access dashboard features</p>
+                    <h4 style="color: #2c3e50; margin: 0 0 8px 0;">👤 Choose Your Dashboard View</h4>
+                    <p style="color: #7f8c8d; margin: 0; font-size: 14px;">Different roles see different data and have different capabilities</p>
+                    <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                        🔧 <strong>Admin:</strong> All employees, all expenses, full management
+                        • 👔 <strong>Supervisor:</strong> Your team only, approval powers
+                    </div>
                 </div>
                 <div style="display: flex; gap: 15px; align-items: center;">
                     <select id="role-selector" onchange="changeRole()" class="form-control" style="width: auto; min-width: 180px;">
                         <option value="">Select Your Role...</option>
                         <option value="admin">🔧 System Administrator</option>
-                        <option value="supervisor">👨‍💼 Supervisor/Manager</option>
+                        <option value="supervisor">👔 Supervisor/Manager</option>
                     </select>
                     <div id="supervisor-selector" style="display: none;">
+                        <div style="font-size: 12px; color: #666; margin-bottom: 5px;">Choose your name to see your team:</div>
                         <select id="supervisor-employee-selector" onchange="selectSupervisor()" class="form-control" style="width: auto; min-width: 200px;">
                             <option value="">Select Your Name...</option>
                         </select>
@@ -166,7 +171,15 @@
             <div class="section-header">
                 <span id="employees-section-title">👥 Employee Directory</span>
                 <div style="float: right;" id="employee-actions">
-                    <button class="btn btn-primary" onclick="showAddEmployeeForm()" id="add-employee-btn" style="display: none;">➕ Add Employee</button>
+                    <button class="btn btn-primary" onclick="showAddEmployeeForm()" id="add-employee-btn" style="display: none;" title="Add a new employee to the system">➕ Add New Employee</button>
+                </div>
+            </div>
+            <div style="background: #f8f9ff; padding: 12px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #667eea;" id="employee-help">
+                <div style="font-size: 14px; color: #2c3e50; margin-bottom: 6px;">
+                    <strong>💡 Managing Employees</strong>
+                </div>
+                <div style="font-size: 13px; color: #666; line-height: 1.4;">
+                    <span id="employee-help-text">View and manage employee information. Admins can add, edit, and organize reporting structure.</span>
                 </div>
             </div>
             
@@ -954,6 +967,13 @@
         }
 
         async function approveExpense(expenseId) {
+            // Add confirmation with more context
+            const confirmMsg = 'Approve this expense?\n\nThis will:\n✅ Mark it as approved\n💰 Make it available for payment processing\n📧 Notify the employee\n\nThis action cannot be undone.';
+            
+            if (!confirm(confirmMsg)) {
+                return;
+            }
+            
             try {
                 const response = await fetch(`/api/expenses/${expenseId}/approve`, {
                     method: 'POST',
@@ -962,7 +982,7 @@
                         'Authorization': `Bearer ${sessionId}`
                     },
                     body: JSON.stringify({ 
-                        comment: 'Approved',
+                        comment: 'Approved for payment processing',
                         approver: currentUserRole === 'supervisor' ? currentSupervisorName : 'System Administrator'
                     })
                 });
@@ -970,21 +990,27 @@
                 const result = await response.json();
                 
                 if (result.success) {
-                    showMessage('success', '✅ Expense approved successfully!');
+                    showMessage('success', '✅ Expense approved! Employee will be notified and expense is ready for payment.');
                     loadExpenses();
                 } else {
-                    showMessage('danger', result.error || 'Failed to approve expense');
+                    showMessage('danger', result.error || 'Failed to approve expense - please try again');
                 }
             } catch (error) {
                 console.error('❌ Error approving expense:', error);
-                showMessage('danger', '❌ Failed to approve expense');
+                showMessage('danger', '❌ Network error: Could not approve expense. Please check your connection.');
             }
         }
 
         async function rejectExpense(expenseId) {
-            const reason = prompt('📝 REQUIRED: Provide a detailed reason for rejection (government compliance):');
+            const reason = prompt(`📝 Rejection Reason (Required)\n\nPlease provide a clear, detailed reason why this expense cannot be approved.\n\nCommon reasons:\n• Missing receipt or documentation\n• Expense outside policy guidelines\n• Incorrect amount or calculations\n• Business purpose not clear\n\nEmployee will see this message:`);
+            
             if (!reason || !reason.trim()) {
-                showMessage('danger', '⚠️ Rejection reason is required for compliance');
+                showMessage('danger', '⚠️ Rejection reason is required for audit compliance and to help the employee understand the issue.');
+                return;
+            }
+            
+            if (reason.trim().length < 10) {
+                showMessage('danger', '⚠️ Please provide a more detailed reason (at least 10 characters) to help the employee understand and resubmit correctly.');
                 return;
             }
 

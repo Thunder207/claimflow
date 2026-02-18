@@ -636,7 +636,7 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
     if (!expense_type || !date || !amount) {
         return res.status(400).json({ 
             success: false, 
-            error: 'Missing required fields: expense_type, date, amount' 
+            error: 'Please fill in all required fields: expense type, date, and amount before submitting.' 
         });
     }
     
@@ -685,7 +685,7 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
             console.log(`🚨 BLOCKED DUPLICATE: ${expense_type} for ${date} by employee ${req.user.employeeId}`);
             return res.status(400).json({
                 success: false,
-                error: `🚨 COMPLIANCE VIOLATION: You have already claimed ${expense_type} per diem for ${date}. Only one per day allowed.`
+                error: `You've already claimed ${expense_type} for ${date}. Government policy allows only one ${expense_type} per diem per day. Please check your expense history.`
             });
         }
     }
@@ -694,7 +694,7 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
     if (expense_type === 'hotel' && !req.file) {
         return res.status(400).json({
             success: false,
-            error: 'Receipt photo is required for hotel/accommodation expenses'
+            error: 'Hotel expenses require a receipt photo for audit compliance. Please scroll down and upload your hotel receipt before submitting.'
         });
     }
     
@@ -722,7 +722,9 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
         // Validate amount is a clean multiple of $0.68 (within rounding tolerance)
         const remainder = amount % ratePerKm;
         if (remainder > 0.01 && remainder < (ratePerKm - 0.01)) {
-            return res.status(400).json({ success: false, error: `Vehicle amount must be a multiple of $${ratePerKm}/km (e.g., 100km = $68.00). Submitted: $${amount.toFixed(2)}` });
+            const suggestedKm = Math.round(amount / ratePerKm);
+            const suggestedAmount = (suggestedKm * ratePerKm).toFixed(2);
+            return res.status(400).json({ success: false, error: `Vehicle amount must match the NJC rate of $${ratePerKm}/km. For $${amount.toFixed(2)}, did you mean ${suggestedKm} km = $${suggestedAmount}?` });
         }
     }
     

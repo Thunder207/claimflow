@@ -255,12 +255,12 @@
                 </div>
                 
                 <div class="demo-account" onclick="quickLogin('sarah.johnson@company.com', 'sarah123')">
-                    <div class="role">👨‍💼 Sarah Johnson - Supervisor</div>
+                    <div class="role">👔 Sarah Johnson - Supervisor (Finance)</div>
                     <div class="credentials">Email: sarah.johnson@company.com | Password: sarah123</div>
                 </div>
                 
                 <div class="demo-account" onclick="quickLogin('lisa.brown@company.com', 'lisa123')">
-                    <div class="role">👨‍💼 Lisa Brown - Supervisor (Operations)</div>
+                    <div class="role">👔 Lisa Brown - Supervisor (Operations)</div>
                     <div class="credentials">Email: lisa.brown@company.com | Password: lisa123</div>
                 </div>
                 
@@ -332,7 +332,10 @@
             const loadingSpinner = document.getElementById('loading-spinner');
             
             if (!email || !password) {
-                showMessage('error', 'Please enter both email and password');
+                showMessage('error', 'Please enter both email and password to continue');
+                // Highlight empty fields
+                if (!email) document.getElementById('email').style.borderColor = '#dc3545';
+                if (!password) document.getElementById('password').style.borderColor = '#dc3545';
                 return;
             }
             
@@ -429,6 +432,17 @@
             }
             
             console.log('🏛️ Government Expense Login Portal Ready');
+        });
+        
+        // Clear error styling when user starts typing
+        document.getElementById('email').addEventListener('input', function() {
+            this.style.borderColor = '#2b6cb0';
+            hideMessages();
+        });
+        
+        document.getElementById('password').addEventListener('input', function() {
+            this.style.borderColor = '#2b6cb0';
+            hideMessages();
         });
     </script>
 </body>

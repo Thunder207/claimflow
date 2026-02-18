@@ -396,13 +396,24 @@
         </div>
         
         <div class="nav-tabs">
-            <button class="nav-tab active" onclick="showTab('submit')">📝 Submit Expense</button>
-            <button class="nav-tab" onclick="showTab('trips')">🧳 My Trips</button>
-            <button class="nav-tab" onclick="showTab('history')">📋 My Expenses</button>
+            <button class="nav-tab active" onclick="showTab('submit')" title="Add new expenses to trips">📝 Submit Expense</button>
+            <button class="nav-tab" onclick="showTab('trips')" title="View your business trips">🧳 My Trips</button>
+            <button class="nav-tab" onclick="showTab('history')" title="Review submitted expenses">📋 Expense History</button>
         </div>
         
         <div id="submit-tab" class="tab-content active">
-            <h3 style="margin-bottom: 20px; color: #2c3e50;">📝 Submit New Expense</h3>
+            <div style="background: linear-gradient(135deg, #e8f5e8 0%, #d4edda 100%); padding: 15px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #28a745;">
+                <h4 style="margin: 0 0 8px 0; color: #155724;">🚀 Quick Start Guide</h4>
+                <div style="font-size: 13px; color: #155724; line-height: 1.5;">
+                    <strong>New user?</strong> Here's how to submit expenses:
+                    <br><strong>1.</strong> Create a trip (like "Montreal Conference Jan 2026")
+                    <br><strong>2.</strong> Add expenses to that trip one by one
+                    <br><strong>3.</strong> Submit the entire trip when done
+                    <br><strong>4.</strong> Your supervisor will review and approve
+                </div>
+                <div style="font-size: 12px; color: #155724; margin-top: 8px; opacity: 0.9;">💡 Government rates are automatically applied for meals • Receipts required for hotels</div>
+            </div>
+            <h3 style="margin-bottom: 20px; color: #2c3e50;">📝 Add Expense to Trip</h3>
             
             <div class="success-message" id="success-message">
                 ✅ <span id="success-text">Expense submitted successfully!</span>
@@ -415,9 +426,9 @@
             <form id="expense-form" class="expense-form">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
                     <div class="form-group">
-                        <label for="expense-type">Expense Type *</label>
-                        <select id="expense-type" name="expense_type" required onchange="updatePerDiemRate()">
-                            <option value="">Select expense type...</option>
+                        <label for="expense-type">What type of expense is this? *</label>
+                        <select id="expense-type" name="expense_type" required onchange="updatePerDiemRate()" title="Choose the category that best matches your expense">
+                            <option value="">Choose your expense type...</option>
                             <optgroup label="🏛️ Government Per Diem (NJC Fixed Rates - One per day)">
                                 <option value="breakfast">🥐 Breakfast - $23.45</option>
                                 <option value="lunch">🥗 Lunch - $29.75</option>
@@ -442,7 +453,8 @@
                 
                 <!-- Hotel Date Range (hidden by default) -->
                 <div id="hotel-date-range" style="display: none; margin: 20px 0; padding: 20px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 12px;">
-                    <h4 style="color: #856404; margin-bottom: 15px;">🏨 Hotel Stay Details</h4>
+                    <h4 style="color: #856404; margin-bottom: 8px;">🏨 Hotel Stay Information</h4>
+                    <p style="color: #856404; margin-bottom: 15px; font-size: 13px;">Government policy requires check-in and check-out dates for all hotel claims.</p>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                         <div class="form-group" style="margin-bottom: 0;">
                             <label for="hotel-checkin">Check-in Date *</label>
@@ -454,40 +466,47 @@
                         </div>
                     </div>
                     <div id="hotel-nights-display" style="margin: 15px 0; padding: 15px; background: #fff; border: 1px solid #ffc107; border-radius: 8px; font-weight: bold; color: #856404; text-align: center;"></div>
+                    <div style="font-size: 12px; color: #856404; opacity: 0.8;">
+                        ℹ️ Don't forget to upload your hotel receipt below - it's required for all accommodation expenses.
+                    </div>
                 </div>
                 
                 <div class="form-group" style="margin: 20px 0;">
                     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                        <label for="trip-select" style="margin: 0; flex: 1;">🧳 Select Trip *</label>
+                        <label for="trip-select" style="margin: 0; flex: 1;">🧳 Select Business Trip *</label>
                         <button type="button" id="trip-lock-btn" onclick="toggleTripLock()" style="background: #6c757d; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; display: none;">
                             🔓 Unlocked
                         </button>
                     </div>
+                    <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin-bottom: 12px; font-size: 14px; color: #1565c0;">
+                        <strong>ℹ️ How it works:</strong> All expenses must be part of a business trip (like Concur). Create a new trip or select an existing draft trip to add expenses.
+                    </div>
                     <select id="trip-select" name="trip_id" style="margin-bottom: 10px;" onchange="handleTripSelection()">
-                        <option value="">-- Select a trip (required) --</option>
+                        <option value="">-- Select a trip (all expenses need a trip) --</option>
                     </select>
                     <div id="trip-info" style="margin-top: 10px; padding: 10px; border-radius: 8px; display: none;"></div>
                     <div style="margin-top: 10px;">
-                        <button type="button" onclick="showNewTripModal()" class="btn" style="background: #28a745; padding: 8px 16px; font-size: 14px;">
+                        <button type="button" onclick="showNewTripModal()" class="btn" style="background: #28a745; padding: 8px 16px; font-size: 14px;" title="Create a new business trip to group expenses">
                             ➕ Create New Trip
                         </button>
-                        <button type="button" onclick="loadTrips()" class="btn" style="background: #17a2b8; padding: 8px 16px; font-size: 14px; margin-left: 10px;">
+                        <button type="button" onclick="loadTrips()" class="btn" style="background: #17a2b8; padding: 8px 16px; font-size: 14px; margin-left: 10px;" title="Reload trip list from server">
                             🔄 Refresh Trips
                         </button>
-                        <button type="button" onclick="clearTripSelection()" class="btn" style="background: #6c757d; padding: 8px 16px; font-size: 14px; margin-left: 10px;">
-                            🚫 Clear Trip
+                        <button type="button" onclick="clearTripSelection()" class="btn" style="background: #6c757d; padding: 8px 16px; font-size: 14px; margin-left: 10px;" title="Clear current selection">
+                            🚫 Clear Selection
                         </button>
                     </div>
                 </div>
                 
-                <div class="per-diem-info" id="per-diem-display">
-                    💰 Select expense type to see NJC rate
+                <div class="per-diem-info" id="per-diem-display" style="text-align: center; font-size: 15px;">
+                    💰 Select expense type above to see official NJC government rates
+                    <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Per diem rates are locked to prevent overpayment • Receipts required for hotels</div>
                 </div>
                 
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
                     <div class="form-group">
-                        <label for="location">Location *</label>
-                        <input type="text" id="location" name="location" placeholder="e.g., Ottawa, ON" required>
+                        <label for="location">Where did this expense occur? *</label>
+                        <input type="text" id="location" name="location" placeholder="e.g., Ottawa, ON or Toronto Airport" required title="Enter the city or specific location where you incurred this expense">
                     </div>
                     
                     <div id="vehicle-km-group" style="display: none;">
@@ -518,21 +537,23 @@
                 </div>
                 
                 <div class="form-group">
-                    <label for="vendor">Vendor/Details *</label>
-                    <input type="text" id="vendor" name="vendor" placeholder="e.g., Tim Hortons, Hotel Name, Distance in KM" required>
+                    <label for="vendor">Business name or details *</label>
+                    <input type="text" id="vendor" name="vendor" placeholder="e.g., Tim Hortons, Marriott Hotel, or travel details" required title="Enter the business name where you spent money, or details for vehicle expenses">
                 </div>
                 
                 <div class="form-group">
-                    <label for="description">Description (Optional)</label>
-                    <textarea id="description" name="description" rows="3" placeholder="Business lunch with client, conference travel, etc..."></textarea>
+                    <label for="description">Business purpose or additional notes (Optional)</label>
+                    <textarea id="description" name="description" rows="3" placeholder="e.g., Business lunch with client John Smith to discuss Q3 budget, or Conference travel for mandatory training" title="Explain the business purpose - this helps with approval and audit compliance"></textarea>
+                    <div style="font-size: 12px; color: #666; margin-top: 4px;">💡 <strong>Tip:</strong> Adding business context helps supervisors approve faster</div>
                 </div>
                 
                 <div class="form-group">
-                    <label>Receipt Photo</label>
+                    <label>Receipt Photo <span style="color: #666; font-weight: normal;">(Required for hotels • Optional for per diem)</span></label>
                     <div class="photo-section" onclick="document.getElementById('file-input').click()">
                         <div class="camera-icon">📷</div>
                         <div><strong>Tap to capture or upload receipt</strong></div>
-                        <div style="font-size: 12px; color: #6c757d; margin-top: 5px;">Supports: JPG, PNG, GIF, WebP (Max 10MB)</div>
+                        <div style="font-size: 12px; color: #6c757d; margin-top: 5px;">✅ Supports: JPG, PNG, GIF, WebP (Max 10MB)</div>
+                        <div style="font-size: 11px; color: #666; margin-top: 3px;">💡 Per diem meals: receipt optional | Hotels: receipt mandatory</div>
                         <img id="photo-preview" class="photo-preview" style="display: none;">
                     </div>
                     <input type="file" id="file-input" accept="image/*" capture="environment">
@@ -567,21 +588,25 @@
             </form>
 
                 <!-- Trip expenses draft list (outside form to prevent form interference) -->
-                <div id="trip-draft-section" style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 12px;">
-                    <h4 style="color: #28a745; margin-bottom: 15px;">🧳 Trip Expenses (Draft)</h4>
+                <div id="trip-draft-section" style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 12px; border-left: 4px solid #28a745;">
+                    <h4 style="color: #28a745; margin-bottom: 8px;">🧳 Your Trip Expenses</h4>
+                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">Build your expense report by adding expenses above, then submit the complete trip for approval.</p>
                     <div id="draft-expenses-list">
                         <p style="text-align: center; color: #6c757d; padding: 20px;">
-                            No expenses added to trip yet.<br>
-                            <small>Select a trip and click "Add to Trip" to start building your expense report.</small>
+                            No expenses added yet.<br>
+                            <small>💡 <strong>Next step:</strong> Select a trip above and click "Add Expense to Trip" after filling out the form.</small>
                         </p>
                     </div>
                     <div id="trip-submit-section" style="margin-top: 20px; text-align: center; display: none;">
-                        <button type="button" id="btn-submit-trip" onclick="window._submitTrip()" class="btn btn-success" style="padding: 15px 30px; font-size: 16px; cursor: pointer; z-index: 999; position: relative;">
+                        <button type="button" id="btn-submit-trip" onclick="window._submitTrip()" class="btn btn-success" style="padding: 15px 30px; font-size: 16px; cursor: pointer; z-index: 999; position: relative;" title="Send entire trip to supervisor for approval">
                             📤 Submit Trip for Approval
                         </button>
-                        <button type="button" id="btn-clear-draft" onclick="window._clearDraft()" class="btn" style="background: #dc3545; color: white; padding: 15px 30px; font-size: 16px; margin-left: 15px;">
-                            🗑️ Clear Trip Draft
+                        <button type="button" id="btn-clear-draft" onclick="window._clearDraft()" class="btn" style="background: #dc3545; color: white; padding: 15px 30px; font-size: 16px; margin-left: 15px;" title="Remove all expenses from this draft">
+                            🗑️ Clear All Expenses
                         </button>
+                        <div style="margin-top: 10px; font-size: 13px; color: #666;">
+                            💡 Trip will be submitted to your supervisor for review and approval
+                        </div>
                     </div>
                 </div>
         </div>
@@ -1981,12 +2006,26 @@
             const textElement = document.getElementById(bannerType + '-text');
             
             if (messageElement && textElement) {
-                textElement.textContent = message.replace(/^[✅❌⚠️📤📂🗑️🔄🔓🔒]\s*/g, '');
+                // Keep icons for visual clarity, but clean up repetitive text
+                let cleanMessage = message.replace(/^[✅❌⚠️📤📂🗑️🔄🔓🔒]\s*/g, '');
+                
+                // Add helpful context for common user actions
+                if (cleanMessage.includes('duplicate') || cleanMessage.includes('DUPLICATE')) {
+                    cleanMessage += ' • Government rules allow only one per diem meal per day.';
+                } else if (cleanMessage.includes('trip')) {
+                    cleanMessage += ' • Remember: all expenses must be associated with a business trip.';
+                } else if (cleanMessage.includes('receipt') && cleanMessage.includes('required')) {
+                    cleanMessage += ' • Use your phone camera to capture the receipt image.';
+                }
+                
+                textElement.textContent = cleanMessage;
                 messageElement.style.display = 'block';
                 
+                // Auto-hide after 7 seconds for error messages (users need time to read), 4 seconds for success
+                const hideTime = type === 'error' ? 7000 : 4000;
                 setTimeout(() => {
                     messageElement.style.display = 'none';
-                }, 5000);
+                }, hideTime);
             }
         }
         
