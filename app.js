@@ -1389,9 +1389,9 @@ app.delete('/api/employees/:id', requireAuth, requireRole('admin'), (req, res) =
 });
 
 // Get NJC rates (requires authentication)
-app.get('/api/njc-rates', requireAuth, (req, res) => {
+app.get('/api/njc-rates', requireAuth, async (req, res) => {
     try {
-        const perDiemTypes = njcRates.getAvailablePerDiemTypes();
+        const perDiemTypes = await njcRates.getAvailablePerDiemTypes();
         const updateInfo = njcRates.getRateUpdateInfo();
         
         res.json({
@@ -1454,11 +1454,12 @@ app.get('/api/expenses/employee/:name', requireAuth, (req, res) => {
 // 🏛️ NJC Per Diem Rates API Endpoints
 
 // Get per diem rate for specific expense type (requires authentication)
-app.get('/api/njc-rates/:expenseType', requireAuth, (req, res) => {
+app.get('/api/njc-rates/:expenseType', requireAuth, async (req, res) => {
     const { expenseType } = req.params;
+    const { date } = req.query; // Optional date parameter
     
     try {
-        const rateInfo = njcRates.getPerDiemRate(expenseType);
+        const rateInfo = await njcRates.getPerDiemRate(expenseType, date);
         
         if (!rateInfo) {
             return res.status(404).json({
@@ -1470,6 +1471,7 @@ app.get('/api/njc-rates/:expenseType', requireAuth, (req, res) => {
         res.json({
             success: true,
             expense_type: expenseType,
+            query_date: date || 'current',
             ...rateInfo
         });
         
@@ -1483,8 +1485,8 @@ app.get('/api/njc-rates/:expenseType', requireAuth, (req, res) => {
 });
 
 // Calculate vehicle allowance (requires authentication)
-app.post('/api/njc-rates/vehicle-allowance', requireAuth, (req, res) => {
-    const { kilometers } = req.body;
+app.post('/api/njc-rates/vehicle-allowance', requireAuth, async (req, res) => {
+    const { kilometers, expense_date } = req.body;
     
     if (!kilometers || isNaN(kilometers) || kilometers <= 0) {
         return res.status(400).json({
@@ -1494,7 +1496,14 @@ app.post('/api/njc-rates/vehicle-allowance', requireAuth, (req, res) => {
     }
     
     try {
-        const calculation = njcRates.calculateVehicleAllowance(parseFloat(kilometers));
+        const calculation = await njcRates.calculateVehicleAllowance(parseFloat(kilometers), expense_date);
+        
+        if (!calculation) {
+            return res.status(404).json({
+                success: false,
+                error: 'Unable to calculate vehicle allowance for specified date'
+            });
+        }
         
         res.json({
             success: true,
@@ -1510,26 +1519,36 @@ app.post('/api/njc-rates/vehicle-allowance', requireAuth, (req, res) => {
     }
 });
 
-// Validate per diem expense (requires authentication)
-app.post('/api/njc-rates/validate', requireAuth, (req, res) => {
-    const { expense_type, amount, additional_data } = req.body;
+// Validate per diem expense with historical rates (requires authentication)
+app.post('/api/njc-rates/validate', requireAuth, async (req, res) => {
+    const { expense_type, amount, expense_date, additional_data } = req.body;
     
-    if (!expense_type || !amount) {
+    if (!expense_type || !amount || !expense_date) {
         return res.status(400).json({
             success: false,
-            error: 'expense_type and amount are required'
+            error: 'expense_type, amount, and expense_date are required'
+        });
+    }
+    
+    // Validate date format
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(expense_date)) {
+        return res.status(400).json({
+            success: false,
+            error: 'Invalid expense_date format. Use YYYY-MM-DD'
         });
     }
     
     try {
-        const validation = njcRates.validatePerDiemExpense(expense_type, amount, additional_data);
+        const validation = await njcRates.validatePerDiemExpense(expense_type, amount, expense_date, additional_data);
         
         res.json({
             success: true,
             valid: validation.valid,
             message: validation.message,
             expense_type,
-            amount: parseFloat(amount)
+            amount: parseFloat(amount),
+            expense_date,
+            rate_info: validation.rate_info
         });
         
     } catch (error) {
@@ -1537,6 +1556,255 @@ app.post('/api/njc-rates/validate', requireAuth, (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Failed to validate per diem expense'
+        });
+    }
+});
+
+// 📋 COMPREHENSIVE NJC RATES MANAGEMENT ENDPOINTS
+
+// Get all rates (current + historical) grouped by rate_type (admin only)
+app.get('/api/njc-rates/all', requireAuth, requireRole('admin'), async (req, res) => {
+    try {
+        const province = req.query.province || 'QC';
+        const allRates = await njcRates.getAllRates(province);
+        
+        res.json({
+            success: true,
+            rates: allRates,
+            province
+        });
+        
+    } catch (error) {
+        console.error('❌ Error getting all NJC rates:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to retrieve NJC rates'
+        });
+    }
+});
+
+// Get current effective rates
+app.get('/api/njc-rates/current', requireAuth, async (req, res) => {
+    try {
+        const province = req.query.province || 'QC';
+        const currentRates = await njcRates.getCurrentRates(province);
+        
+        res.json({
+            success: true,
+            rates: currentRates,
+            province,
+            as_of: new Date().toISOString().split('T')[0]
+        });
+        
+    } catch (error) {
+        console.error('❌ Error getting current NJC rates:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to retrieve current NJC rates'
+        });
+    }
+});
+
+// Get rates effective on a specific date
+app.get('/api/njc-rates/for-date', requireAuth, async (req, res) => {
+    const { date } = req.query;
+    
+    if (!date) {
+        return res.status(400).json({
+            success: false,
+            error: 'date parameter is required (YYYY-MM-DD format)'
+        });
+    }
+    
+    // Validate date format
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({
+            success: false,
+            error: 'Invalid date format. Use YYYY-MM-DD'
+        });
+    }
+    
+    try {
+        const province = req.query.province || 'QC';
+        const rates = await njcRates.getRatesForDate(date, province);
+        
+        res.json({
+            success: true,
+            rates: rates,
+            date: date,
+            province
+        });
+        
+    } catch (error) {
+        console.error('❌ Error getting NJC rates for date:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to retrieve NJC rates for specified date'
+        });
+    }
+});
+
+// Add new rate revision (admin only)
+app.post('/api/njc-rates', requireAuth, requireRole('admin'), async (req, res) => {
+    const { rate_type, amount, effective_date, province, notes } = req.body;
+    
+    // Validate required fields
+    if (!rate_type || !amount || !effective_date) {
+        return res.status(400).json({
+            success: false,
+            error: 'rate_type, amount, and effective_date are required'
+        });
+    }
+    
+    // Validate rate type
+    const validRateTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'private_vehicle'];
+    if (!validRateTypes.includes(rate_type)) {
+        return res.status(400).json({
+            success: false,
+            error: `Invalid rate_type. Must be one of: ${validRateTypes.join(', ')}`
+        });
+    }
+    
+    // Validate amount
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0 || numAmount > 1000) {
+        return res.status(400).json({
+            success: false,
+            error: 'Amount must be a positive number between 0.01 and 1000.00'
+        });
+    }
+    
+    // Validate date format
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(effective_date)) {
+        return res.status(400).json({
+            success: false,
+            error: 'Invalid effective_date format. Use YYYY-MM-DD'
+        });
+    }
+    
+    // Ensure effective date is not in the past (unless admin override)
+    const today = new Date().toISOString().split('T')[0];
+    if (effective_date < today && !req.body.admin_override) {
+        return res.status(400).json({
+            success: false,
+            error: 'Effective date cannot be in the past. Use admin_override=true if intentional.'
+        });
+    }
+    
+    try {
+        const result = await njcRates.addNewRate(
+            rate_type,
+            numAmount,
+            effective_date,
+            province || 'QC',
+            notes || '',
+            req.user.name || 'admin'
+        );
+        
+        res.json({
+            success: true,
+            message: `New ${rate_type} rate added successfully`,
+            rate_id: result.id,
+            rate_type,
+            amount: numAmount,
+            effective_date,
+            province: province || 'QC'
+        });
+        
+    } catch (error) {
+        console.error('❌ Error adding new NJC rate:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to add new NJC rate'
+        });
+    }
+});
+
+// Update existing rate (admin only) - only if not used in approved expenses
+app.put('/api/njc-rates/:id', requireAuth, requireRole('admin'), async (req, res) => {
+    const { id } = req.params;
+    const { amount, notes } = req.body;
+    
+    if (!amount) {
+        return res.status(400).json({
+            success: false,
+            error: 'amount is required'
+        });
+    }
+    
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0 || numAmount > 1000) {
+        return res.status(400).json({
+            success: false,
+            error: 'Amount must be a positive number between 0.01 and 1000.00'
+        });
+    }
+    
+    try {
+        const db = new sqlite3.Database(path.join(__dirname, 'expenses.db'));
+        
+        // Check if rate has been used in any approved expenses (audit integrity)
+        db.get(`
+            SELECT COUNT(*) as count
+            FROM expenses e
+            JOIN njc_rates nr ON nr.rate_type = e.expense_type 
+            WHERE nr.id = ? 
+            AND e.status = 'approved'
+            AND e.date >= nr.effective_date
+            AND (nr.end_date IS NULL OR e.date <= nr.end_date)
+        `, [id], (err, row) => {
+            if (err) {
+                db.close();
+                return res.status(500).json({
+                    success: false,
+                    error: 'Database error checking rate usage'
+                });
+            }
+            
+            if (row.count > 0) {
+                db.close();
+                return res.status(400).json({
+                    success: false,
+                    error: 'Cannot modify rate that has been used in approved expenses (audit integrity)'
+                });
+            }
+            
+            // Update the rate
+            db.run(`
+                UPDATE njc_rates 
+                SET amount = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `, [numAmount, notes || '', id], function(err) {
+                db.close();
+                
+                if (err) {
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Failed to update NJC rate'
+                    });
+                }
+                
+                if (this.changes === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'NJC rate not found'
+                    });
+                }
+                
+                res.json({
+                    success: true,
+                    message: 'NJC rate updated successfully',
+                    rate_id: id,
+                    amount: numAmount
+                });
+            });
+        });
+        
+    } catch (error) {
+        console.error('❌ Error updating NJC rate:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to update NJC rate'
         });
     }
 });

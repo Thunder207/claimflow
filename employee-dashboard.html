@@ -1489,15 +1489,15 @@
             return names[expenseType] || expenseType;
         }
         
-        // Update per diem rate display and form fields
+        // Update per diem rate display and form fields with historical rate awareness
         async function updatePerDiemRate() {
             const selectedType = document.getElementById('expense-type').value;
+            const selectedDate = document.getElementById('expense-date').value;
             const display = document.getElementById('per-diem-display');
             const amountField = document.getElementById('amount');
             const amountInfo = document.getElementById('amount-info');
             const amountLabel = document.getElementById('amount-label');
             const vehicleKmGroup = document.getElementById('vehicle-km-group');
-            
             
             // Reset form state
             vehicleKmGroup.style.display = 'none';
@@ -1532,51 +1532,76 @@
                 return;
             }
             
-            // Handle fixed rates locally for immediate response
-            const fixedRates = {
-                'breakfast': { rate: 23.45, fixed: true, description: 'NJC Standard Breakfast Rate' },
-                'lunch': { rate: 29.75, fixed: true, description: 'NJC Standard Lunch Rate' },
-                'dinner': { rate: 47.05, fixed: true, description: 'NJC Standard Dinner Rate' },
-                'incidentals': { rate: 32.08, fixed: true, description: 'NJC Incidental Allowance (Daily)' },
-                'vehicle_km': { rate: 0.68, fixed: true, description: 'NJC Vehicle Allowance per Kilometre' },
-                'hotel': { rate: null, fixed: false, max_amount: null, description: 'Hotel/Accommodation (Receipt & Dates Required)', no_limit: true }
-            };
-            
-            if (fixedRates[selectedType]) {
-                const rateData = fixedRates[selectedType];
+            // Fetch current rate from database (with historical support)
+            try {
+                let rateData = null;
+                let effectiveDate = 'current';
                 
-                // Update display
-                let rateText;
-                if (selectedType === 'vehicle_km') {
-                    rateText = `$${rateData.rate}/km`;
-                } else if (selectedType === 'hotel') {
-                    rateText = 'No Limit (Receipt Required)';
-                } else {
-                    rateText = `$${rateData.rate}`;
+                if (selectedDate) {
+                    // Get rate for specific date
+                    const response = await fetch(`/api/njc-rates/${selectedType}?date=${selectedDate}`, {
+                        headers: { 'Authorization': `Bearer ${sessionId}` }
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success) {
+                            rateData = data;
+                            effectiveDate = data.effective_date;
+                        }
+                    }
                 }
-                display.innerHTML = `
-                    🏛️ <strong>Official NJC Rate:</strong> ${rateText}<br>
-                    <small style="opacity: 0.8;">${rateData.description}</small>
-                `;
-                display.style.background = 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)';
-                display.style.color = '#0d47a1';
                 
-                // Handle different expense types
-                if (selectedType === 'vehicle_km') {
-                    vehicleKmGroup.style.display = 'block';
-                    amountLabel.textContent = 'Total Allowance (Calculated) *';
-                    amountField.value = '';
-                    amountInfo.innerHTML = '<strong style="color: #0d47a1;">📐 Enter kilometers to calculate amount</strong>';
-                    // Hide vendor for vehicle — from/to locations replace it
-                    const vendorField = document.getElementById('vendor');
-                    const vendorLabel = document.querySelector('label[for="vendor"]');
-                    vendorField.style.display = 'none';
-                    vendorLabel.style.display = 'none';
-                    vendorField.removeAttribute('required');
-                    vendorField.value = 'Vehicle Mileage Claim';
-                } else if (rateData.fixed) {
-                    // Fixed per diem rates - LOCK THE FIELD AND HIDE VENDOR
-                    amountField.value = rateData.rate.toFixed(2);
+                // Fallback to current rates if no date specified or date lookup failed
+                if (!rateData) {
+                    const response = await fetch(`/api/njc-rates/${selectedType}`, {
+                        headers: { 'Authorization': `Bearer ${sessionId}` }
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.success) {
+                            rateData = data;
+                            effectiveDate = data.effective_date || 'current';
+                        }
+                    }
+                }
+                
+                if (rateData) {
+                    // Update display with rate info
+                    let rateText;
+                    if (selectedType === 'vehicle_km' || selectedType === 'private_vehicle') {
+                        rateText = `$${rateData.rate}/km`;
+                    } else if (selectedType === 'hotel') {
+                        rateText = 'No Limit (Receipt Required)';
+                    } else {
+                        rateText = `$${rateData.rate}`;
+                    }
+                    
+                    const dateDisplay = effectiveDate !== 'current' ? ` (effective ${effectiveDate})` : '';
+                    display.innerHTML = `
+                        🏛️ <strong>Official NJC Rate:</strong> ${rateText}${dateDisplay}<br>
+                        <small style="opacity: 0.8;">${rateData.description || 'Government of Canada rate'}</small>
+                    `;
+                    display.style.background = 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)';
+                    display.style.color = '#0d47a1';
+                
+                    // Handle different expense types
+                    if (selectedType === 'vehicle_km' || selectedType === 'private_vehicle') {
+                        vehicleKmGroup.style.display = 'block';
+                        amountLabel.textContent = 'Total Allowance (Calculated) *';
+                        amountField.value = '';
+                        amountInfo.innerHTML = '<strong style="color: #0d47a1;">📐 Enter kilometers to calculate amount</strong>';
+                        // Hide vendor for vehicle — from/to locations replace it
+                        const vendorField = document.getElementById('vendor');
+                        const vendorLabel = document.querySelector('label[for="vendor"]');
+                        vendorField.style.display = 'none';
+                        vendorLabel.style.display = 'none';
+                        vendorField.removeAttribute('required');
+                        vendorField.value = 'Vehicle Mileage Claim';
+                    } else if (rateData.fixed && rateData.rate) {
+                        // Fixed per diem rates - LOCK THE FIELD AND HIDE VENDOR
+                        amountField.value = rateData.rate.toFixed(2);
                     amountField.readOnly = true;
                     amountField.style.backgroundColor = '#e3f2fd';
                     amountField.style.border = '2px solid #2196f3';
@@ -1637,8 +1662,14 @@
                 vendorField.style.display = 'block';
                 vendorLabel.style.display = 'block';
                 vendorField.setAttribute('required', true);
-                vendorField.value = '';
-                vendorField.placeholder = 'e.g., Tim Hortons, Hotel Name, Distance in KM';
+                    vendorField.value = '';
+                    vendorField.placeholder = 'e.g., Tim Hortons, Hotel Name, Distance in KM';
+                }
+            } catch (error) {
+                console.error('Error fetching NJC rate:', error);
+                display.innerHTML = '⚠️ Error loading rate - using fallback values';
+                display.style.background = 'linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%)';
+                display.style.color = '#856404';
             }
         }
         
@@ -1749,8 +1780,11 @@
             }
         });
         
-        // Add date change listener to check per diem limits
-        document.getElementById('expense-date').addEventListener('change', checkPerDiemLimits);
+        // Add date change listener to update rates and check per diem limits
+        document.getElementById('expense-date').addEventListener('change', async function() {
+            await updatePerDiemRate(); // Update rates based on new date
+            checkPerDiemLimits(); // Check per diem limits
+        });
         
         // ═══════════════════════════════════════════════════════════════════════════════
         // SECTION 5: HOTEL DATE RANGE & PER DIEM LOGIC

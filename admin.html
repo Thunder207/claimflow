@@ -134,6 +134,8 @@
                     aria-controls="chart-tab" tabindex="-1">🏢 Organization Chart</button>
             <button class="nav-tab" onclick="showTab('sage300')" id="sage300-tab-btn" style="display: none;" role="tab" 
                     aria-selected="false" aria-controls="sage300-tab" tabindex="-1">💰 Sage 300</button>
+            <button class="nav-tab" onclick="showTab('njc-rates')" id="njc-rates-tab-btn" role="tab" 
+                    aria-selected="false" aria-controls="njc-rates-tab" tabindex="-1">📋 NJC Rates</button>
         </div>
 
         <div class="stats" id="dashboard-stats" style="display: none;">
@@ -344,6 +346,95 @@
                 </div>
             </div>
         </div>
+
+        <!-- 📋 NJC RATES MANAGEMENT TAB -->
+        <div id="njc-rates-tab" class="tab-content">
+            <div class="section-header">
+                <span>📋 National Joint Council (NJC) Rates Management</span>
+            </div>
+            
+            <!-- Current Rates Overview -->
+            <div style="margin-bottom: 40px;">
+                <h3 style="margin-bottom: 20px; color: #2c3e50;">💰 Current Effective Rates</h3>
+                <div id="current-rates-container">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>Loading current rates...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add New Rate Form -->
+            <div style="margin-bottom: 40px; background: #f8fcff; padding: 25px; border-radius: 12px; border-left: 5px solid #17a2b8;">
+                <h3 style="margin-bottom: 20px; color: #2c3e50;">➕ Add New Rate Revision</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">Rate Type</label>
+                        <select id="new-rate-type" class="form-control" style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 8px;">
+                            <option value="">Select rate type</option>
+                            <option value="breakfast">🥐 Breakfast</option>
+                            <option value="lunch">🥗 Lunch</option>
+                            <option value="dinner">🍽️ Dinner</option>
+                            <option value="incidentals">📱 Incidentals</option>
+                            <option value="private_vehicle">🚗 Private Vehicle (per km)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">New Amount ($)</label>
+                        <input type="number" id="new-rate-amount" step="0.01" min="0.01" max="1000" 
+                               class="form-control" placeholder="0.00" 
+                               style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 8px;">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">Effective Date</label>
+                        <input type="date" id="new-rate-effective-date" 
+                               class="form-control" 
+                               style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 8px;">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">Province</label>
+                        <select id="new-rate-province" class="form-control" style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 8px;">
+                            <option value="QC">Quebec (QC)</option>
+                            <option value="ON">Ontario (ON)</option>
+                            <option value="BC">British Columbia (BC)</option>
+                            <option value="AB">Alberta (AB)</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">Notes (Optional)</label>
+                    <textarea id="new-rate-notes" rows="2" placeholder="Optional notes about this rate revision..."
+                              class="form-control" 
+                              style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 8px; resize: vertical;"></textarea>
+                </div>
+                <div id="rate-replacement-preview" style="margin-bottom: 20px; padding: 15px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107; display: none;">
+                    <p style="margin: 0; font-weight: 600; color: #856404;">⚠️ This will replace the current rate</p>
+                    <p id="replacement-details" style="margin: 5px 0 0 0; color: #856404;"></p>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-success" onclick="addNewRate()" id="add-rate-btn">
+                        ➕ Add New Rate
+                    </button>
+                    <button class="btn btn-secondary" onclick="clearNewRateForm()">
+                        🔄 Clear Form
+                    </button>
+                </div>
+            </div>
+
+            <!-- Rate History Timeline -->
+            <div>
+                <h3 style="margin-bottom: 20px; color: #2c3e50;">📈 Rate History Timeline</h3>
+                <p style="color: #6c757d; margin-bottom: 20px;">
+                    Historical rates are read-only for audit compliance. Only current/future rates can be modified.
+                </p>
+                <div id="rate-history-container">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>Loading rate history...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -538,6 +629,8 @@
                 loadOrganizationChart();
             } else if (tabName === 'sage300') {
                 loadSage300Data();
+            } else if (tabName === 'njc-rates') {
+                loadNJCRatesData();
             }
         }
 
@@ -1876,6 +1969,283 @@
         // Export admin CSV
         function exportAdminCSV() {
             window.location.href = `/api/expenses/export/csv?token=${sessionId}`;
+        }
+
+        // ===== NJC RATES MANAGEMENT FUNCTIONS =====
+
+        async function loadNJCRatesData() {
+            await Promise.all([
+                loadCurrentRates(),
+                loadRateHistory(),
+                setupRateFormHandlers()
+            ]);
+        }
+
+        async function loadCurrentRates() {
+            const container = document.getElementById('current-rates-container');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading current rates...</p></div>';
+
+            try {
+                const response = await fetch('/api/njc-rates/current', {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const rates = data.rates;
+                    let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">';
+                    
+                    const rateIcons = {
+                        'breakfast': '🥐',
+                        'lunch': '🥗', 
+                        'dinner': '🍽️',
+                        'incidentals': '📱',
+                        'private_vehicle': '🚗'
+                    };
+                    
+                    rates.forEach(rate => {
+                        const icon = rateIcons[rate.rate_type] || '📋';
+                        const unit = rate.rate_type === 'private_vehicle' ? '/km' : '';
+                        html += `
+                            <div class="stat-card" style="text-align: left;">
+                                <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                                    <span style="font-size: 2em; margin-right: 10px;">${icon}</span>
+                                    <div>
+                                        <h4 style="margin: 0; color: #2c3e50; text-transform: capitalize;">${rate.rate_type.replace('_', ' ')}</h4>
+                                        <p style="margin: 0; color: #6c757d; font-size: 0.9em;">Effective ${rate.effective_date}</p>
+                                    </div>
+                                </div>
+                                <div class="stat-value" style="font-size: 1.8em; margin-bottom: 5px;">$${rate.amount.toFixed(2)}${unit}</div>
+                                ${rate.notes ? `<p style="color: #6c757d; font-size: 0.85em; margin: 0;">${rate.notes}</p>` : ''}
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '<div class="alert alert-danger">Error loading current rates</div>';
+                }
+            } catch (error) {
+                console.error('Error loading current rates:', error);
+                container.innerHTML = '<div class="alert alert-danger">Failed to load current rates</div>';
+            }
+        }
+
+        async function loadRateHistory() {
+            const container = document.getElementById('rate-history-container');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading rate history...</p></div>';
+
+            try {
+                const response = await fetch('/api/njc-rates/all', {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const ratesGrouped = data.rates;
+                    let html = '';
+                    
+                    const rateTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'private_vehicle'];
+                    const rateIcons = {
+                        'breakfast': '🥐',
+                        'lunch': '🥗', 
+                        'dinner': '🍽️',
+                        'incidentals': '📱',
+                        'private_vehicle': '🚗'
+                    };
+                    
+                    rateTypes.forEach(rateType => {
+                        if (ratesGrouped[rateType] && ratesGrouped[rateType].length > 0) {
+                            const rates = ratesGrouped[rateType];
+                            const icon = rateIcons[rateType] || '📋';
+                            const unit = rateType === 'private_vehicle' ? '/km' : '';
+                            
+                            html += `
+                                <div style="margin-bottom: 30px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 20px; cursor: pointer;" 
+                                         onclick="toggleRateHistory('${rateType}')">
+                                        <h4 style="margin: 0; display: flex; align-items: center;">
+                                            ${icon} <span style="margin-left: 10px; text-transform: capitalize;">${rateType.replace('_', ' ')} Rate History</span>
+                                            <span id="toggle-${rateType}" style="margin-left: auto;">▼</span>
+                                        </h4>
+                                    </div>
+                                    <div id="history-${rateType}" style="padding: 20px; display: none;">
+                                        <div style="display: flex; flex-direction: column; gap: 15px;">
+                            `;
+                            
+                            rates.forEach((rate, index) => {
+                                const isCurrentRate = !rate.end_date;
+                                const statusBadge = isCurrentRate 
+                                    ? '<span style="background: #28a745; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.8em; font-weight: 600;">CURRENT</span>'
+                                    : '<span style="background: #6c757d; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.8em; font-weight: 600;">HISTORICAL</span>';
+                                
+                                html += `
+                                    <div style="display: flex; justify-content: between; align-items: center; padding: 15px; background: ${isCurrentRate ? '#f8fcff' : '#f8f9fa'}; border-radius: 8px; border-left: 4px solid ${isCurrentRate ? '#28a745' : '#6c757d'};">
+                                        <div style="flex: 1;">
+                                            <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 8px;">
+                                                <span style="font-size: 1.3em; font-weight: 600; color: #2c3e50;">$${rate.amount.toFixed(2)}${unit}</span>
+                                                ${statusBadge}
+                                            </div>
+                                            <p style="margin: 0; color: #6c757d; font-size: 0.9em;">
+                                                <strong>Effective:</strong> ${rate.effective_date} 
+                                                ${rate.end_date ? ` → ${rate.end_date}` : ' → Present'}
+                                            </p>
+                                            ${rate.notes ? `<p style="margin: 5px 0 0 0; color: #6c757d; font-size: 0.85em;"><em>${rate.notes}</em></p>` : ''}
+                                        </div>
+                                    </div>
+                                `;
+                            });
+                            
+                            html += `
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    });
+                    
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '<div class="alert alert-danger">Error loading rate history</div>';
+                }
+            } catch (error) {
+                console.error('Error loading rate history:', error);
+                container.innerHTML = '<div class="alert alert-danger">Failed to load rate history</div>';
+            }
+        }
+
+        function toggleRateHistory(rateType) {
+            const historyDiv = document.getElementById(`history-${rateType}`);
+            const toggleIcon = document.getElementById(`toggle-${rateType}`);
+            
+            if (historyDiv.style.display === 'none') {
+                historyDiv.style.display = 'block';
+                toggleIcon.textContent = '▲';
+            } else {
+                historyDiv.style.display = 'none';
+                toggleIcon.textContent = '▼';
+            }
+        }
+
+        function setupRateFormHandlers() {
+            // Set minimum date to today
+            const dateInput = document.getElementById('new-rate-effective-date');
+            const today = new Date().toISOString().split('T')[0];
+            dateInput.min = today;
+            dateInput.value = today;
+            
+            // Add change handlers for form preview
+            document.getElementById('new-rate-type').addEventListener('change', updateRatePreview);
+            document.getElementById('new-rate-amount').addEventListener('input', updateRatePreview);
+            document.getElementById('new-rate-effective-date').addEventListener('change', updateRatePreview);
+        }
+
+        async function updateRatePreview() {
+            const rateType = document.getElementById('new-rate-type').value;
+            const amount = document.getElementById('new-rate-amount').value;
+            const effectiveDate = document.getElementById('new-rate-effective-date').value;
+            const previewDiv = document.getElementById('rate-replacement-preview');
+            const detailsP = document.getElementById('replacement-details');
+            
+            if (!rateType || !amount) {
+                previewDiv.style.display = 'none';
+                return;
+            }
+            
+            try {
+                // Get current rate for this type
+                const response = await fetch(`/api/njc-rates/${rateType}`, {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        const currentRate = data.rate.toFixed(2);
+                        const newRate = parseFloat(amount).toFixed(2);
+                        const unit = rateType === 'private_vehicle' ? '/km' : '';
+                        
+                        detailsP.innerHTML = `Current ${rateType.replace('_', ' ')} rate: <strong>$${currentRate}${unit}</strong> → New rate: <strong>$${newRate}${unit}</strong> (effective ${effectiveDate})`;
+                        previewDiv.style.display = 'block';
+                    }
+                }
+            } catch (error) {
+                console.error('Error updating preview:', error);
+            }
+        }
+
+        async function addNewRate() {
+            const rateType = document.getElementById('new-rate-type').value;
+            const amount = document.getElementById('new-rate-amount').value;
+            const effectiveDate = document.getElementById('new-rate-effective-date').value;
+            const province = document.getElementById('new-rate-province').value;
+            const notes = document.getElementById('new-rate-notes').value;
+            
+            if (!rateType || !amount || !effectiveDate) {
+                alert('Please fill in all required fields');
+                return;
+            }
+            
+            if (parseFloat(amount) <= 0) {
+                alert('Amount must be greater than 0');
+                return;
+            }
+            
+            const confirmMessage = `Are you sure you want to add a new ${rateType.replace('_', ' ')} rate of $${parseFloat(amount).toFixed(2)} effective ${effectiveDate}?\n\nThis will replace the current rate for audit purposes.`;
+            
+            if (!confirm(confirmMessage)) {
+                return;
+            }
+            
+            const btn = document.getElementById('add-rate-btn');
+            btn.disabled = true;
+            btn.textContent = 'Adding Rate...';
+            
+            try {
+                const response = await fetch('/api/njc-rates', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionId}`
+                    },
+                    body: JSON.stringify({
+                        rate_type: rateType,
+                        amount: parseFloat(amount),
+                        effective_date: effectiveDate,
+                        province: province,
+                        notes: notes
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('New rate added successfully!');
+                    clearNewRateForm();
+                    await loadNJCRatesData(); // Reload all data
+                } else {
+                    alert(`Error: ${data.error}`);
+                }
+            } catch (error) {
+                console.error('Error adding rate:', error);
+                alert('Failed to add new rate. Please try again.');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '➕ Add New Rate';
+            }
+        }
+
+        function clearNewRateForm() {
+            document.getElementById('new-rate-type').value = '';
+            document.getElementById('new-rate-amount').value = '';
+            const dateInput = document.getElementById('new-rate-effective-date');
+            dateInput.value = new Date().toISOString().split('T')[0];
+            document.getElementById('new-rate-province').value = 'QC';
+            document.getElementById('new-rate-notes').value = '';
+            document.getElementById('rate-replacement-preview').style.display = 'none';
         }
 
     </script>
