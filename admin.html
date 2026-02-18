@@ -900,8 +900,6 @@
 
         async function approveExpense(expenseId) {
             try {
-                const comment = prompt('💬 Add an approval comment (optional):') || 'Approved';
-                
                 const response = await fetch(`/api/expenses/${expenseId}/approve`, {
                     method: 'POST',
                     headers: { 
@@ -909,7 +907,7 @@
                         'Authorization': `Bearer ${sessionId}`
                     },
                     body: JSON.stringify({ 
-                        comment,
+                        comment: 'Approved',
                         approver: currentUserRole === 'supervisor' ? currentSupervisorName : 'System Administrator'
                     })
                 });
