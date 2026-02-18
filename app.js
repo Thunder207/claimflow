@@ -2765,6 +2765,125 @@ app.post('/api/upload-receipt', requireAuth, (req, res) => {
     }
 });
 
+// 📄 OCR Receipt Scanning Endpoint
+app.post('/api/ocr/scan', requireAuth, upload.single('receipt'), async (req, res) => {
+    const Tesseract = require('tesseract.js');
+    
+    try {
+        if (!req.file) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'No image file provided' 
+            });
+        }
+
+        console.log(`🔍 Processing OCR for receipt: ${req.file.filename}`);
+        
+        // Run Tesseract OCR on the uploaded image
+        const { data: { text } } = await Tesseract.recognize(req.file.path, 'eng', {
+            logger: m => console.log(`OCR: ${m.status} - ${Math.round(m.progress * 100)}%`)
+        });
+
+        console.log('📝 Raw OCR Text:', text);
+
+        // Smart parsing logic
+        const parsedData = parseReceiptText(text);
+        
+        console.log('✅ Parsed Receipt Data:', parsedData);
+        
+        res.json({
+            success: true,
+            vendor: parsedData.vendor || '',
+            amount: parsedData.amount || '',
+            date: parsedData.date || '',
+            rawText: text
+        });
+
+    } catch (error) {
+        console.error('❌ OCR Error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'OCR processing failed',
+            details: error.message 
+        });
+    }
+});
+
+/**
+ * Parse receipt text to extract vendor, amount, and date
+ */
+function parseReceiptText(text) {
+    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    
+    let vendor = '';
+    let amount = '';
+    let date = '';
+
+    // Extract amount - look for dollar patterns
+    const amountPatterns = [
+        /\$\s*(\d+[\.,]\d{2})/g,  // $XX.XX or $XX,XX
+        /(\d+[\.,]\d{2})\s*\$?/g,  // XX.XX$ or XX.XX
+        /total:?\s*\$?(\d+[\.,]\d{2})/gi,  // total: $XX.XX
+        /amount:?\s*\$?(\d+[\.,]\d{2})/gi  // amount: $XX.XX
+    ];
+    
+    for (const pattern of amountPatterns) {
+        const matches = text.match(pattern);
+        if (matches) {
+            // Get the largest amount found (likely the total)
+            const amounts = matches.map(match => {
+                const num = match.replace(/[^\d\.,]/g, '').replace(',', '.');
+                return parseFloat(num);
+            }).filter(num => !isNaN(num));
+            
+            if (amounts.length > 0) {
+                amount = Math.max(...amounts).toFixed(2);
+                break;
+            }
+        }
+    }
+
+    // Extract date - look for common date patterns
+    const datePatterns = [
+        /(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/g,  // MM/DD/YYYY or MM-DD-YYYY
+        /(\d{2,4}[-\/]\d{1,2}[-\/]\d{1,2})/g,  // YYYY/MM/DD or YYYY-MM-DD
+        /(\w{3}\s+\d{1,2},?\s+\d{2,4})/g,      // Jan 15, 2024 or Jan 15 2024
+        /(\d{1,2}\s+\w{3}\s+\d{2,4})/g        // 15 Jan 2024
+    ];
+    
+    for (const pattern of datePatterns) {
+        const matches = text.match(pattern);
+        if (matches && matches.length > 0) {
+            // Try to parse the first valid date
+            const dateStr = matches[0];
+            const parsedDate = new Date(dateStr);
+            if (!isNaN(parsedDate.getTime()) && parsedDate.getFullYear() > 2020) {
+                date = parsedDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+                break;
+            }
+        }
+    }
+
+    // Extract vendor - use the longest meaningful text line (likely business name)
+    const meaningfulLines = lines.filter(line => {
+        // Filter out common receipt noise
+        const noise = /^(receipt|invoice|thank you|total|subtotal|tax|date|time|\$|visa|mastercard|\d+[\.,]\d{2}|[\d\s\-\(\)]+$)/gi;
+        return line.length > 3 && line.length < 60 && !noise.test(line);
+    });
+    
+    if (meaningfulLines.length > 0) {
+        // Find the longest line that's likely a business name
+        vendor = meaningfulLines.reduce((longest, current) => 
+            current.length > longest.length ? current : longest
+        );
+        
+        // Clean up vendor name
+        vendor = vendor.replace(/[^\w\s&\-\.]/g, ' ').trim();
+    }
+
+    return { vendor, amount, date };
+}
+
 // ============================================
 // FEATURE 1: Dashboard Stats Endpoint
 // ============================================

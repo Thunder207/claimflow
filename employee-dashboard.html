@@ -1955,7 +1955,7 @@
         const photoSection = document.querySelector('.photo-section');
         const photoPreview = document.getElementById('photo-preview');
         
-        fileInput.addEventListener('change', function(e) {
+        fileInput.addEventListener('change', async function(e) {
             const file = e.target.files[0];
             if (file) {
                 if (file.size > 10 * 1024 * 1024) {
@@ -1964,16 +1964,109 @@
                 }
                 
                 const reader = new FileReader();
-                reader.onload = function(e) {
+                reader.onload = async function(e) {
                     photoPreview.src = e.target.result;
                     photoPreview.style.display = 'block';
                     photoSection.classList.add('has-photo');
+                    
+                    // Initial success message with OCR loading indicator
                     photoSection.innerHTML = '<div style="color: #27ae60; font-weight: 600;">✅ Receipt captured successfully!</div>' + 
+                                           '<div id="ocr-loading" style="color: #007bff; font-weight: 600; margin-top: 10px;">🔍 Scanning receipt...</div>' +
                                            '<img id="photo-preview" class="photo-preview" src="' + e.target.result + '">';
+                    
+                    // Perform OCR processing
+                    await performOCR(file);
                 };
                 reader.readAsDataURL(file);
             }
         });
+        
+        /**
+         * Perform OCR on uploaded receipt and auto-fill form fields
+         */
+        async function performOCR(file) {
+            try {
+                const formData = new FormData();
+                formData.append('receipt', file);
+                
+                const response = await fetch('/api/ocr/scan', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${sessionId}`
+                    },
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                // Remove loading indicator
+                const loadingEl = document.getElementById('ocr-loading');
+                if (loadingEl) {
+                    loadingEl.remove();
+                }
+                
+                if (result.success) {
+                    console.log('OCR Results:', result);
+                    
+                    // Pre-fill form fields only if they are currently empty
+                    const vendorField = document.getElementById('vendor');
+                    const amountField = document.getElementById('amount');
+                    const dateField = document.getElementById('expense-date');
+                    
+                    let fieldsUpdated = [];
+                    
+                    // Auto-fill vendor/details field if empty and OCR found vendor
+                    if (result.vendor && result.vendor.trim() && (!vendorField.value || vendorField.value.trim() === '')) {
+                        vendorField.value = result.vendor.trim();
+                        fieldsUpdated.push('vendor');
+                    }
+                    
+                    // Auto-fill amount field if empty and OCR found amount
+                    if (result.amount && result.amount.trim() && (!amountField.value || amountField.value.trim() === '')) {
+                        amountField.value = result.amount.trim();
+                        fieldsUpdated.push('amount');
+                        
+                        // Trigger amount validation
+                        amountField.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                    
+                    // Auto-fill date field if empty and OCR found date
+                    if (result.date && result.date.trim() && (!dateField.value || dateField.value.trim() === '')) {
+                        dateField.value = result.date.trim();
+                        fieldsUpdated.push('date');
+                        
+                        // Trigger date change event to update rates
+                        dateField.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    
+                    // Show success message if any fields were updated
+                    if (fieldsUpdated.length > 0) {
+                        showMessage('success', `✨ Auto-filled: ${fieldsUpdated.join(', ')} from receipt scan`);
+                    } else if (result.vendor || result.amount || result.date) {
+                        showMessage('info', '🤖 Receipt scanned, but form fields already filled. OCR detected: ' + 
+                                  [result.vendor, result.amount, result.date].filter(x => x).join(', '));
+                    } else {
+                        showMessage('info', '🔍 Receipt scanned successfully, but could not extract vendor, amount, or date clearly.');
+                    }
+                    
+                } else {
+                    console.warn('OCR failed:', result.error);
+                    showMessage('info', '🔍 Receipt uploaded successfully. OCR scanning had issues - please fill in details manually.');
+                }
+                
+            } catch (error) {
+                console.error('OCR Error:', error);
+                
+                // Remove loading indicator
+                const loadingEl = document.getElementById('ocr-loading');
+                if (loadingEl) {
+                    loadingEl.remove();
+                }
+                
+                // Don't show error to user - just silently fall back to manual entry
+                showMessage('info', '🔍 Receipt uploaded successfully. Please fill in the expense details manually.');
+            }
+        }
         
         // Add date change listener to update rates and check per diem limits
         document.getElementById('expense-date').addEventListener('change', async function() {
