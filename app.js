@@ -297,13 +297,8 @@ function initializeDatabase() {
         )`,
         
         // NJC Rates table
-        `CREATE TABLE IF NOT EXISTS njc_rates (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            meal_type TEXT NOT NULL UNIQUE,
-            rate DECIMAL(6,2) NOT NULL,
-            effective_date DATE DEFAULT CURRENT_TIMESTAMP,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )`,
+        // NJC rates table now managed through comprehensive rate management system
+        // See NJC-RATES-SYSTEM.md for details
         
         // 💰 GL Accounts table for Sage 300 mapping
         `CREATE TABLE IF NOT EXISTS gl_accounts (
@@ -384,22 +379,8 @@ function insertDefaultData() {
         });
     }
     
-    // Insert NJC rates
-    const rates = [
-        ['breakfast', 23.45],
-        ['lunch', 29.75],
-        ['dinner', 47.05],
-        ['mileage', 0.68], // per km
-        ['accommodation', 150.00] // per night
-    ];
-    
-    rates.forEach(rate => {
-        db.run(`INSERT OR IGNORE INTO njc_rates (meal_type, rate) VALUES (?, ?)`, rate, (err) => {
-            if (err && !err.message.includes('UNIQUE constraint failed')) {
-                console.error('❌ Error inserting NJC rate:', err.message);
-            }
-        });
-    });
+    // NJC rates are now managed through the comprehensive rate management system
+    // Historical and current rates are pre-seeded in the database
     
     // Insert default GL account mappings
     const glAccounts = [
