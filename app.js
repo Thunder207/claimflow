@@ -319,6 +319,19 @@ function initializeDatabase() {
             FOREIGN KEY (actor_id) REFERENCES employees (id)
         )`,
         
+        // Login audit trail table for security compliance
+        `CREATE TABLE IF NOT EXISTS login_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL,
+            employee_id INTEGER,
+            success INTEGER NOT NULL,
+            failure_reason TEXT,
+            ip_address TEXT,
+            user_agent TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees (id)
+        )`,
+        
         // NJC Rates table
         // NJC rates table now managed through comprehensive rate management system
         // See NJC-RATES-SYSTEM.md for details
@@ -543,6 +556,11 @@ app.post('/api/auth/login', async (req, res) => {
             attempts.firstAttempt = attempts.firstAttempt || Date.now();
             loginAttempts.set(clientKey, attempts);
             
+            // Log failed login attempt
+            const failureReason = !employee ? 'User not found' : 'Invalid password';
+            logLoginAttempt(email, employee?.id || null, false, failureReason, 
+                req.ip || req.connection.remoteAddress, req.get('User-Agent'));
+            
             return res.status(401).json({
                 success: false,
                 error: 'Invalid email or password'
@@ -551,6 +569,10 @@ app.post('/api/auth/login', async (req, res) => {
         
         // Clear login attempts on successful login
         loginAttempts.delete(clientKey);
+        
+        // Log successful login attempt
+        logLoginAttempt(email, employee.id, true, null, 
+            req.ip || req.connection.remoteAddress, req.get('User-Agent'));
         
         // Update last login
         db.run('UPDATE employees SET last_login = CURRENT_TIMESTAMP WHERE id = ?', [employee.id]);
@@ -864,11 +886,17 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
                 return res.status(500).json({ success: false, error: 'Failed to submit expense' });
             }
             
+            const expenseId = this.lastID;
+            
+            // Log expense creation to audit trail
+            logExpenseAudit(expenseId, 'submitted', req.user.employeeId, employee.name, 
+                `${expense_type} expense submitted: $${amount} at ${location}`, null, 'pending');
+            
             const msg = isPerDiem 
                 ? `✅ ${meal_name || expense_type} per diem submitted! Locked to prevent duplicates.`
                 : 'Expense submitted successfully!';
-            console.log(`✅ Expense submitted by ${employee.name}: ${expense_type} $${amount} (ID: ${this.lastID})`);
-            res.json({ success: true, id: this.lastID, message: msg });
+            console.log(`✅ Expense submitted by ${employee.name}: ${expense_type} $${amount} (ID: ${expenseId})`);
+            res.json({ success: true, id: expenseId, message: msg });
         });
     });
     } catch (error) {
@@ -1216,6 +1244,150 @@ function logExpenseAudit(expenseId, action, actorId, actorName, comment, previou
     });
 }
 
+// Login audit logging function for security compliance
+function logLoginAttempt(email, employeeId, success, failureReason, ipAddress, userAgent) {
+    db.run(`
+        INSERT INTO login_audit_log (email, employee_id, success, failure_reason, ip_address, user_agent)
+        VALUES (?, ?, ?, ?, ?, ?)
+    `, [email, employeeId, success ? 1 : 0, failureReason, ipAddress, userAgent], (err) => {
+        if (err) {
+            console.error('❌ Login audit log error:', err.message);
+        } else {
+            const status = success ? 'SUCCESS' : 'FAILED';
+            console.log(`📝 Login ${status}: ${email} from ${ipAddress}`);
+        }
+    });
+}
+
+// GET /api/audit-log endpoint (admin only) - Full system audit trail
+app.get('/api/audit-log', requireAuth, requireRole('admin'), (req, res) => {
+    const { limit = 100, offset = 0, expense_id } = req.query;
+    
+    let query = `
+        SELECT al.*, 
+               e.employee_name as expense_employee,
+               e.amount as expense_amount,
+               e.expense_type,
+               e.date as expense_date,
+               actor.name as actor_employee_name,
+               actor.role as actor_role
+        FROM expense_audit_log al
+        LEFT JOIN expenses e ON al.expense_id = e.id
+        LEFT JOIN employees actor ON al.actor_id = actor.id
+    `;
+    
+    let params = [];
+    
+    if (expense_id) {
+        query += ` WHERE al.expense_id = ?`;
+        params.push(expense_id);
+    }
+    
+    query += ` ORDER BY al.timestamp DESC LIMIT ? OFFSET ?`;
+    params.push(parseInt(limit), parseInt(offset));
+    
+    db.all(query, params, (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching audit log:', err);
+            return res.status(500).json({ error: 'Failed to fetch audit log' });
+        }
+        
+        // Get total count
+        const countQuery = expense_id ? 
+            'SELECT COUNT(*) as total FROM expense_audit_log WHERE expense_id = ?' :
+            'SELECT COUNT(*) as total FROM expense_audit_log';
+        const countParams = expense_id ? [expense_id] : [];
+        
+        db.get(countQuery, countParams, (err2, countRow) => {
+            if (err2) {
+                console.error('❌ Error fetching audit count:', err2);
+                return res.status(500).json({ error: 'Failed to fetch audit count' });
+            }
+            
+            console.log(`✅ Admin fetched ${rows.length} audit log entries (${countRow.total} total)`);
+            res.json({
+                success: true,
+                audit_log: rows,
+                pagination: {
+                    total: countRow.total,
+                    limit: parseInt(limit),
+                    offset: parseInt(offset),
+                    has_more: (parseInt(offset) + rows.length) < countRow.total
+                }
+            });
+        });
+    });
+});
+
+// GET /api/login-audit-log endpoint (admin only) - Login attempt audit trail
+app.get('/api/login-audit-log', requireAuth, requireRole('admin'), (req, res) => {
+    const { limit = 100, offset = 0, email, success_only, failed_only } = req.query;
+    
+    let query = `
+        SELECT lal.*, 
+               e.name as employee_name,
+               e.role as employee_role
+        FROM login_audit_log lal
+        LEFT JOIN employees e ON lal.employee_id = e.id
+    `;
+    
+    let whereConditions = [];
+    let params = [];
+    
+    if (email) {
+        whereConditions.push('lal.email LIKE ?');
+        params.push(`%${email}%`);
+    }
+    
+    if (success_only === 'true') {
+        whereConditions.push('lal.success = 1');
+    } else if (failed_only === 'true') {
+        whereConditions.push('lal.success = 0');
+    }
+    
+    if (whereConditions.length > 0) {
+        query += ' WHERE ' + whereConditions.join(' AND ');
+    }
+    
+    query += ` ORDER BY lal.timestamp DESC LIMIT ? OFFSET ?`;
+    params.push(parseInt(limit), parseInt(offset));
+    
+    db.all(query, params, (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching login audit log:', err);
+            return res.status(500).json({ error: 'Failed to fetch login audit log' });
+        }
+        
+        // Get total count
+        let countQuery = 'SELECT COUNT(*) as total FROM login_audit_log lal';
+        let countParams = [];
+        
+        if (whereConditions.length > 0) {
+            countQuery += ' WHERE ' + whereConditions.join(' AND ');
+            countParams = params.slice(0, -2); // Remove limit and offset
+        }
+        
+        db.get(countQuery, countParams, (err2, countRow) => {
+            if (err2) {
+                console.error('❌ Error fetching login audit count:', err2);
+                return res.status(500).json({ error: 'Failed to fetch login audit count' });
+            }
+            
+            console.log(`✅ Admin fetched ${rows.length} login audit entries (${countRow.total} total)`);
+            res.json({
+                success: true,
+                login_audit_log: rows,
+                pagination: {
+                    total: countRow.total,
+                    limit: parseInt(limit),
+                    offset: parseInt(offset),
+                    has_more: (parseInt(offset) + rows.length) < countRow.total
+                }
+            });
+        });
+    });
+});
+
 // CONCUR ENHANCEMENT: Return expense for correction (supervisors only)
 app.post('/api/expenses/:id/return', requireAuth, (req, res) => {
     if (req.user.role !== 'supervisor') {
@@ -1505,12 +1677,13 @@ app.post('/api/expenses/:id/reject', requireAuth, (req, res) => {
     });
 });
 
-// Delete expense (admin only)
+// Delete expense (admin only with enhanced controls)
 app.delete('/api/expenses/:id', requireAuth, requireRole('admin'), (req, res) => {
     const { id } = req.params;
+    const { admin_override } = req.body;
     
-    // First get the expense to check for receipt photo
-    db.get('SELECT receipt_photo FROM expenses WHERE id = ?', [id], (err, expense) => {
+    // First get the expense to check status and details
+    db.get('SELECT * FROM expenses WHERE id = ?', [id], (err, expense) => {
         if (err) {
             console.error('❌ Error fetching expense for deletion:', err);
             return res.status(500).json({ 
@@ -1525,6 +1698,19 @@ app.delete('/api/expenses/:id', requireAuth, requireRole('admin'), (req, res) =>
                 error: 'Expense not found' 
             });
         }
+        
+        // GOVERNANCE: Prevent deletion of approved expenses without explicit override
+        if (expense.status === 'approved' && !admin_override) {
+            return res.status(400).json({
+                success: false,
+                error: 'COMPLIANCE VIOLATION: Cannot delete approved expenses. This violates financial audit requirements. Use admin_override=true if absolutely necessary.'
+            });
+        }
+        
+        // Log the deletion to audit trail BEFORE deleting
+        logExpenseAudit(id, 'deleted', req.user.employeeId, req.user.name || 'Admin', 
+            admin_override ? 'ADMIN OVERRIDE: Force deleted approved expense' : 'Expense deleted by admin',
+            expense.status, 'deleted');
         
         // Delete the expense record
         db.run('DELETE FROM expenses WHERE id = ?', [id], function(err) {
@@ -1544,10 +1730,12 @@ app.delete('/api/expenses/:id', requireAuth, requireRole('admin'), (req, res) =>
                 });
             }
             
-            console.log(`✅ Expense ${id} deleted`);
+            console.log(`✅ Expense ${id} deleted by admin ${req.user.employeeId} (status was: ${expense.status})`);
             res.json({ 
                 success: true, 
-                message: 'Expense deleted successfully' 
+                message: expense.status === 'approved' ? 
+                    'APPROVED EXPENSE DELETED - Admin override used. This action has been logged for audit.' : 
+                    'Expense deleted successfully' 
             });
         });
     });
