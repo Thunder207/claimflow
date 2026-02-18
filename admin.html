@@ -1508,19 +1508,15 @@
                 
                 // Auto-select role and show dashboard
                 document.getElementById('role-selector').value = user.role;
-                // Governance: supervisors cannot switch roles or manage employees
+                // Governance: supervisors see ONLY their own team — no role switching, no impersonation
                 if (user.role === 'supervisor') {
                     document.querySelector('.role-selector').style.display = 'none';
-                }
-                if (user.role === 'supervisor') {
-                    await changeRole(); // This will load supervisor options
-                    document.getElementById('supervisor-employee-selector').value = user.id;
-                    
-                    // FIXED: Ensure name is available before calling selectSupervisor
-                    currentSupervisorName = user.name; // Set name directly from user data
-                    console.log(`📋 Setting supervisor name from user data: "${currentSupervisorName}"`);
-                    
-                    await selectSupervisor();
+                    // Set supervisor context directly — no dropdown, no options to switch
+                    currentUserRole = 'supervisor';
+                    currentSupervisorId = user.id;
+                    currentSupervisorName = user.name;
+                    document.getElementById('supervisor-selector').style.display = 'none';
+                    showDashboard();
                 } else {
                     await changeRole();
                 }
