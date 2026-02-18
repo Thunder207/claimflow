@@ -857,16 +857,17 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
         const todayUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
         const oneYearAgo = new Date(todayUTC);
         oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-        // Allow up to 30 days in the future (for active trip pre-claims)
-        const maxFutureDate = new Date(todayUTC);
-        maxFutureDate.setDate(maxFutureDate.getDate() + 30);
         
-        if (isNaN(expenseDate.getTime()) || expenseDate > maxFutureDate || expenseDate < oneYearAgo) {
+        // Only block clearly invalid dates (> 1 year old or invalid)
+        if (isNaN(expenseDate.getTime()) || expenseDate < oneYearAgo) {
             return res.status(400).json({
                 success: false,
-                error: 'Please enter a valid date (within the last year and up to 30 days ahead)'
+                error: 'Please enter a valid date within the last year'
             });
         }
+        
+        // Flag future-dated expenses (don't block — supervisor will review)
+        let isFutureDated = expenseDate > todayUTC;
         
         // Sanitize trip_id if provided
         if (trip_id) {
@@ -986,7 +987,13 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         
-        const params = [employee.name, req.user.employeeId, trip_id || null, expense_type, meal_name, date, location, amount, vendor, description, receiptPath];
+        // Append future-date flag to description for supervisor visibility
+        let finalDescription = description || '';
+        if (isFutureDated) {
+            finalDescription = (finalDescription ? finalDescription + ' | ' : '') + '⚠️ FUTURE-DATED EXPENSE (submitted before expense date)';
+        }
+        
+        const params = [employee.name, req.user.employeeId, trip_id || null, expense_type, meal_name, date, location, amount, vendor, finalDescription, receiptPath];
         
         db.run(query, params, function(err) {
             if (err) {
