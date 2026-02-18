@@ -326,7 +326,7 @@ class NJCRatesService {
                 db.run(`
                     UPDATE njc_rates 
                     SET end_date = ?
-                    WHERE rate_type = ? AND province = ? AND end_date IS NULL
+                    WHERE rate_type = ? AND (province = ? OR province = 'ALL') AND end_date IS NULL
                 `, [endDate, rateType, province], function(err) {
                     if (err) {
                         db.run('ROLLBACK');
