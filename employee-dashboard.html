@@ -598,10 +598,10 @@
                         </p>
                     </div>
                     <div id="trip-submit-section" style="margin-top: 20px; text-align: center; display: none;">
-                        <button type="button" id="btn-submit-trip" onclick="window._submitTrip()" class="btn btn-success" style="padding: 15px 30px; font-size: 16px; cursor: pointer; z-index: 999; position: relative;" title="Send entire trip to supervisor for approval">
+                        <button type="button" id="btn-submit-trip" class="btn btn-success" style="padding: 15px 30px; font-size: 16px; cursor: pointer; z-index: 999; position: relative;" title="Send entire trip to supervisor for approval">
                             📤 Submit Trip for Approval
                         </button>
-                        <button type="button" id="btn-clear-draft" onclick="window._clearDraft()" class="btn" style="background: #dc3545; color: white; padding: 15px 30px; font-size: 16px; margin-left: 15px;" title="Remove all expenses from this draft">
+                        <button type="button" id="btn-clear-draft" class="btn" style="background: #dc3545; color: white; padding: 15px 30px; font-size: 16px; margin-left: 15px;" title="Remove all expenses from this draft">
                             🗑️ Clear All Expenses
                         </button>
                         <div style="margin-top: 10px; font-size: 13px; color: #666;">
@@ -1372,6 +1372,9 @@
                     updateDraftExpensesList();
                 }
                 
+                // Ensure buttons are attached after everything is loaded
+                setTimeout(attachTripButtons, 100);
+                
                 // Load notifications
                 await loadNotifications();
                 setInterval(loadNotifications, 30000);
@@ -2131,6 +2134,8 @@
                     displayTripCards(trips);
                 }
             } catch (error) {
+                console.error('❌ Error loading trips:', error);
+                showMessage('error', '❌ Failed to load trips. Please refresh the page.');
             }
         }
         
@@ -2326,6 +2331,9 @@
             
             draftList.innerHTML = html;
             submitSection.style.display = 'block';
+            
+            // Re-attach button handlers after DOM update
+            setTimeout(attachTripButtons, 10);
             
         }
         
@@ -2530,13 +2538,7 @@
             showMessage('success', `🗑️ ${expenseCount} expenses cleared from trip draft`);
         }
         
-        // Expose submit/clear as global window functions for onclick handlers
-        window._submitTrip = function() {
-            submitTripForApproval().catch(function(err) { alert('Submit error: ' + err.message); });
-        };
-        window._clearDraft = function() {
-            clearTripDraft();
-        };
+        // Global functions removed - using direct event listeners instead (see attachTripButtons below)
         
         // Get expense type display name
         function getExpenseTypeName(type) {
@@ -2834,27 +2836,54 @@
             }
         }
         
-        // Attach submit/clear button handlers immediately (DOM is already ready since script is at end of body)
-        (function attachTripButtons() {
+        // Attach submit/clear button handlers with proper error handling
+        function attachTripButtons() {
             const submitBtn = document.getElementById('btn-submit-trip');
             const clearBtn = document.getElementById('btn-clear-draft');
+            
             if (submitBtn) {
-                submitBtn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    submitTripForApproval().catch(function(err) {
-                        console.error('Submit failed: ' + err.message);
-                    });
-                });
+                // Remove any existing listeners first
+                submitBtn.removeEventListener('click', handleSubmitTrip);
+                submitBtn.addEventListener('click', handleSubmitTrip);
+            } else {
+                console.warn('Submit trip button not found');
             }
+            
             if (clearBtn) {
-                clearBtn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    clearTripDraft();
-                });
+                // Remove any existing listeners first  
+                clearBtn.removeEventListener('click', handleClearDraft);
+                clearBtn.addEventListener('click', handleClearDraft);
+            } else {
+                console.warn('Clear draft button not found');
             }
-        })();
+        }
+        
+        function handleSubmitTrip(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            console.log('Submit trip button clicked');
+            
+            submitTripForApproval().catch(function(err) {
+                console.error('❌ Submit trip failed:', err);
+                showMessage('error', `❌ Failed to submit trip: ${err.message}`);
+            });
+        }
+        
+        function handleClearDraft(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            console.log('Clear draft button clicked');
+            clearTripDraft();
+        }
+        
+        // Call attachTripButtons after DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', attachTripButtons);
+        } else {
+            attachTripButtons();
+        }
         
     </script>
 </body>

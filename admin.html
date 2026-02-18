@@ -1396,13 +1396,13 @@
                 
                 const result = await response.json();
                 if (result.success) {
-                    showAlert('GL account updated successfully', 'success');
+                    showMessage('success', '✅ GL account updated successfully');
                 } else {
-                    showAlert(result.error, 'danger');
+                    showMessage('danger', '❌ ' + (result.error || 'Failed to update GL account'));
                 }
             } catch (error) {
                 console.error('Error saving GL account:', error);
-                showAlert('Error saving GL account', 'danger');
+                showMessage('danger', '❌ Error saving GL account');
             }
         }
 
@@ -1426,13 +1426,13 @@
                 
                 const result = await response.json();
                 if (result.success) {
-                    showAlert('Cost center updated successfully', 'success');
+                    showMessage('success', '✅ Cost center updated successfully');
                 } else {
-                    showAlert(result.error, 'danger');
+                    showMessage('danger', '❌ ' + (result.error || 'Failed to update cost center'));
                 }
             } catch (error) {
                 console.error('Error saving cost center:', error);
-                showAlert('Error saving cost center', 'danger');
+                showMessage('danger', '❌ Error saving cost center');
             }
         }
 
@@ -1462,14 +1462,14 @@
                 
                 const result = await response.json();
                 if (result.success) {
-                    showAlert('GL account added successfully', 'success');
+                    showMessage('success', '✅ GL account added successfully');
                     await loadGLAccounts();
                 } else {
-                    showAlert(result.error, 'danger');
+                    showMessage('danger', '❌ ' + (result.error || 'Failed to add GL account'));
                 }
             } catch (error) {
                 console.error('Error adding GL account:', error);
-                showAlert('Error adding GL account', 'danger');
+                showMessage('danger', '❌ Error adding GL account');
             }
         }
 
@@ -1499,14 +1499,14 @@
                 
                 const result = await response.json();
                 if (result.success) {
-                    showAlert('Cost center added successfully', 'success');
+                    showMessage('success', '✅ Cost center added successfully');
                     await loadCostCenters();
                 } else {
-                    showAlert(result.error, 'danger');
+                    showMessage('danger', '❌ ' + (result.error || 'Failed to add cost center'));
                 }
             } catch (error) {
                 console.error('Error adding cost center:', error);
-                showAlert('Error adding cost center', 'danger');
+                showMessage('danger', '❌ Error adding cost center');
             }
         }
 
@@ -1524,11 +1524,11 @@
                     document.getElementById('export-preview-content').textContent = preview;
                     document.getElementById('export-preview-modal').style.display = 'block';
                 } else {
-                    showAlert('Error generating export preview', 'danger');
+                    showMessage('danger', '❌ Error generating export preview');
                 }
             } catch (error) {
                 console.error('Error previewing export:', error);
-                showAlert('Error previewing export', 'danger');
+                showMessage('danger', '❌ Error previewing export');
             }
         }
 
@@ -1553,15 +1553,106 @@
                     document.body.removeChild(a);
                     window.URL.revokeObjectURL(url);
                     
-                    showAlert('Sage 300 export downloaded successfully', 'success');
+                    showMessage('success', '✅ Sage 300 export downloaded successfully');
                     closeExportPreview();
                 } else {
-                    showAlert('Error exporting data', 'danger');
+                    showMessage('danger', '❌ Error exporting data');
                 }
             } catch (error) {
                 console.error('Error exporting to Sage:', error);
-                showAlert('Error exporting to Sage', 'danger');
+                showMessage('danger', '❌ Error exporting to Sage');
             }
+        }
+
+        // Show messages using toast-style notifications
+        function showMessage(type, message) {
+            // Remove existing messages
+            const existingMessages = document.querySelectorAll('.toast-message');
+            existingMessages.forEach(msg => msg.remove());
+            
+            // Create toast message
+            const toast = document.createElement('div');
+            toast.className = `toast-message toast-${type}`;
+            
+            // Style based on message type
+            const styles = {
+                success: { background: '#28a745', color: 'white' },
+                danger: { background: '#dc3545', color: 'white' },
+                warning: { background: '#ffc107', color: '#212529' },
+                info: { background: '#17a2b8', color: 'white' }
+            };
+            
+            const style = styles[type] || styles.info;
+            
+            toast.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 9999;
+                padding: 16px 24px;
+                border-radius: 12px;
+                background: ${style.background};
+                color: ${style.color};
+                font-weight: 600;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                animation: slideIn 0.3s ease, fadeOut 0.3s ease 4.7s;
+                max-width: 400px;
+                word-wrap: break-word;
+            `;
+            
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.remove();
+                }
+            }, 5000);
+        }
+
+        // Add CSS animation styles for toast
+        if (!document.querySelector('#toast-styles')) {
+            const style = document.createElement('style');
+            style.id = 'toast-styles';
+            style.textContent = `
+                @keyframes slideIn { 
+                    from { transform: translateX(100%); opacity: 0; } 
+                    to { transform: translateX(0); opacity: 1; } 
+                }
+                @keyframes fadeOut { 
+                    from { opacity: 1; } 
+                    to { opacity: 0; } 
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
+        // Logout function
+        async function logout() {
+            try {
+                await fetch('/api/auth/logout', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+            
+            localStorage.removeItem('sessionId');
+            localStorage.removeItem('user');
+            window.location.href = '/login';
+        }
+
+        // Export admin CSV
+        function exportAdminCSV() {
+            window.location.href = `/api/expenses/export/csv?token=${sessionId}`;
+        }
+
+        // Initialize page
+        let sessionId = localStorage.getItem('sessionId');
+        if (!sessionId) {
+            window.location.href = '/login';
         }
     </script>
 </body>
