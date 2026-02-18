@@ -930,12 +930,17 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
     
     // Per diem rate validation
     if (njcRates.isPerDiem(expense_type)) {
-        const validation = njcRates.validatePerDiemExpense(expense_type, amount);
-        if (!validation.valid) {
-            return res.status(400).json({
-                success: false,
-                error: validation.message
-            });
+        try {
+            const validation = await njcRates.validatePerDiemExpense(expense_type, amount, date);
+            if (!validation.valid) {
+                return res.status(400).json({
+                    success: false,
+                    error: validation.message
+                });
+            }
+        } catch (valErr) {
+            console.error('❌ Per diem validation error:', valErr);
+            // Don't block submission on validation errors — just log
         }
     }
     
