@@ -1115,12 +1115,9 @@
                 
                 // Auto-select role and show dashboard
                 document.getElementById('role-selector').value = user.role;
-                // Governance: supervisors cannot switch to admin role
+                // Governance: supervisors cannot switch roles or manage employees
                 if (user.role === 'supervisor') {
-                    document.getElementById('role-selector').disabled = true;
-                    // Remove admin option entirely
-                    const adminOption = document.getElementById('role-selector').querySelector('option[value="admin"]');
-                    if (adminOption) adminOption.remove();
+                    document.querySelector('.role-selector').style.display = 'none';
                 }
                 if (user.role === 'supervisor') {
                     await changeRole(); // This will load supervisor options
