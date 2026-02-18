@@ -701,6 +701,22 @@
         let currentUser = null;
         let sessionId = null;
         
+        // Input sanitization utility - prevent XSS attacks
+        function sanitizeInput(input) {
+            if (typeof input !== 'string') return '';
+            return input.trim()
+                .replace(/[<>]/g, '') // Remove potentially dangerous characters
+                .slice(0, 500); // Limit input length
+        }
+        
+        // Sanitize HTML content for display
+        function sanitizeForDisplay(input) {
+            if (typeof input !== 'string') return '';
+            const div = document.createElement('div');
+            div.textContent = input;
+            return div.innerHTML;
+        }
+        
         // Official NJC rates (updated 2026)
         const njcRates = {
             breakfast: { rate: 23.45, icon: '🥐', name: 'Breakfast' },
@@ -785,6 +801,43 @@
         
         // Trip location auto-fill (remembers last location used per trip)
         let tripLocationMemory = {}; // { tripId: "lastLocationUsed" }
+        
+        // API retry logic for better reliability
+        async function apiCall(url, options = {}, maxRetries = 2) {
+            let lastError;
+            
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+                    
+                    const response = await fetch(url, {
+                        ...options,
+                        signal: controller.signal,
+                        headers: {
+                            'Authorization': `Bearer ${sessionId}`,
+                            ...options.headers
+                        }
+                    });
+                    
+                    clearTimeout(timeoutId);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    
+                    return response;
+                } catch (error) {
+                    lastError = error;
+                    if (attempt < maxRetries && error.name !== 'AbortError') {
+                        // Wait before retry (exponential backoff)
+                        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+                        continue;
+                    }
+                    throw error;
+                }
+            }
+        }
         
         // ═══════════════════════════════════════════════════════════════════════════════
         // SECTION 3: INDIVIDUAL EXPENSE MANAGEMENT
@@ -1192,12 +1245,26 @@
                     return;
                 }
                 
-                // Get vendor value (will be auto-set for per diem items)
-                const vendorValue = document.getElementById('vendor').value || 'NJC Per Diem Rate';
-                
-                // CRITICAL: Check for per diem duplicates BEFORE adding to trip draft (SAME AS INDIVIDUAL)
-                const expenseType = document.getElementById('expense-type').value;
+                // Sanitize and validate all form inputs
+                const expenseType = sanitizeInput(document.getElementById('expense-type').value);
                 const expenseDate = document.getElementById('expense-date').value;
+                const location = sanitizeInput(document.getElementById('location').value);
+                const amount = parseFloat(document.getElementById('amount').value);
+                const vendor = sanitizeInput(document.getElementById('vendor').value) || 'NJC Per Diem Rate';
+                const description = sanitizeInput(document.getElementById('description').value);
+                
+                // Enhanced validation
+                if (!expenseType || !expenseDate || !location || isNaN(amount) || amount <= 0) {
+                    showMessage('error', 'Please fill in all required fields with valid data.');
+                    return;
+                }
+                
+                if (amount > 10000) {
+                    showMessage('error', 'Expense amount seems unusually large. Please verify the amount.');
+                    return;
+                }
+                
+                // CRITICAL: Check for per diem duplicates BEFORE adding to trip draft
                 const perDiemTypes = ['breakfast', 'lunch', 'dinner', 'incidentals'];
                 
                 // Vehicle km: require from/to locations and kilometers
@@ -1262,26 +1329,25 @@
                     }
                 }
                 
-                // Create draft expense FOR TRIP
+                // Create draft expense FOR TRIP with sanitized data
                 const expense = {
                     id: Date.now(),
-                    expense_type: document.getElementById('expense-type').value,
-                    meal_name: getExpenseTypeName(document.getElementById('expense-type').value),
-                    date: document.getElementById('expense-date').value,
-                    location: document.getElementById('location').value,
-                    amount: parseFloat(document.getElementById('amount').value),
-                    vendor: vendorValue,
+                    expense_type: expenseType,
+                    meal_name: getExpenseTypeName(expenseType),
+                    date: expenseDate,
+                    location: location,
+                    amount: amount,
+                    vendor: vendor,
                     description: (function() {
-                        const desc = document.getElementById('description').value;
                         if (expenseType === 'vehicle_km') {
-                            const from = document.getElementById('vehicle-from').value.trim();
-                            const to = document.getElementById('vehicle-to').value.trim();
+                            const from = sanitizeInput(document.getElementById('vehicle-from').value);
+                            const to = sanitizeInput(document.getElementById('vehicle-to').value);
                             const km = document.getElementById('kilometers').value;
                             const route = (from && to) ? `${from} → ${to}` : '';
                             const kmInfo = km ? `${km} km @ $0.68/km` : '';
-                            return [route, kmInfo, desc].filter(Boolean).join(' | ');
+                            return [route, kmInfo, description].filter(Boolean).join(' | ');
                         }
-                        return desc;
+                        return description;
                     })(),
                     trip_id: selectedTripId,
                     trip_name: isTripLocked ? lockedTripName : (tripSelect.options[tripSelect.selectedIndex].text || '').replace(/\s*-\s*\d+.*$/i, '').replace(/^[\s⚠️🧳]+/g, '').trim(),
@@ -1830,24 +1896,37 @@
 
         async function loadMyExpenses() {
             try {
-                const response = await fetch('/api/my-expenses', {
-                    headers: { 'Authorization': `Bearer ${sessionId}` }
-                });
-                
-                if (!response.ok) {
-                    throw new Error('Failed to load expenses');
-                }
-                
+                const response = await apiCall('/api/my-expenses');
                 const expenses = await response.json();
-                updateStats(expenses);
-                displayExpenses(expenses);
+                
+                // Sanitize expense data for display
+                const sanitizedExpenses = expenses.map(expense => ({
+                    ...expense,
+                    meal_name: sanitizeForDisplay(expense.meal_name || ''),
+                    location: sanitizeForDisplay(expense.location || ''),
+                    vendor: sanitizeForDisplay(expense.vendor || ''),
+                    description: sanitizeForDisplay(expense.description || ''),
+                    approval_comment: sanitizeForDisplay(expense.approval_comment || ''),
+                    rejection_reason: sanitizeForDisplay(expense.rejection_reason || '')
+                }));
+                
+                updateStats(sanitizedExpenses);
+                displayExpenses(sanitizedExpenses);
                 
             } catch (error) {
+                console.error('Error loading expenses:', error);
+                const errorMessage = error.name === 'AbortError' 
+                    ? 'Request timed out. Please check your connection.' 
+                    : 'Unable to load expenses. Please try refreshing the page.';
+                    
                 document.getElementById('expenses-container').innerHTML = `
                     <div style="text-align: center; padding: 40px; color: #dc3545;">
                         <div style="font-size: 48px; margin-bottom: 15px;">❌</div>
                         <h3>Error Loading Expenses</h3>
-                        <p>${error.message}</p>
+                        <p>${errorMessage}</p>
+                        <button onclick="loadMyExpenses()" class="btn btn-primary" style="margin-top: 15px;">
+                            🔄 Try Again
+                        </button>
                     </div>
                 `;
             }

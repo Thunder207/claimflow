@@ -125,11 +125,15 @@
             </div>
         </div>
 
-        <div class="nav-tabs" id="nav-tabs" style="display: none;">
-            <button class="nav-tab active" onclick="showTab('expenses')" id="expenses-tab-btn">📊 Expenses Dashboard</button>
-            <button class="nav-tab" onclick="showTab('employees')" id="employees-tab-btn">👥 Employee Directory</button>
-            <button class="nav-tab" onclick="showTab('chart')" id="chart-tab-btn">🏢 Organization Chart</button>
-            <button class="nav-tab" onclick="showTab('sage300')" id="sage300-tab-btn" style="display: none;">💰 Sage 300</button>
+        <div class="nav-tabs" id="nav-tabs" style="display: none;" role="tablist" aria-label="Dashboard sections">
+            <button class="nav-tab active" onclick="showTab('expenses')" id="expenses-tab-btn" role="tab" aria-selected="true" 
+                    aria-controls="expenses-tab" tabindex="0">📊 Expenses Dashboard</button>
+            <button class="nav-tab" onclick="showTab('employees')" id="employees-tab-btn" role="tab" aria-selected="false" 
+                    aria-controls="employees-tab" tabindex="-1">👥 Employee Directory</button>
+            <button class="nav-tab" onclick="showTab('chart')" id="chart-tab-btn" role="tab" aria-selected="false" 
+                    aria-controls="chart-tab" tabindex="-1">🏢 Organization Chart</button>
+            <button class="nav-tab" onclick="showTab('sage300')" id="sage300-tab-btn" style="display: none;" role="tab" 
+                    aria-selected="false" aria-controls="sage300-tab" tabindex="-1">💰 Sage 300</button>
         </div>
 
         <div class="stats" id="dashboard-stats" style="display: none;">
@@ -155,13 +159,13 @@
             </div>
         </div>
 
-        <div id="expenses-tab" class="tab-content active">
+        <div id="expenses-tab" class="tab-content active" role="tabpanel" aria-labelledby="expenses-tab-btn">
             <div class="section-header">
                 <span id="expenses-section-title">📊 All Expenses (Admin View)</span>
             </div>
-            <div id="expenses-container">
+            <div id="expenses-container" aria-live="polite" aria-label="Expenses list">
                 <div class="loading">
-                    <div class="spinner"></div>
+                    <div class="spinner" role="status" aria-label="Loading expenses"></div>
                     <p>Loading expenses...</p>
                 </div>
             </div>
@@ -325,6 +329,19 @@
         let currentSupervisorId = null;
         let currentSupervisorName = '';
 
+        // Input sanitization utilities
+        function sanitizeInput(input) {
+            if (typeof input !== 'string') return '';
+            return input.trim().replace(/[<>]/g, '').slice(0, 500);
+        }
+        
+        function sanitizeForDisplay(input) {
+            if (typeof input !== 'string') return '';
+            const div = document.createElement('div');
+            div.textContent = input;
+            return div.innerHTML;
+        }
+
         // Role management
         async function changeRole() {
             const roleSelector = document.getElementById('role-selector');
@@ -467,19 +484,28 @@
         }
 
         function showTab(tabName) {
-            // Hide all tab contents
+            // Hide all tab contents and update ARIA
             document.querySelectorAll('.tab-content').forEach(tab => {
                 tab.classList.remove('active');
             });
             
-            // Remove active class from all nav tabs
+            // Remove active class from all nav tabs and update ARIA
             document.querySelectorAll('.nav-tab').forEach(tab => {
                 tab.classList.remove('active');
+                tab.setAttribute('aria-selected', 'false');
+                tab.setAttribute('tabindex', '-1');
             });
             
-            // Show selected tab
-            document.getElementById(tabName + '-tab').classList.add('active');
-            document.getElementById(tabName + '-tab-btn').classList.add('active');
+            // Show selected tab and update ARIA
+            const activeTab = document.getElementById(tabName + '-tab');
+            const activeButton = document.getElementById(tabName + '-tab-btn');
+            
+            if (activeTab && activeButton) {
+                activeTab.classList.add('active');
+                activeButton.classList.add('active');
+                activeButton.setAttribute('aria-selected', 'true');
+                activeButton.setAttribute('tabindex', '0');
+            }
             
             // Load tab-specific data
             if (tabName === 'expenses') {

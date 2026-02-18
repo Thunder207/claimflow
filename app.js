@@ -18,6 +18,25 @@ function verifyPassword(password, hash) {
     return hashPassword(password) === hash;
 }
 
+// Input sanitization utilities for security
+function sanitizeString(input, maxLength = 255) {
+    if (typeof input !== 'string') return '';
+    return input.trim().slice(0, maxLength);
+}
+
+function sanitizeAmount(input) {
+    const amount = parseFloat(input);
+    if (isNaN(amount) || amount < 0 || amount > 999999.99) {
+        throw new Error('Invalid amount');
+    }
+    return amount;
+}
+
+function validateEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email) && email.length <= 254;
+}
+
 const app = express();
 
 // Initialize NJC Rates Service
@@ -454,15 +473,54 @@ app.get('/employee', (req, res) => {
 
 // 🔐 Authentication Routes
 
-// Employee login
+// Rate limiting for login attempts (simple in-memory solution)
+const loginAttempts = new Map();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
+
+// Employee login with improved security
 app.post('/api/auth/login', async (req, res) => {
-    const { email, password } = req.body;
+    let { email, password } = req.body;
     
+    // Input validation and sanitization
     if (!email || !password) {
         return res.status(400).json({
             success: false,
             error: 'Email and password are required'
         });
+    }
+    
+    email = sanitizeString(email, 254);
+    
+    if (!validateEmail(email)) {
+        return res.status(400).json({
+            success: false,
+            error: 'Invalid email format'
+        });
+    }
+    
+    if (password.length > 128) {
+        return res.status(400).json({
+            success: false,
+            error: 'Password is too long'
+        });
+    }
+    
+    // Simple rate limiting check
+    const clientKey = req.ip || 'unknown';
+    const attempts = loginAttempts.get(clientKey) || { count: 0, firstAttempt: Date.now() };
+    
+    if (attempts.count >= MAX_LOGIN_ATTEMPTS) {
+        const timePassed = Date.now() - attempts.firstAttempt;
+        if (timePassed < LOCKOUT_DURATION) {
+            return res.status(429).json({
+                success: false,
+                error: 'Too many login attempts. Please try again later.'
+            });
+        } else {
+            // Reset attempts after lockout period
+            loginAttempts.delete(clientKey);
+        }
     }
     
     // Find employee
@@ -476,11 +534,19 @@ app.post('/api/auth/login', async (req, res) => {
         }
         
         if (!employee || !verifyPassword(password, employee.password_hash)) {
+            // Track failed login attempt
+            attempts.count += 1;
+            attempts.firstAttempt = attempts.firstAttempt || Date.now();
+            loginAttempts.set(clientKey, attempts);
+            
             return res.status(401).json({
                 success: false,
                 error: 'Invalid email or password'
             });
         }
+        
+        // Clear login attempts on successful login
+        loginAttempts.delete(clientKey);
         
         // Update last login
         db.run('UPDATE employees SET last_login = CURRENT_TIMESTAMP WHERE id = ?', [employee.id]);
@@ -489,16 +555,18 @@ app.post('/api/auth/login', async (req, res) => {
         const sessionId = createSession(employee.id, employee.role);
         
         console.log(`✅ User logged in: ${employee.name} (${employee.role})`);
+        
+        // Sanitize user data in response
         res.json({
             success: true,
             sessionId,
             user: {
                 id: employee.id,
-                name: employee.name,
-                email: employee.email,
-                employee_number: employee.employee_number,
-                position: employee.position,
-                department: employee.department,
+                name: sanitizeString(employee.name),
+                email: email, // Already sanitized above
+                employee_number: sanitizeString(employee.employee_number),
+                position: sanitizeString(employee.position),
+                department: sanitizeString(employee.department),
                 role: employee.role,
                 supervisor_id: employee.supervisor_id
             }
@@ -621,24 +689,63 @@ app.get('/api/expenses', requireAuth, (req, res) => {
 
 // Submit new expense (authenticated employees)
 app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res) => {
-    const {
-        expense_type,
-        meal_name,
-        date,
-        location,
-        amount,
-        vendor,
-        description,
-        trip_id
-    } = req.body;
-    
-    // Validation
-    if (!expense_type || !date || !amount) {
-        return res.status(400).json({ 
-            success: false, 
-            error: 'Please fill in all required fields: expense type, date, and amount before submitting.' 
-        });
-    }
+    try {
+        let {
+            expense_type,
+            meal_name,
+            date,
+            location,
+            amount,
+            vendor,
+            description,
+            trip_id
+        } = req.body;
+        
+        // Sanitize all string inputs
+        expense_type = sanitizeString(expense_type, 50);
+        meal_name = sanitizeString(meal_name, 100);
+        location = sanitizeString(location, 255);
+        vendor = sanitizeString(vendor, 255);
+        description = sanitizeString(description, 1000);
+        
+        // Validate required fields
+        if (!expense_type || !date || !amount) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Please fill in all required fields: expense type, date, and amount before submitting.' 
+            });
+        }
+        
+        // Validate and sanitize amount
+        try {
+            amount = sanitizeAmount(amount);
+        } catch (error) {
+            return res.status(400).json({
+                success: false,
+                error: 'Please enter a valid amount between $0.01 and $999,999.99'
+            });
+        }
+        
+        // Validate date format and range
+        const expenseDate = new Date(date);
+        const today = new Date();
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(today.getFullYear() - 1);
+        
+        if (isNaN(expenseDate.getTime()) || expenseDate > today || expenseDate < oneYearAgo) {
+            return res.status(400).json({
+                success: false,
+                error: 'Please enter a valid date within the last year'
+            });
+        }
+        
+        // Sanitize trip_id if provided
+        if (trip_id) {
+            trip_id = parseInt(trip_id);
+            if (isNaN(trip_id)) {
+                trip_id = null;
+            }
+        }
     
     // Bug 2 Fix: Validate expense type
     const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other'];
@@ -760,6 +867,13 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
             res.json({ success: true, id: this.lastID, message: msg });
         });
     });
+    } catch (error) {
+        console.error('❌ Error processing expense submission:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'An error occurred while processing your expense. Please try again.'
+        });
+    }
 });
 
 // Get employee's own expenses (with trip information)
