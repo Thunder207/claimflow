@@ -22,7 +22,7 @@ const app = express();
 
 // Initialize NJC Rates Service
 const njcRates = new NJCRatesService();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 // 📁 Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, 'uploads');
