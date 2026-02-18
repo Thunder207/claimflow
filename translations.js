@@ -470,4 +470,4 @@ function initializeLanguage() {
 // Auto-initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
   initializeLanguage();
-});
+});// v2
