@@ -103,61 +103,402 @@
         .expense-item:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         .employee-item { background: #f8fcff; padding: 15px 20px; margin: 12px 0; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; transition: all 0.3s ease; border-left: 4px solid #17a2b8; }
         .employee-item:hover { background: #e8f4fd; transform: translateY(-1px); }
-        .btn { padding: 10px 18px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.3s ease; margin: 0 4px; }
-        .btn-primary { background: linear-gradient(135deg, #007bff 0%, #0056b3 100%); color: white; }
-        .btn-success { background: linear-gradient(135deg, #28a745 0%, #1e7e34 100%); color: white; }
-        .btn-danger { background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color: white; }
-        .btn-warning { background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%); color: #212529; }
-        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+        /* CONSISTENT BUTTON STYLES - Matching employee dashboard */
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-height: 44px;
+            position: relative;
+            overflow: hidden;
+            margin: 0 4px;
+        }
+        
+        /* Consistent button colors - matching status badges */
+        .btn-primary { 
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); 
+            color: white; 
+            box-shadow: 0 2px 6px rgba(59, 130, 246, 0.25);
+        }
+        .btn-success { 
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); 
+            color: white; 
+            box-shadow: 0 2px 6px rgba(34, 197, 94, 0.25);
+        }
+        .btn-danger { 
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); 
+            color: white; 
+            box-shadow: 0 2px 6px rgba(239, 68, 68, 0.25);
+        }
+        .btn-warning { 
+            background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); 
+            color: white; 
+            box-shadow: 0 2px 6px rgba(249, 115, 22, 0.25);
+        }
+        .btn-secondary { 
+            background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); 
+            color: white; 
+            box-shadow: 0 2px 6px rgba(107, 114, 128, 0.25);
+        }
+        
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        /* Loading button state */
+        .btn-loading {
+            color: transparent;
+        }
+        
+        .btn-loading::after {
+            content: "";
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            margin: auto;
+            border: 2px solid transparent;
+            border-top-color: currentColor;
+            border-radius: 50%;
+            animation: button-loading-spinner 1s ease infinite;
+        }
+        
+        @keyframes button-loading-spinner {
+            from { transform: rotate(0turn); }
+            to { transform: rotate(1turn); }
+        }
         .alert { padding: 20px; margin: 20px 0; border-radius: 10px; }
         .alert-info { background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); color: #0c5460; border-left: 5px solid #17a2b8; }
         .alert-success { background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); color: #155724; border-left: 5px solid #28a745; }
         .alert-danger { background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%); color: #721c24; border-left: 5px solid #dc3545; }
-        .loading { text-align: center; padding: 40px; color: #6c757d; }
-        .loading .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+        /* LOADING STATES - Enhanced loading feedback */
+        .loading { 
+            text-align: center; 
+            padding: 60px 20px; 
+            color: #6b7280; 
+        }
+        .loading .spinner { 
+            border: 4px solid #e5e7eb; 
+            border-top: 4px solid #3b82f6; 
+            border-radius: 50%; 
+            width: 40px; 
+            height: 40px; 
+            animation: spin 1s linear infinite; 
+            margin: 0 auto 15px; 
+        }
+        
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: inherit;
+            z-index: 10;
+        }
+        
+        .loading-spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid #e5e7eb;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        .loading-text {
+            color: #6b7280;
+            font-size: 14px;
+            font-weight: 500;
+            margin-left: 12px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6b7280;
+        }
+        
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+        
+        .empty-state-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 8px;
+        }
+        
+        .empty-state-description {
+            font-size: 14px;
+            margin-bottom: 24px;
+            max-width: 400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
-        /* 📱 Mobile Responsive Enhancements */
+        /* MOBILE RESPONSIVE - Enhanced mobile experience */
         @media (max-width: 768px) {
-            body { padding: 10px; }
-            .container { border-radius: 15px; }
-            .header { padding: 18px 15px; flex-direction: column; gap: 12px; text-align: center; }
+            body { padding: 12px; }
+            .container { max-width: 100%; border-radius: 15px; }
+            
+            .header { 
+                padding: 20px 16px; 
+                flex-direction: column; 
+                gap: 12px; 
+                text-align: center; 
+            }
             .header h1 { font-size: 20px; }
-            .role-selector { padding: 15px; }
-            .role-selector > div { flex-direction: column; gap: 12px; }
-            .nav-tabs { margin: 15px 0; display: flex; flex-wrap: wrap; gap: 8px; }
-            .nav-tab { padding: 12px 18px; margin: 0; font-size: 14px; flex: 1; min-width: 120px; text-align: center; min-height: 44px; }
-            .stats { grid-template-columns: repeat(2, 1fr); gap: 12px; }
-            .stat-card { padding: 18px 12px; }
-            .stat-value { font-size: 1.8em; }
-            .tab-content { padding: 18px 14px; }
-            .expense-item { padding: 16px; }
-            .expense-item > div { flex-direction: column !important; }
-            .form-control { font-size: 16px; min-height: 48px; padding: 14px; }
-            .btn { min-height: 44px; padding: 12px 16px; font-size: 14px; }
+            
+            .role-selector { 
+                padding: 16px; 
+                border-radius: 12px;
+                margin-bottom: 16px;
+            }
+            .role-selector > div { 
+                flex-direction: column; 
+                gap: 12px; 
+            }
+            
+            .nav-tabs { 
+                margin: 16px 0; 
+                display: flex; 
+                flex-wrap: wrap; 
+                gap: 8px; 
+                justify-content: center;
+            }
+            .nav-tab { 
+                padding: 12px 16px; 
+                margin: 0; 
+                font-size: 13px; 
+                flex: 1; 
+                min-width: 100px; 
+                text-align: center; 
+                min-height: 44px; 
+                border-radius: 20px;
+            }
+            
+            .stats { 
+                grid-template-columns: repeat(2, 1fr); 
+                gap: 12px; 
+            }
+            .stat-card { 
+                padding: 16px 12px; 
+                text-align: center;
+            }
+            .stat-value { font-size: 1.6em; }
+            
+            .tab-content { padding: 20px 16px; }
+            
+            .expense-item { 
+                padding: 16px; 
+                margin: 12px 0;
+            }
+            .expense-item > div { 
+                flex-direction: column !important; 
+                gap: 8px !important;
+            }
+            
+            .employee-item {
+                padding: 16px;
+                margin: 12px 0;
+                flex-direction: column;
+                gap: 12px;
+                align-items: flex-start;
+            }
+            
+            .form-control { 
+                font-size: 16px; 
+                min-height: 48px; 
+                padding: 14px; 
+                border-radius: 8px;
+            }
+            
+            .btn { 
+                min-height: 44px; 
+                padding: 12px 16px; 
+                font-size: 13px; 
+                width: 100%;
+                margin-bottom: 8px;
+            }
             .btn-success, .btn-danger { min-width: 100px; }
+            
+            /* Mobile table scrolling */
+            .table-responsive {
+                overflow-x: auto;
+                border-radius: 8px;
+                margin: 16px 0;
+            }
+            
+            table {
+                min-width: 600px;
+            }
         }
         
         @media (max-width: 480px) {
+            body { padding: 8px; }
+            .header { padding: 16px 12px; }
             .header h1 { font-size: 18px; }
-            .stats { grid-template-columns: 1fr 1fr; gap: 10px; }
+            
+            .role-selector { padding: 14px; }
+            
+            .nav-tabs { gap: 6px; }
+            .nav-tab { 
+                padding: 10px 12px; 
+                font-size: 12px; 
+                min-width: 90px;
+                border-radius: 16px;
+            }
+            
+            .stats { grid-template-columns: 1fr; gap: 10px; }
             .stat-card { padding: 14px 10px; }
-            .stat-value { font-size: 1.5em; }
-            .nav-tab { padding: 10px 14px; font-size: 13px; min-width: 90px; }
-            .btn { padding: 10px 14px; font-size: 13px; width: 100%; margin: 4px 0; }
-            .section-header { padding: 15px 18px; font-size: 16px; }
-            .employee-item { flex-direction: column; gap: 10px; align-items: flex-start; }
+            .stat-value { font-size: 1.4em; }
+            
+            .tab-content { padding: 16px 12px; }
+            
+            .btn { 
+                padding: 10px 14px; 
+                font-size: 12px; 
+                width: 100%; 
+                margin: 4px 0; 
+            }
+            
+            .section-header { 
+                padding: 15px 16px; 
+                font-size: 16px; 
+                margin: -16px -12px 20px -12px;
+            }
+            
+            .employee-item { 
+                padding: 14px; 
+                flex-direction: column; 
+                gap: 10px; 
+                align-items: flex-start; 
+            }
+            
+            .expense-item { 
+                padding: 14px; 
+            }
         }
-        .status-badge { padding: 6px 12px; border-radius: 15px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
-        .status-approved { background: #d4edda; color: #155724; }
-        .status-rejected { background: #f8d7da; color: #721c24; }
-        .status-returned { background: #ffeaa7; color: #b8860b; }
-        .status-pending { background: #fff3cd; color: #856404; }
+        /* CONSISTENT STATUS BADGES - Matching employee dashboard */
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        /* Consistent status colors across all screens */
+        .status-approved { 
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); 
+            color: white; 
+            box-shadow: 0 2px 6px rgba(34, 197, 94, 0.25);
+        }
+        .status-rejected { 
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); 
+            color: white; 
+            box-shadow: 0 2px 6px rgba(239, 68, 68, 0.25);
+        }
+        .status-returned { 
+            background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); 
+            color: white; 
+            box-shadow: 0 2px 6px rgba(249, 115, 22, 0.25);
+        }
+        .status-pending { 
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); 
+            color: #92400e; 
+            box-shadow: 0 2px 6px rgba(251, 191, 36, 0.25);
+        }
+        .status-submitted { 
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); 
+            color: white; 
+            box-shadow: 0 2px 6px rgba(59, 130, 246, 0.25);
+        }
+        .status-draft { 
+            background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); 
+            color: white; 
+            box-shadow: 0 2px 6px rgba(107, 114, 128, 0.25);
+        }
+        .status-awaiting-signup {
+            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); 
+            color: white; 
+            box-shadow: 0 2px 6px rgba(139, 92, 246, 0.25);
+        }
+        .status-active {
+            background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); 
+            color: white; 
+            box-shadow: 0 2px 6px rgba(6, 182, 212, 0.25);
+        }
         .form-group { margin-bottom: 15px; }
         .form-control { width: 100%; padding: 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 14px; transition: border-color 0.3s; }
         .form-control:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
         .back-link { color: #667eea; text-decoration: none; font-weight: 600; margin-bottom: 20px; display: inline-block; }
         .back-link:hover { color: #5a6fd8; text-decoration: underline; }
+        
+        /* TOAST NOTIFICATIONS - Enhanced feedback */
+        .toast-notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            padding: 16px 24px;
+            border-radius: 12px;
+            color: white;
+            font-weight: 600;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s;
+            max-width: 400px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .toast-success { 
+            background: linear-gradient(135deg, #22c55e, #16a34a); 
+        }
+        .toast-error { 
+            background: linear-gradient(135deg, #ef4444, #dc2626); 
+        }
+        .toast-warning {
+            background: linear-gradient(135deg, #f97316, #ea580c); 
+        }
+        .toast-info {
+            background: linear-gradient(135deg, #3b82f6, #2563eb); 
+        }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
     </style>
 </head>
 <body>

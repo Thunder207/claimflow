@@ -108,41 +108,50 @@
             align-items: center;
         }
         
+        /* CONSISTENT BUTTON STYLES - Used across all screens */
         .btn {
-            padding: 10px 18px;
+            padding: 12px 20px;
             border: none;
             border-radius: 8px;
             cursor: pointer;
             font-size: 14px;
             font-weight: 600;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
             text-decoration: none;
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-height: 44px;
+            position: relative;
+            overflow: hidden;
         }
         
+        /* Consistent button colors - matching status badges */
         .btn-primary { 
-            background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%); 
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); 
             color: white; 
-            box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3);
-            border: none;
+            box-shadow: 0 2px 6px rgba(59, 130, 246, 0.25);
         }
         .btn-success { 
-            background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%); 
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); 
             color: white; 
-            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
-            border: none;
+            box-shadow: 0 2px 6px rgba(34, 197, 94, 0.25);
         }
         .btn-danger { 
-            background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%); 
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); 
             color: white; 
-            box-shadow: 0 4px 12px rgba(244, 67, 54, 0.3);
-            border: none;
+            box-shadow: 0 2px 6px rgba(239, 68, 68, 0.25);
         }
         .btn-warning { 
-            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); 
+            background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); 
             color: white; 
-            box-shadow: 0 4px 12px rgba(255, 152, 0, 0.3);
-            border: none;
+            box-shadow: 0 2px 6px rgba(249, 115, 22, 0.25);
+        }
+        .btn-secondary { 
+            background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); 
+            color: white; 
+            box-shadow: 0 2px 6px rgba(107, 114, 128, 0.25);
         }
         .btn-light { 
             background: rgba(255,255,255,0.15); 
@@ -151,16 +160,47 @@
             backdrop-filter: blur(10px);
         }
         .btn-supervisor { 
-            background: linear-gradient(135deg, #00bcd4 0%, #0097a7 100%); 
+            background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); 
             color: white; 
-            box-shadow: 0 4px 12px rgba(0, 188, 212, 0.3);
-            border: none;
+            box-shadow: 0 2px 6px rgba(6, 182, 212, 0.25);
         }
         .supervisor-switch-btn { display: none; } /* Hidden by default, shown only for supervisors */
         
         .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        /* Loading button state */
+        .btn-loading {
+            color: transparent;
+        }
+        
+        .btn-loading::after {
+            content: "";
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            margin: auto;
+            border: 2px solid transparent;
+            border-top-color: currentColor;
+            border-radius: 50%;
+            animation: button-loading-spinner 1s ease infinite;
+        }
+        
+        @keyframes button-loading-spinner {
+            from { transform: rotate(0turn); }
+            to { transform: rotate(1turn); }
         }
         
         .nav-tabs {
@@ -376,49 +416,59 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         }
         
+        /* CONSISTENT STATUS BADGES - Used across all screens */
         .status-badge {
             padding: 6px 12px;
-            border-radius: 15px;
+            border-radius: 12px;
             font-size: 11px;
-            font-weight: bold;
+            font-weight: 700;
             text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
         }
         
+        /* Consistent status colors across all screens */
         .status-approved { 
-            background: linear-gradient(135deg, #4caf50, #45a049); 
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); 
             color: white; 
-            font-weight: 600;
-            box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
+            box-shadow: 0 2px 6px rgba(34, 197, 94, 0.25);
         }
         .status-rejected { 
-            background: linear-gradient(135deg, #f44336, #d32f2f); 
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); 
             color: white; 
-            font-weight: 600;
-            box-shadow: 0 2px 4px rgba(244, 67, 54, 0.3);
+            box-shadow: 0 2px 6px rgba(239, 68, 68, 0.25);
         }
         .status-returned { 
-            background: linear-gradient(135deg, #ff9800, #f57c00); 
+            background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); 
             color: white; 
-            font-weight: 600;
-            box-shadow: 0 2px 4px rgba(255, 152, 0, 0.3);
+            box-shadow: 0 2px 6px rgba(249, 115, 22, 0.25);
         }
         .status-pending { 
-            background: linear-gradient(135deg, #ffc107, #ffa000); 
-            color: #1a1a1a; 
-            font-weight: 600;
-            box-shadow: 0 2px 4px rgba(255, 193, 7, 0.3);
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); 
+            color: #92400e; 
+            box-shadow: 0 2px 6px rgba(251, 191, 36, 0.25);
         }
         .status-submitted { 
-            background: linear-gradient(135deg, #2196f3, #1976d2); 
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); 
             color: white; 
-            font-weight: 600;
-            box-shadow: 0 2px 4px rgba(33, 150, 243, 0.3);
+            box-shadow: 0 2px 6px rgba(59, 130, 246, 0.25);
         }
         .status-draft { 
-            background: linear-gradient(135deg, #9e9e9e, #757575); 
+            background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); 
             color: white; 
-            font-weight: 600;
-            box-shadow: 0 2px 4px rgba(158, 158, 158, 0.3);
+            box-shadow: 0 2px 6px rgba(107, 114, 128, 0.25);
+        }
+        .status-awaiting-signup {
+            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); 
+            color: white; 
+            box-shadow: 0 2px 6px rgba(139, 92, 246, 0.25);
+        }
+        .status-active {
+            background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); 
+            color: white; 
+            box-shadow: 0 2px 6px rgba(6, 182, 212, 0.25);
         }
         
         .trip-card {
@@ -436,6 +486,70 @@
         .trip-card.approved { border-left-color: #28a745; }
         .trip-card.rejected { border-left-color: #dc3545; }
         
+        /* LOADING STATES - Consistent loading feedback */
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: inherit;
+            z-index: 10;
+        }
+        
+        .loading-spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid #e5e7eb;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        .loading-text {
+            color: #6b7280;
+            font-size: 14px;
+            font-weight: 500;
+            margin-left: 12px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6b7280;
+        }
+        
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+        
+        .empty-state-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 8px;
+        }
+        
+        .empty-state-description {
+            font-size: 14px;
+            margin-bottom: 24px;
+            max-width: 400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* TOAST NOTIFICATIONS - Enhanced feedback */
         .toast-notification {
             position: fixed;
             top: 20px;
@@ -448,9 +562,22 @@
             box-shadow: 0 4px 20px rgba(0,0,0,0.3);
             animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s;
             max-width: 400px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-        .toast-success { background: linear-gradient(135deg, #28a745, #1e7e34); }
-        .toast-error { background: linear-gradient(135deg, #dc3545, #c82333); }
+        .toast-success { 
+            background: linear-gradient(135deg, #22c55e, #16a34a); 
+        }
+        .toast-error { 
+            background: linear-gradient(135deg, #ef4444, #dc2626); 
+        }
+        .toast-warning {
+            background: linear-gradient(135deg, #f97316, #ea580c); 
+        }
+        .toast-info {
+            background: linear-gradient(135deg, #3b82f6, #2563eb); 
+        }
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
         
@@ -485,33 +612,127 @@
             border-left: 4px solid #dc3545;
         }
         
-        /* Mobile responsive */
+        /* MOBILE RESPONSIVE - Enhanced mobile experience */
         @media (max-width: 768px) {
-            body { padding: 10px; }
-            .header { padding: 18px; flex-direction: column; gap: 12px; text-align: center; }
+            body { padding: 12px; }
+            .container { max-width: 100%; }
+            
+            .header { 
+                padding: 20px 16px; 
+                flex-direction: column; 
+                gap: 12px; 
+                text-align: center; 
+            }
             .header-info h1 { font-size: 20px; }
-            .nav-tabs { flex-wrap: wrap; gap: 8px; }
-            .nav-tab { padding: 12px 18px; font-size: 14px; flex: 1; min-width: 120px; text-align: center; }
-            .tab-content { padding: 18px; }
-            .stats { grid-template-columns: repeat(2, 1fr); gap: 12px; }
-            .stat-card { padding: 18px 12px; }
-            .stat-value { font-size: 1.6em; }
-            input, select, textarea { font-size: 16px; padding: 14px; min-height: 48px; }
-            .btn { min-height: 44px; padding: 12px 16px; }
-            .expense-form { padding: 18px; }
+            .header-actions { 
+                flex-wrap: wrap; 
+                justify-content: center;
+                gap: 8px;
+            }
+            
+            .nav-tabs { 
+                flex-wrap: wrap; 
+                gap: 8px; 
+                justify-content: center;
+            }
+            .nav-tab { 
+                padding: 12px 16px; 
+                font-size: 13px; 
+                flex: 1; 
+                min-width: 100px; 
+                text-align: center; 
+                border-radius: 20px;
+            }
+            
+            .tab-content { padding: 20px 16px; }
+            
+            .stats { 
+                grid-template-columns: repeat(2, 1fr); 
+                gap: 12px; 
+            }
+            .stat-card { 
+                padding: 16px 12px; 
+                text-align: center;
+            }
+            .stat-value { font-size: 1.5em; }
+            .stat-label { font-size: 0.8em; }
+            
+            .expense-form { 
+                padding: 20px 16px; 
+                margin-bottom: 16px;
+            }
             .form-group { margin-bottom: 16px; }
-            .expense-item { padding: 14px; }
+            
+            input, select, textarea { 
+                font-size: 16px; 
+                padding: 14px; 
+                min-height: 48px; 
+            }
+            
+            .btn { 
+                min-height: 44px; 
+                padding: 12px 16px; 
+                font-size: 13px;
+                width: 100%;
+                margin-bottom: 8px;
+            }
+            
+            .expense-item {
+                padding: 16px;
+                margin: 12px 0;
+            }
+            
+            .trip-card { padding: 16px; }
+            
+            /* Mobile table scrolling */
+            .table-responsive {
+                overflow-x: auto;
+                border-radius: 8px;
+                margin: 16px 0;
+            }
+            
+            table {
+                min-width: 600px;
+            }
         }
         
         @media (max-width: 480px) {
-            .stats { grid-template-columns: 1fr 1fr; gap: 10px; }
+            body { padding: 8px; }
+            .header { padding: 16px 12px; }
+            .header-info h1 { font-size: 18px; }
+            
+            .nav-tabs { gap: 6px; }
+            .nav-tab { 
+                padding: 10px 12px; 
+                font-size: 12px; 
+                min-width: 90px;
+                border-radius: 16px;
+            }
+            
+            .tab-content { padding: 16px 12px; }
+            
+            .stats { grid-template-columns: 1fr; gap: 10px; }
             .stat-card { padding: 14px 10px; }
             .stat-value { font-size: 1.4em; }
             .stat-label { font-size: 0.8em; }
-            .nav-tab { padding: 10px 14px; font-size: 13px; min-width: 90px; }
-            .header-info h1 { font-size: 18px; }
-            .expense-form div[style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+            
+            .btn { 
+                font-size: 12px; 
+                padding: 10px 14px; 
+                margin-bottom: 6px;
+            }
+            
+            .expense-form { padding: 16px 12px; }
+            .expense-form div[style*="grid-template-columns"] { 
+                grid-template-columns: 1fr !important; 
+            }
+            
             .trip-card { padding: 14px; }
+            
+            /* Stack form elements on tiny screens */
+            .form-group + .form-group {
+                margin-top: 16px;
+            }
         }
         
         #file-input { display: none; }
@@ -1810,7 +2031,7 @@
             updateTripDropdownText(selectedTripId);
             
             showMessage('success', `✅ ${expense.meal_name} added to trip! (${draftTripExpenses.length} expenses total)`);
-            showToast(`✅ ${expense.meal_name} ($${expense.amount.toFixed(2)}) added to trip`, 'success');
+            showToast(`${expense.meal_name} ($${expense.amount.toFixed(2)}) added to trip`, 'success');
             
             } catch (error) {
                 showMessage('error', `❌ Error adding expense: ${error.message}`);
@@ -3397,12 +3618,122 @@
             }
         }
         
-        function showToast(message, type = 'success') {
+        // ENHANCED TOAST NOTIFICATION SYSTEM
+        function showToast(message, type = 'success', duration = null) {
+            // Remove any existing toasts
+            document.querySelectorAll('.toast-notification').forEach(toast => {
+                toast.remove();
+            });
+            
+            // Create toast element
             const toast = document.createElement('div');
             toast.className = `toast-notification toast-${type}`;
-            toast.textContent = message;
+            
+            // Add icon based on type
+            const icons = {
+                success: '✅',
+                error: '❌',
+                warning: '⚠️',
+                info: 'ℹ️'
+            };
+            
+            const icon = icons[type] || 'ℹ️';
+            toast.innerHTML = `
+                <span class="toast-icon">${icon}</span>
+                <span class="toast-message">${message}</span>
+            `;
+            
+            // Add to page
             document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
+            
+            // Set duration based on type if not specified
+            if (!duration) {
+                duration = type === 'error' ? 5000 : 3000;
+            }
+            
+            // Auto-remove after duration
+            setTimeout(() => {
+                toast.style.animation = 'fadeOut 0.3s ease forwards';
+                setTimeout(() => {
+                    if (toast.parentNode) {
+                        toast.remove();
+                    }
+                }, 300);
+            }, duration);
+            
+            // Allow click to dismiss
+            toast.addEventListener('click', () => {
+                toast.style.animation = 'fadeOut 0.3s ease forwards';
+                setTimeout(() => {
+                    if (toast.parentNode) {
+                        toast.remove();
+                    }
+                }, 300);
+            });
+        }
+        
+        // LOADING STATE HELPERS
+        function showLoading(element, text = 'Loading...') {
+            if (typeof element === 'string') {
+                element = document.getElementById(element);
+            }
+            
+            if (!element) return;
+            
+            // Create loading overlay if it doesn't exist
+            let overlay = element.querySelector('.loading-overlay');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.className = 'loading-overlay';
+                overlay.innerHTML = `
+                    <div class="loading-spinner"></div>
+                    <div class="loading-text">${text}</div>
+                `;
+                
+                // Make parent position relative if it's not already
+                const computed = window.getComputedStyle(element);
+                if (computed.position === 'static') {
+                    element.style.position = 'relative';
+                }
+                
+                element.appendChild(overlay);
+            } else {
+                overlay.querySelector('.loading-text').textContent = text;
+                overlay.style.display = 'flex';
+            }
+        }
+        
+        function hideLoading(element) {
+            if (typeof element === 'string') {
+                element = document.getElementById(element);
+            }
+            
+            if (!element) return;
+            
+            const overlay = element.querySelector('.loading-overlay');
+            if (overlay) {
+                overlay.style.display = 'none';
+            }
+        }
+        
+        function setButtonLoading(button, loading = true) {
+            if (typeof button === 'string') {
+                button = document.getElementById(button) || document.querySelector(button);
+            }
+            
+            if (!button) return;
+            
+            if (loading) {
+                button.classList.add('btn-loading');
+                button.disabled = true;
+                button.dataset.originalText = button.textContent;
+            } else {
+                button.classList.remove('btn-loading');
+                button.disabled = false;
+                if (button.dataset.originalText) {
+                    button.textContent = button.dataset.originalText;
+                }
+            }
         }
         
         // Logout
