@@ -1064,7 +1064,7 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
     const perDiemTypesCheck = ['breakfast', 'lunch', 'dinner', 'incidentals'];
     if (perDiemTypesCheck.includes(expense_type) && trip_id) {
         const dupRow = await new Promise((resolve, reject) => {
-            db.get('SELECT id FROM expenses WHERE trip_id = ? AND expense_type = ? AND date = ?',
+            db.get('SELECT id FROM expenses WHERE trip_id = ? AND expense_type = ? AND date = ? AND status NOT IN (\'rejected\', \'estimate\')',
                 [trip_id, expense_type, date], (e, row) => e ? reject(e) : resolve(row));
         }).catch(() => null);
         if (dupRow) {
