@@ -998,12 +998,12 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
     const perDiemTypes = ['breakfast', 'lunch', 'dinner', 'incidentals'];
     const isPerDiem = perDiemTypes.includes(expense_type);
     
-    // CRITICAL: Per diem duplicate prevention (simple, no nested transactions)
-    if (isPerDiem) {
+    // CRITICAL: Per diem duplicate prevention — scoped to same trip
+    if (isPerDiem && trip_id) {
         const hasDuplicate = await new Promise((resolve, reject) => {
             db.get(
-                `SELECT COUNT(*) as count FROM expenses WHERE employee_id = ? AND expense_type = ? AND date = ? AND status NOT IN ('rejected', 'estimate')`,
-                [req.user.employeeId, expense_type, date],
+                `SELECT COUNT(*) as count FROM expenses WHERE employee_id = ? AND expense_type = ? AND date = ? AND trip_id = ? AND status NOT IN ('rejected', 'estimate')`,
+                [req.user.employeeId, expense_type, date, trip_id],
                 (err, row) => err ? reject(err) : resolve(row.count > 0)
             );
         });
