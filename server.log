@@ -1,22 +1,26 @@
-💼 CLAIMFLOW - FULL SYSTEM
-==========================================
-🚀 Server running at: http://localhost:3000
-👥 Admin dashboard: http://localhost:3000/admin
-📱 Mobile-optimized expense submission
-💰 NJC compliant meal rates
-📊 Complete admin dashboard with approvals
-📷 Receipt photo upload and management
-🗄️ SQLite database with full persistence
+node:events:497
+      throw er; // Unhandled 'error' event
+      ^
 
-✅ Features: Employee directory, approval workflow, role-based access
-⏹️  Press Ctrl+C to stop
-==========================================
-✅ Connected to SQLite database
-✅ Notifications table ready
-✅ Default data initialized (including Sage 300 GL mappings)
-✅ Employee added with ID: 402
-📋 Employee audit logged: created on employee 402 by 1
-📋 Employee audit logged: created on employee 402 by 1
-📋 Employee audit logged: created on employee 402 by 1
-📋 Employee audit logged: created on employee 402 by 1
-📋 Employee audit logged: created on employee 402 by 1
+Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at Function.listen (/Users/tony/.openclaw/workspace/expense-app/node_modules/express/lib/application.js:635:24)
+    at Object.<anonymous> (/Users/tony/.openclaw/workspace/expense-app/app.js:4180:5)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+Emitted 'error' event on Server instance at:
+    at emitErrorNT (node:net:1976:8)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+
+Node.js v22.22.0
