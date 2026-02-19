@@ -1900,7 +1900,7 @@ app.get('/api/employees', requireAuth, requireRole('admin', 'supervisor'), (req,
 
 // Add new employee (admin only)
 app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) => {
-    const { name, employee_number, position, department, supervisor_id, gl_account_id } = req.body;
+    const { name, employee_number, email, password, position, department, supervisor_id, gl_account_id } = req.body;
     
     // Validation
     if (!name || name.trim().length === 0) {
@@ -1917,6 +1917,13 @@ app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) =
         });
     }
     
+    if (!email || !email.includes('@')) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Valid email address is required' 
+        });
+    }
+    
     // Governance: admin cannot be a supervisor, supervisor cannot be set to report to an admin
     if (supervisor_id) {
         try {
@@ -1929,14 +1936,18 @@ app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) =
         } catch (err) { console.error('Error checking supervisor role:', err); }
     }
     
+    const password_hash = hashPassword(password || 'temp123');
+    
     const query = `
-        INSERT INTO employees (name, employee_number, position, department, supervisor_id, gl_account_id)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO employees (name, employee_number, email, password_hash, position, department, supervisor_id, gl_account_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
     
     const params = [
         name.trim(), 
-        employee_number.trim(), 
+        employee_number.trim(),
+        email.trim().toLowerCase(),
+        password_hash,
         position ? position.trim() : null, 
         department ? department.trim() : null, 
         supervisor_id || null,
