@@ -338,6 +338,20 @@ function initializeDatabase() {
             FOREIGN KEY (employee_id) REFERENCES employees (id)
         )`,
         
+        // Employee audit trail table for governance compliance
+        `CREATE TABLE IF NOT EXISTS employee_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            field_changed TEXT,
+            old_value TEXT,
+            new_value TEXT,
+            performed_by INTEGER NOT NULL,
+            performed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees (id),
+            FOREIGN KEY (performed_by) REFERENCES employees (id)
+        )`,
+        
         // NJC Rates table
         // NJC rates table now managed through comprehensive rate management system
         // See NJC-RATES-SYSTEM.md for details
@@ -1377,6 +1391,20 @@ function logLoginAttempt(email, employeeId, success, failureReason, ipAddress, u
     });
 }
 
+// Employee audit logging function for governance compliance
+function logEmployeeAudit(employeeId, action, fieldChanged, oldValue, newValue, performedBy) {
+    db.run(`
+        INSERT INTO employee_audit_log (employee_id, action, field_changed, old_value, new_value, performed_by)
+        VALUES (?, ?, ?, ?, ?, ?)
+    `, [employeeId, action, fieldChanged, oldValue, newValue, performedBy], (err) => {
+        if (err) {
+            console.error('❌ Employee audit log error:', err.message);
+        } else {
+            console.log(`📋 Employee audit logged: ${action} on employee ${employeeId} by ${performedBy}`);
+        }
+    });
+}
+
 // GET /api/audit-log endpoint (admin only) - Full system audit trail
 app.get('/api/audit-log', requireAuth, requireRole('admin'), (req, res) => {
     const { limit = 100, offset = 0, expense_id } = req.query;
@@ -1930,10 +1958,31 @@ app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) =
             });
         }
         
-        console.log(`✅ Employee added with ID: ${this.lastID}`);
+        const newEmployeeId = this.lastID;
+        console.log(`✅ Employee added with ID: ${newEmployeeId}`);
+        
+        // Log all initial field values for audit trail
+        const fieldsToLog = [
+            { field: 'name', value: name.trim() },
+            { field: 'employee_number', value: employee_number.trim() },
+            { field: 'position', value: position ? position.trim() : null },
+            { field: 'department', value: department ? department.trim() : null },
+            { field: 'supervisor_id', value: supervisor_id || null },
+            { field: 'gl_account_id', value: gl_account_id || null }
+        ];
+        
+        fieldsToLog.forEach(item => {
+            if (item.value !== null && item.value !== '') {
+                logEmployeeAudit(newEmployeeId, 'created', item.field, null, item.value, req.user.employeeId);
+            }
+        });
+        
+        // Log the creation action
+        logEmployeeAudit(newEmployeeId, 'created', null, null, 'Employee record created', req.user.employeeId);
+        
         res.json({ 
             success: true, 
-            id: this.lastID,
+            id: newEmployeeId,
             message: 'Employee added successfully!' 
         });
     });
@@ -2003,48 +2052,87 @@ app.put('/api/employees/:id', requireAuth, requireRole('admin'), async (req, res
         }
     }
     
-    const query = `
-        UPDATE employees 
-        SET name = ?, employee_number = ?, position = ?, department = ?, supervisor_id = ?, gl_account_id = ?
-        WHERE id = ?
-    `;
-    
-    const params = [
-        name.trim(), 
-        employee_number.trim(), 
-        position ? position.trim() : null, 
-        department ? department.trim() : null, 
-        supervisor_id || null,
-        gl_account_id || null,
-        id
-    ];
-    
-    db.run(query, params, function(err) {
+    // First get current values to compare
+    db.get('SELECT * FROM employees WHERE id = ?', [id], (err, currentEmployee) => {
         if (err) {
-            console.error('❌ Error updating employee:', err);
-            if (err.message.includes('UNIQUE constraint failed')) {
-                return res.status(409).json({ 
+            console.error('❌ Error fetching employee for comparison:', err);
+            return res.status(500).json({ success: false, error: 'Failed to fetch current employee data' });
+        }
+        
+        if (!currentEmployee) {
+            return res.status(404).json({ success: false, error: 'Employee not found' });
+        }
+        
+        const query = `
+            UPDATE employees 
+            SET name = ?, employee_number = ?, position = ?, department = ?, supervisor_id = ?, gl_account_id = ?
+            WHERE id = ?
+        `;
+        
+        const params = [
+            name.trim(), 
+            employee_number.trim(), 
+            position ? position.trim() : null, 
+            department ? department.trim() : null, 
+            supervisor_id || null,
+            gl_account_id || null,
+            id
+        ];
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('❌ Error updating employee:', err);
+                if (err.message.includes('UNIQUE constraint failed')) {
+                    return res.status(409).json({ 
+                        success: false, 
+                        error: 'Employee number already exists' 
+                    });
+                }
+                return res.status(500).json({ 
                     success: false, 
-                    error: 'Employee number already exists' 
+                    error: 'Failed to update employee' 
                 });
             }
-            return res.status(500).json({ 
-                success: false, 
-                error: 'Failed to update employee' 
+            
+            if (this.changes === 0) {
+                return res.status(404).json({ 
+                    success: false, 
+                    error: 'Employee not found' 
+                });
+            }
+            
+            console.log(`✅ Employee ${id} updated`);
+            
+            // Log changes for audit trail - compare old vs new values
+            const fieldsToCheck = [
+                { field: 'name', oldValue: currentEmployee.name, newValue: name.trim() },
+                { field: 'employee_number', oldValue: currentEmployee.employee_number, newValue: employee_number.trim() },
+                { field: 'position', oldValue: currentEmployee.position, newValue: position ? position.trim() : null },
+                { field: 'department', oldValue: currentEmployee.department, newValue: department ? department.trim() : null },
+                { field: 'supervisor_id', oldValue: currentEmployee.supervisor_id, newValue: supervisor_id || null },
+                { field: 'gl_account_id', oldValue: currentEmployee.gl_account_id, newValue: gl_account_id || null }
+            ];
+            
+            let changesDetected = false;
+            fieldsToCheck.forEach(item => {
+                // Convert to string for comparison to handle null/undefined consistently
+                const oldStr = String(item.oldValue || '');
+                const newStr = String(item.newValue || '');
+                
+                if (oldStr !== newStr) {
+                    changesDetected = true;
+                    logEmployeeAudit(id, 'updated', item.field, item.oldValue, item.newValue, req.user.employeeId);
+                }
             });
-        }
-        
-        if (this.changes === 0) {
-            return res.status(404).json({ 
-                success: false, 
-                error: 'Employee not found' 
+            
+            if (changesDetected) {
+                logEmployeeAudit(id, 'updated', null, null, 'Employee record updated', req.user.employeeId);
+            }
+            
+            res.json({ 
+                success: true, 
+                message: 'Employee updated successfully!' 
             });
-        }
-        
-        console.log(`✅ Employee ${id} updated`);
-        res.json({ 
-            success: true, 
-            message: 'Employee updated successfully!' 
         });
     });
 });
@@ -2087,28 +2175,105 @@ app.delete('/api/employees/:id', requireAuth, requireRole('admin'), (req, res) =
                 });
             }
             
-            // Safe to delete
-            db.run('DELETE FROM employees WHERE id = ?', [id], function(err) {
+            // Get employee details before deletion for audit log
+            db.get('SELECT * FROM employees WHERE id = ?', [id], (err, employee) => {
                 if (err) {
-                    console.error('❌ Error deleting employee:', err);
-                    return res.status(500).json({ 
-                        success: false, 
-                        error: 'Failed to delete employee' 
-                    });
+                    console.error('❌ Error fetching employee for deletion audit:', err);
+                    return res.status(500).json({ success: false, error: 'Failed to fetch employee data' });
                 }
                 
-                if (this.changes === 0) {
-                    return res.status(404).json({ 
-                        success: false, 
-                        error: 'Employee not found' 
-                    });
+                if (!employee) {
+                    return res.status(404).json({ success: false, error: 'Employee not found' });
                 }
                 
-                console.log(`✅ Employee ${id} deleted`);
-                res.json({ 
-                    success: true, 
-                    message: 'Employee deleted successfully' 
+                // Log deletion before deleting the record
+                logEmployeeAudit(id, 'deleted', 'name', employee.name, null, req.user.employeeId);
+                logEmployeeAudit(id, 'deleted', 'employee_number', employee.employee_number, null, req.user.employeeId);
+                if (employee.position) logEmployeeAudit(id, 'deleted', 'position', employee.position, null, req.user.employeeId);
+                if (employee.department) logEmployeeAudit(id, 'deleted', 'department', employee.department, null, req.user.employeeId);
+                if (employee.supervisor_id) logEmployeeAudit(id, 'deleted', 'supervisor_id', employee.supervisor_id, null, req.user.employeeId);
+                logEmployeeAudit(id, 'deleted', null, null, `Employee record deleted: ${employee.name} (${employee.employee_number})`, req.user.employeeId);
+                
+                // Now delete the employee
+                db.run('DELETE FROM employees WHERE id = ?', [id], function(err) {
+                    if (err) {
+                        console.error('❌ Error deleting employee:', err);
+                        return res.status(500).json({ 
+                            success: false, 
+                            error: 'Failed to delete employee' 
+                        });
+                    }
+                    
+                    if (this.changes === 0) {
+                        return res.status(404).json({ 
+                            success: false, 
+                            error: 'Employee not found' 
+                        });
+                    }
+                    
+                    console.log(`✅ Employee ${id} deleted`);
+                    res.json({ 
+                        success: true, 
+                        message: 'Employee deleted successfully' 
+                    });
                 });
+            });
+        });
+    });
+});
+
+// GET /api/employee-audit-log endpoint (admin only) - Employee change audit trail
+app.get('/api/employee-audit-log', requireAuth, requireRole('admin'), (req, res) => {
+    const { limit = 100, offset = 0, employee_id } = req.query;
+    
+    let query = `
+        SELECT eal.*, 
+               e.name as employee_name,
+               e.employee_number,
+               performer.name as performed_by_name,
+               performer.employee_number as performed_by_number
+        FROM employee_audit_log eal
+        LEFT JOIN employees e ON eal.employee_id = e.id
+        LEFT JOIN employees performer ON eal.performed_by = performer.id
+    `;
+    
+    let params = [];
+    
+    if (employee_id) {
+        query += ` WHERE eal.employee_id = ?`;
+        params.push(employee_id);
+    }
+    
+    query += ` ORDER BY eal.performed_at DESC LIMIT ? OFFSET ?`;
+    params.push(parseInt(limit), parseInt(offset));
+    
+    db.all(query, params, (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching employee audit log:', err);
+            return res.status(500).json({ error: 'Failed to fetch employee audit log' });
+        }
+        
+        // Get total count
+        const countQuery = employee_id ? 
+            'SELECT COUNT(*) as total FROM employee_audit_log WHERE employee_id = ?' :
+            'SELECT COUNT(*) as total FROM employee_audit_log';
+        const countParams = employee_id ? [employee_id] : [];
+        
+        db.get(countQuery, countParams, (err2, countRow) => {
+            if (err2) {
+                console.error('❌ Error fetching employee audit count:', err2);
+                return res.status(500).json({ error: 'Failed to fetch audit count' });
+            }
+
+            res.json({
+                success: true,
+                employee_audit_log: rows,
+                pagination: {
+                    total: countRow.total,
+                    limit: parseInt(limit),
+                    offset: parseInt(offset),
+                    has_more: (parseInt(offset) + rows.length) < countRow.total
+                }
             });
         });
     });

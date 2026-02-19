@@ -383,6 +383,53 @@ try {
                 </div>
             </div>
             
+            <!-- 📋 Employee Change History Section (Admin Only) -->
+            <div id="employee-audit-section" style="display: none; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #0891b2;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; cursor: pointer;" onclick="toggleEmployeeAuditHistory()">
+                    <h4 style="margin: 0; color: #2c3e50; display: flex; align-items: center;">
+                        📋 <span style="margin-left: 10px;">Employee Change History</span>
+                        <span id="audit-toggle-icon" style="margin-left: auto; font-size: 1.2em;">▼</span>
+                    </h4>
+                </div>
+                <div id="employee-audit-content" style="display: none;">
+                    <div style="background: #f8f9ff; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #667eea;">
+                        <div style="font-size: 14px; color: #2c3e50; margin-bottom: 6px;">
+                            <strong>📊 Governance & Audit Compliance</strong>
+                        </div>
+                        <div style="font-size: 13px; color: #666; line-height: 1.4;">
+                            All employee changes are tracked for audit compliance. This log shows who made changes, when, and what was modified for governance oversight.
+                        </div>
+                    </div>
+                    
+                    <!-- Filter Options -->
+                    <div style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                        <div>
+                            <label style="font-weight: 600; margin-right: 8px;">Filter by Employee:</label>
+                            <select id="audit-employee-filter" onchange="loadEmployeeAuditLog()" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; min-width: 200px;">
+                                <option value="">All Employees</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-weight: 600; margin-right: 8px;">Show:</label>
+                            <select id="audit-limit" onchange="loadEmployeeAuditLog()" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px;">
+                                <option value="50">Last 50 changes</option>
+                                <option value="100">Last 100 changes</option>
+                                <option value="200">Last 200 changes</option>
+                            </select>
+                        </div>
+                        <button onclick="loadEmployeeAuditLog()" class="btn btn-primary" style="padding: 6px 16px;">🔄 Refresh</button>
+                    </div>
+                    
+                    <!-- Audit Log Container -->
+                    <div id="employee-audit-log-container">
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            <p>Loading employee change history...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
             <div id="employees-container">
                 <div class="loading">
                     <div class="spinner"></div>
@@ -1117,6 +1164,14 @@ try {
 
                 // Store employees globally for forms
                 window.allEmployees = allEmployees;
+                
+                // Show audit section for admins
+                if (currentUserRole === 'admin') {
+                    document.getElementById('employee-audit-section').style.display = 'block';
+                    populateAuditEmployeeFilter(allEmployees);
+                } else {
+                    document.getElementById('employee-audit-section').style.display = 'none';
+                }
                 
                 let employees = allEmployees;
                 if (currentUserRole === 'supervisor' && currentSupervisorId) {
@@ -2487,6 +2542,241 @@ try {
             document.getElementById('new-rate-province').value = 'QC';
             document.getElementById('new-rate-notes').value = '';
             document.getElementById('rate-replacement-preview').style.display = 'none';
+        }
+
+        // ===== EMPLOYEE AUDIT TRAIL FUNCTIONS =====
+
+        function toggleEmployeeAuditHistory() {
+            const content = document.getElementById('employee-audit-content');
+            const icon = document.getElementById('audit-toggle-icon');
+            
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                icon.textContent = '▲';
+                // Load audit log if it's the first time opening
+                if (!content.getAttribute('data-loaded')) {
+                    loadEmployeeAuditLog();
+                    content.setAttribute('data-loaded', 'true');
+                }
+            } else {
+                content.style.display = 'none';
+                icon.textContent = '▼';
+            }
+        }
+
+        function populateAuditEmployeeFilter(employees) {
+            const select = document.getElementById('audit-employee-filter');
+            select.innerHTML = '<option value="">All Employees</option>';
+            
+            employees.forEach(emp => {
+                select.innerHTML += `<option value="${emp.id}">${emp.name} (${emp.employee_number || 'No ID'})</option>`;
+            });
+        }
+
+        async function loadEmployeeAuditLog() {
+            if (currentUserRole !== 'admin') return;
+            
+            const container = document.getElementById('employee-audit-log-container');
+            const employeeFilter = document.getElementById('audit-employee-filter').value;
+            const limit = document.getElementById('audit-limit').value;
+            
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading change history...</p></div>';
+            
+            try {
+                let url = `/api/employee-audit-log?limit=${limit}&offset=0`;
+                if (employeeFilter) {
+                    url += `&employee_id=${employeeFilter}`;
+                }
+                
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                
+                if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                
+                const data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(data.error || 'Failed to load audit log');
+                }
+                
+                const auditLog = data.employee_audit_log;
+                
+                if (auditLog.length === 0) {
+                    container.innerHTML = `
+                        <div class="alert alert-info">
+                            <div style="text-align: center; padding: 20px;">
+                                <div style="font-size: 48px; margin-bottom: 15px;">📋</div>
+                                <h3>No Changes Found</h3>
+                                <p>No employee changes have been recorded yet.</p>
+                            </div>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // Group by employee and date for better readability
+                const groupedLogs = groupAuditLogsByEmployee(auditLog);
+                
+                container.innerHTML = displayGroupedAuditLog(groupedLogs, data.pagination);
+                
+            } catch (error) {
+                console.error('❌ Error loading employee audit log:', error);
+                container.innerHTML = `
+                    <div class="alert alert-danger">
+                        <div style="text-align: center; padding: 20px;">
+                            <div style="font-size: 48px; margin-bottom: 15px;">❌</div>
+                            <h3>Error Loading Change History</h3>
+                            <p>Failed to load audit log: ${error.message}</p>
+                            <button class="btn btn-primary" onclick="loadEmployeeAuditLog()" style="margin-top: 15px;">🔄 Try Again</button>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function groupAuditLogsByEmployee(auditLog) {
+            const grouped = {};
+            
+            auditLog.forEach(log => {
+                const key = `${log.employee_id}-${log.performed_at.split(' ')[0]}`; // Group by employee and date
+                
+                if (!grouped[key]) {
+                    grouped[key] = {
+                        employee_id: log.employee_id,
+                        employee_name: log.employee_name || 'Unknown Employee',
+                        employee_number: log.employee_number,
+                        date: log.performed_at.split(' ')[0],
+                        performed_by_name: log.performed_by_name || 'Unknown User',
+                        logs: []
+                    };
+                }
+                
+                grouped[key].logs.push(log);
+            });
+            
+            return Object.values(grouped);
+        }
+
+        function displayGroupedAuditLog(groupedLogs, pagination) {
+            let html = '<div style="display: flex; flex-direction: column; gap: 20px;">';
+            
+            groupedLogs.forEach(group => {
+                const actionIcons = {
+                    'created': '➕',
+                    'updated': '✏️',
+                    'deleted': '🗑️'
+                };
+                
+                const actionColors = {
+                    'created': '#28a745',
+                    'updated': '#ffc107',
+                    'deleted': '#dc3545'
+                };
+                
+                // Group by action type
+                const actionGroups = {};
+                group.logs.forEach(log => {
+                    if (!actionGroups[log.action]) {
+                        actionGroups[log.action] = [];
+                    }
+                    actionGroups[log.action].push(log);
+                });
+                
+                html += `
+                    <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); border-left: 4px solid #667eea;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <div>
+                                <h4 style="margin: 0; color: #2c3e50;">
+                                    👤 ${group.employee_name} ${group.employee_number ? `(${group.employee_number})` : ''}
+                                </h4>
+                                <p style="margin: 5px 0 0 0; color: #666; font-size: 14px;">
+                                    📅 ${group.date} • By: ${group.performed_by_name}
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                `;
+                
+                Object.keys(actionGroups).forEach(action => {
+                    const logs = actionGroups[action];
+                    const icon = actionIcons[action] || '📝';
+                    const color = actionColors[action] || '#6c757d';
+                    
+                    // Get the main action log (without field_changed)
+                    const mainLog = logs.find(log => !log.field_changed) || logs[0];
+                    const fieldLogs = logs.filter(log => log.field_changed);
+                    
+                    html += `
+                        <div style="padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 3px solid ${color};">
+                            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                                <span style="font-size: 1.1em; margin-right: 8px;">${icon}</span>
+                                <strong style="color: ${color}; text-transform: capitalize;">${action} Employee Record</strong>
+                                <span style="margin-left: 10px; color: #666; font-size: 12px;">
+                                    ${formatTimeAgo(mainLog.performed_at)}
+                                </span>
+                            </div>
+                    `;
+                    
+                    if (fieldLogs.length > 0) {
+                        html += '<div style="margin-left: 20px; font-size: 13px;">';
+                        
+                        fieldLogs.forEach(fieldLog => {
+                            const fieldName = fieldLog.field_changed.replace('_', ' ');
+                            
+                            if (action === 'created') {
+                                html += `<div style="color: #666; margin-bottom: 4px;">• <strong>${fieldName}:</strong> "${fieldLog.new_value || 'Not set'}"</div>`;
+                            } else if (action === 'updated') {
+                                html += `<div style="color: #666; margin-bottom: 4px;">• <strong>${fieldName}:</strong> "${fieldLog.old_value || 'Not set'}" → "${fieldLog.new_value || 'Not set'}"</div>`;
+                            } else if (action === 'deleted') {
+                                html += `<div style="color: #666; margin-bottom: 4px;">• <strong>${fieldName}:</strong> "${fieldLog.old_value || 'Not set'}" (removed)</div>`;
+                            }
+                        });
+                        
+                        html += '</div>';
+                    }
+                    
+                    html += '</div>';
+                });
+                
+                html += `
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            
+            // Add pagination info
+            if (pagination.total > pagination.limit) {
+                html += `
+                    <div style="text-align: center; margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                        <p style="color: #666; margin: 0;">
+                            Showing ${Math.min(pagination.limit, pagination.total)} of ${pagination.total} changes
+                            ${pagination.has_more ? ' • Use filters above to narrow results' : ''}
+                        </p>
+                    </div>
+                `;
+            }
+            
+            return html;
+        }
+
+        function formatTimeAgo(dateString) {
+            const date = new Date(dateString);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMins / 60);
+            const diffDays = Math.floor(diffHours / 24);
+            
+            if (diffMins < 1) return 'Just now';
+            if (diffMins < 60) return `${diffMins} min${diffMins !== 1 ? 's' : ''} ago`;
+            if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+            if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+            
+            return date.toLocaleDateString();
         }
 
     </script>
