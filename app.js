@@ -501,6 +501,20 @@ function insertDefaultData() {
                 console.error('❌ Error adding details column:', err.message);
             }
         });
+
+        // Add name column to travel_authorizations if missing
+        db.run(`ALTER TABLE travel_authorizations ADD COLUMN name TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                // column already exists, fine
+            }
+        });
+
+        // Add travel_auth_id column to expenses table for estimated expenses
+        db.run(`ALTER TABLE expenses ADD COLUMN travel_auth_id INTEGER REFERENCES travel_authorizations(id)`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding travel_auth_id column:', err.message);
+            }
+        });
     }
     
     // Seed NJC rates with historical and current periods
@@ -3347,7 +3361,7 @@ app.post('/api/travel-auth', requireAuth, async (req, res) => {
             (employee_id, name, destination, start_date, end_date, purpose, 
              est_transport, est_lodging, est_meals, est_other, est_total, 
              approver_id, status, details)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
         `;
         
         const params = [
@@ -3365,15 +3379,10 @@ app.post('/api/travel-auth', requireAuth, async (req, res) => {
                 });
             }
             
-            
-            // Notify supervisor
-            createNotification(employee.supervisor_id, 'at_pending', 
-                `New Authorization to Travel request "${name}" awaits your approval.`);
-            
             res.json({ 
                 success: true, 
                 id: this.lastID, 
-                message: 'Travel Authorization submitted for approval!' 
+                message: 'Travel Authorization created as draft!' 
             });
         });
     });
@@ -3385,7 +3394,9 @@ app.get('/api/travel-auth', requireAuth, (req, res) => {
     
     if (req.user.role === 'admin') {
         query = `
-            SELECT ta.*, e.name as employee_name, s.name as approver_name
+            SELECT ta.*, e.name as employee_name, s.name as approver_name,
+                   (SELECT COUNT(*) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expense_count,
+                   (SELECT COALESCE(SUM(ex.amount), 0) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expenses_total
             FROM travel_authorizations ta
             JOIN employees e ON ta.employee_id = e.id
             LEFT JOIN employees s ON ta.approver_id = s.id
@@ -3394,7 +3405,9 @@ app.get('/api/travel-auth', requireAuth, (req, res) => {
         params = [];
     } else if (req.user.role === 'supervisor') {
         query = `
-            SELECT ta.*, e.name as employee_name, s.name as approver_name
+            SELECT ta.*, e.name as employee_name, s.name as approver_name,
+                   (SELECT COUNT(*) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expense_count,
+                   (SELECT COALESCE(SUM(ex.amount), 0) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expenses_total
             FROM travel_authorizations ta
             JOIN employees e ON ta.employee_id = e.id
             LEFT JOIN employees s ON ta.approver_id = s.id
@@ -3404,7 +3417,9 @@ app.get('/api/travel-auth', requireAuth, (req, res) => {
         params = [req.user.employeeId, req.user.employeeId];
     } else {
         query = `
-            SELECT ta.*, e.name as employee_name, s.name as approver_name
+            SELECT ta.*, e.name as employee_name, s.name as approver_name,
+                   (SELECT COUNT(*) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expense_count,
+                   (SELECT COALESCE(SUM(ex.amount), 0) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expenses_total
             FROM travel_authorizations ta
             JOIN employees e ON ta.employee_id = e.id
             LEFT JOIN employees s ON ta.approver_id = s.id
@@ -3592,7 +3607,8 @@ app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
         const est_total = parseFloat(est_transport) + parseFloat(est_lodging) + 
                          parseFloat(est_meals) + parseFloat(est_other);
         
-        // Update the AT and reset status to pending
+        // Update the AT — keep draft status if draft, otherwise set to draft for re-editing
+        const newStatus = at.status === 'draft' ? 'draft' : 'draft';
         const updateQuery = `
             UPDATE travel_authorizations 
             SET name = COALESCE(?, name),
@@ -3606,7 +3622,7 @@ app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
                 est_other = ?,
                 est_total = ?,
                 details = COALESCE(?, details),
-                status = 'pending',
+                status = '${newStatus}',
                 rejection_reason = NULL,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -3622,15 +3638,12 @@ app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
             }
             
             
-            // Notify supervisor of resubmission
-            if (at.approver_id) {
-                createNotification(at.approver_id, 'at_updated', 
-                    `Travel Authorization "${name || at.name || at.destination}" has been revised and resubmitted.`);
-            }
+            // Update totals from expenses
+            updateAuthTotals(atId);
             
             res.json({ 
                 success: true, 
-                message: 'Travel Authorization updated and resubmitted for approval!' 
+                message: 'Travel Authorization updated!' 
             });
         });
     });
@@ -3685,6 +3698,151 @@ app.post('/api/travel-auth/:id/link-trip/:tripId', requireAuth, (req, res) => {
         res.status(500).json({ error: 'Database error' });
     });
 });
+
+// ============================================
+// TRAVEL AUTH EXPENSES (Estimated Expenses)
+// ============================================
+
+// 8. Add estimated expense to travel authorization
+app.post('/api/travel-auth/:id/expenses', requireAuth, (req, res) => {
+    const atId = req.params.id;
+    const { expense_type, date, location, amount, vendor, description, kilometers, vehicle_from, vehicle_to, hotel_checkin, hotel_checkout } = req.body;
+
+    if (!expense_type || !date || !amount) {
+        return res.status(400).json({ error: 'Missing required fields: expense_type, date, amount' });
+    }
+
+    // Check ownership and draft/rejected status
+    db.get('SELECT * FROM travel_authorizations WHERE id = ? AND employee_id = ?', [atId, req.user.employeeId], (err, at) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!at) return res.status(404).json({ error: 'Travel authorization not found' });
+        if (at.status !== 'draft' && at.status !== 'rejected') {
+            return res.status(400).json({ error: 'Can only add expenses to draft or rejected authorizations' });
+        }
+
+        // Get employee name
+        db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err, emp) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+
+            // Build description with vehicle/hotel details if applicable
+            let finalDesc = description || '';
+            if (expense_type === 'vehicle_km' && kilometers) {
+                finalDesc = `${vehicle_from || ''} → ${vehicle_to || ''} (${kilometers} km)${finalDesc ? ' — ' + finalDesc : ''}`;
+            }
+            if (expense_type === 'hotel' && hotel_checkin && hotel_checkout) {
+                finalDesc = `Check-in: ${hotel_checkin}, Check-out: ${hotel_checkout}${finalDesc ? ' — ' + finalDesc : ''}`;
+            }
+
+            const mealNames = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', incidentals: 'Incidentals' };
+            const meal_name = mealNames[expense_type] || null;
+
+            db.run(`INSERT INTO expenses (employee_name, employee_id, travel_auth_id, expense_type, meal_name, date, location, amount, vendor, description, status, receipt_photo)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'estimate', NULL)`,
+                [emp.name, req.user.employeeId, atId, expense_type, meal_name, date, location || '', parseFloat(amount), vendor || '', finalDesc, ],
+                function(err) {
+                    if (err) {
+                        console.error('❌ Error adding auth expense:', err);
+                        return res.status(500).json({ error: 'Failed to add expense' });
+                    }
+
+                    // Update auth totals
+                    updateAuthTotals(atId);
+
+                    res.json({ success: true, id: this.lastID, message: 'Estimated expense added!' });
+                }
+            );
+        });
+    });
+});
+
+// 9. Get expenses for a travel authorization
+app.get('/api/travel-auth/:id/expenses', requireAuth, (req, res) => {
+    const atId = req.params.id;
+
+    // Verify access
+    db.get('SELECT * FROM travel_authorizations WHERE id = ?', [atId], (err, at) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!at) return res.status(404).json({ error: 'Travel authorization not found' });
+        if (req.user.role !== 'admin' && at.employee_id !== req.user.employeeId && at.approver_id !== req.user.employeeId) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        db.all('SELECT * FROM expenses WHERE travel_auth_id = ? ORDER BY date, id', [atId], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Failed to fetch expenses' });
+            res.json(rows || []);
+        });
+    });
+});
+
+// 10. Delete estimated expense from travel authorization
+app.delete('/api/travel-auth/:id/expenses/:expenseId', requireAuth, (req, res) => {
+    const { id: atId, expenseId } = req.params;
+
+    db.get('SELECT * FROM travel_authorizations WHERE id = ? AND employee_id = ?', [atId, req.user.employeeId], (err, at) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!at) return res.status(404).json({ error: 'Travel authorization not found' });
+        if (at.status !== 'draft' && at.status !== 'rejected') {
+            return res.status(400).json({ error: 'Can only remove expenses from draft or rejected authorizations' });
+        }
+
+        db.run('DELETE FROM expenses WHERE id = ? AND travel_auth_id = ? AND employee_id = ?',
+            [expenseId, atId, req.user.employeeId], function(err) {
+                if (err) return res.status(500).json({ error: 'Failed to delete expense' });
+                if (this.changes === 0) return res.status(404).json({ error: 'Expense not found' });
+
+                updateAuthTotals(atId);
+                res.json({ success: true, message: 'Expense removed' });
+            }
+        );
+    });
+});
+
+// 11. Submit travel authorization for approval (draft → pending)
+app.put('/api/travel-auth/:id/submit', requireAuth, (req, res) => {
+    const atId = req.params.id;
+
+    db.get('SELECT * FROM travel_authorizations WHERE id = ? AND employee_id = ?', [atId, req.user.employeeId], (err, at) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!at) return res.status(404).json({ error: 'Travel authorization not found' });
+        if (at.status !== 'draft' && at.status !== 'rejected') {
+            return res.status(400).json({ error: 'Can only submit draft or rejected authorizations' });
+        }
+
+        db.run(`UPDATE travel_authorizations SET status = 'pending', rejection_reason = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [atId], function(err) {
+                if (err) return res.status(500).json({ error: 'Failed to submit' });
+
+                // Notify supervisor
+                if (at.approver_id) {
+                    createNotification(at.approver_id, 'at_pending',
+                        `New Authorization to Travel request "${at.name || at.destination}" awaits your approval.`);
+                }
+
+                res.json({ success: true, message: 'Travel Authorization submitted for approval!' });
+            }
+        );
+    });
+});
+
+// Helper: Update travel auth totals from its expenses
+function updateAuthTotals(atId) {
+    db.all('SELECT expense_type, amount FROM expenses WHERE travel_auth_id = ?', [atId], (err, expenses) => {
+        if (err) return console.error('Error updating auth totals:', err);
+
+        let est_transport = 0, est_lodging = 0, est_meals = 0, est_other = 0;
+        (expenses || []).forEach(e => {
+            const amt = parseFloat(e.amount) || 0;
+            if (e.expense_type === 'vehicle_km') est_transport += amt;
+            else if (e.expense_type === 'hotel') est_lodging += amt;
+            else if (['breakfast', 'lunch', 'dinner', 'incidentals'].includes(e.expense_type)) est_meals += amt;
+            else est_other += amt;
+        });
+
+        const est_total = est_transport + est_lodging + est_meals + est_other;
+        db.run(`UPDATE travel_authorizations SET est_transport = ?, est_lodging = ?, est_meals = ?, est_other = ?, est_total = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [est_transport, est_lodging, est_meals, est_other, est_total, atId]);
+    });
+}
 
 // ============================================
 // FEATURE 5: CSV Export

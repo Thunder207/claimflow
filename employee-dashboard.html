@@ -1087,7 +1087,151 @@
 
         <div id="travel-auth-tab" class="tab-content">
             <h3 style="margin-bottom: 20px; color: #2c3e50;">✈️ My Travel Authorizations</h3>
-            <div id="travel-auth-container">
+            
+            <div class="success-message" id="ta-success" style="display:none;">
+                ✅ <span id="ta-success-text">Success!</span>
+            </div>
+            <div class="error-message" id="ta-error" style="display:none;">
+                ❌ <span id="ta-error-text">Error</span>
+            </div>
+
+            <!-- Auth Selector -->
+            <div style="margin-bottom: 20px;">
+                <h4 style="margin-bottom: 10px; color: #2c3e50;">📋 Select Authorization</h4>
+                <select id="ta-auth-select" style="width: 100%; padding: 10px; font-size: 15px; border-radius: 8px; border: 2px solid #17a2b8; margin-bottom: 10px;" onchange="handleAuthSelection()">
+                    <option value="">-- Select a travel authorization --</option>
+                </select>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button type="button" onclick="showCreateATModal()" class="btn" style="background: #28a745; padding: 8px 16px; font-size: 14px;">
+                        ➕ New Authorization
+                    </button>
+                    <button type="button" onclick="loadTravelAuths()" class="btn" style="background: #17a2b8; padding: 8px 16px; font-size: 14px;">
+                        🔄 Refresh
+                    </button>
+                </div>
+                <div id="ta-auth-info" style="margin-top: 10px; padding: 12px; border-radius: 8px; display: none;"></div>
+            </div>
+
+            <!-- Expense Form (mirrors trip expense form, no receipt) -->
+            <div id="ta-expense-section" style="display: none;">
+                <h4 style="margin-bottom: 15px; color: #2c3e50;">📝 Add Estimated Expense</h4>
+                
+                <form id="ta-expense-form" class="expense-form" onsubmit="addAuthExpense(event)">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+                        <div class="form-group">
+                            <label for="ta-expense-type">What type of expense? *</label>
+                            <select id="ta-expense-type" required onchange="updateTAPerDiemRate()">
+                                <option value="">Choose expense type...</option>
+                                <optgroup label="🏛️ Government Per Diem (NJC Fixed Rates)">
+                                    <option value="breakfast">🥐 Breakfast - $23.45</option>
+                                    <option value="lunch">🥗 Lunch - $29.75</option>
+                                    <option value="dinner">🍽️ Dinner - $47.05</option>
+                                    <option value="incidentals">📱 Incidentals - $32.08</option>
+                                </optgroup>
+                                <optgroup label="🚗 Travel & Accommodation">
+                                    <option value="vehicle_km">🚗 Vehicle (per km) - $0.68</option>
+                                    <option value="hotel">🏨 Hotel (Estimated Nightly Rate)</option>
+                                </optgroup>
+                                <optgroup label="📝 Other">
+                                    <option value="other">📝 Other Expense (Custom Amount)</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="ta-expense-date">Date *</label>
+                            <input type="date" id="ta-expense-date" required>
+                        </div>
+                    </div>
+
+                    <div class="per-diem-info" id="ta-per-diem-display" style="text-align: center; font-size: 15px;">
+                        💰 Select expense type above to see official NJC government rates
+                        <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">These are ESTIMATES — no receipt required</div>
+                    </div>
+
+                    <!-- Vehicle KM fields -->
+                    <div id="ta-vehicle-km-group" style="display: none;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                            <div class="form-group">
+                                <label for="ta-vehicle-from">From *</label>
+                                <input type="text" id="ta-vehicle-from" placeholder="e.g., 123 Main St, Ottawa, ON">
+                            </div>
+                            <div class="form-group">
+                                <label for="ta-vehicle-to">To *</label>
+                                <input type="text" id="ta-vehicle-to" placeholder="e.g., 456 Queen St, Toronto, ON">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="ta-kilometers">Kilometers *</label>
+                            <input type="number" id="ta-kilometers" step="0.1" min="0.1" max="10000" placeholder="e.g., 450" oninput="calculateTAVehicleAmount()">
+                            <small style="color: #666; font-size: 12px;">NJC rate: $0.68/km</small>
+                        </div>
+                    </div>
+
+                    <!-- Hotel fields -->
+                    <div id="ta-hotel-group" style="display: none; padding: 15px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 12px; margin: 10px 0;">
+                        <h5 style="color: #856404; margin-bottom: 10px;">🏨 Hotel Estimate</h5>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+                            <div class="form-group">
+                                <label for="ta-hotel-checkin">Check-in *</label>
+                                <input type="date" id="ta-hotel-checkin" onchange="calculateTAHotelAmount()">
+                            </div>
+                            <div class="form-group">
+                                <label for="ta-hotel-checkout">Check-out *</label>
+                                <input type="date" id="ta-hotel-checkout" onchange="calculateTAHotelAmount()">
+                            </div>
+                            <div class="form-group">
+                                <label for="ta-hotel-rate">Nightly Rate ($) *</label>
+                                <input type="number" id="ta-hotel-rate" step="0.01" min="0.01" placeholder="150.00" oninput="calculateTAHotelAmount()">
+                            </div>
+                        </div>
+                        <div id="ta-hotel-calc" style="display:none; background: #fff; padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; color: #856404;"></div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+                        <div class="form-group">
+                            <label for="ta-location">Location *</label>
+                            <input type="text" id="ta-location" placeholder="e.g., Ottawa, ON" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="ta-amount" id="ta-amount-label">Estimated Amount ($) *</label>
+                            <input type="number" id="ta-amount" step="0.01" min="0.01" placeholder="0.00" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="ta-vendor">Vendor/Details</label>
+                        <input type="text" id="ta-vendor" placeholder="e.g., Expected hotel, airline, etc.">
+                    </div>
+                    <div class="form-group">
+                        <label for="ta-description">Notes (Optional)</label>
+                        <textarea id="ta-description" rows="2" placeholder="Any additional details about this estimated expense..."></textarea>
+                    </div>
+                    <button type="submit" class="btn" style="margin-top: 10px; padding: 14px 30px; font-size: 15px; background: #17a2b8; color: white; border: none; border-radius: 8px;">
+                        ➕ Add Estimated Expense
+                    </button>
+                </form>
+
+                <!-- Expense List -->
+                <div id="ta-expenses-section" style="margin-top: 25px; padding: 20px; background: #f8f9fa; border-radius: 12px; border-left: 4px solid #17a2b8;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h4 style="color: #17a2b8; margin: 0;">💰 Estimated Expenses (<span id="ta-expense-count">0</span>)</h4>
+                        <span id="ta-expense-total" style="font-size: 18px; font-weight: bold; color: #17a2b8;">$0.00</span>
+                    </div>
+                    <div id="ta-expenses-list">
+                        <p style="text-align: center; color: #6c757d; padding: 15px;">No estimated expenses yet. Add some above!</p>
+                    </div>
+                    <div id="ta-submit-section" style="margin-top: 20px; text-align: center; display: none;">
+                        <button type="button" onclick="submitAuthForApproval()" class="btn" style="padding: 14px 40px; font-size: 16px; background: #28a745; color: white; border: none; border-radius: 8px;">
+                            📤 Submit for Approval
+                        </button>
+                        <div style="margin-top: 8px; font-size: 13px; color: #666;">
+                            💡 This will send the authorization with all estimated expenses to your supervisor
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Auth Cards List -->
+            <div id="travel-auth-container" style="margin-top: 25px;">
                 <div style="text-align: center; padding: 40px; color: #6c757d;">
                     <div style="font-size: 48px; margin-bottom: 15px;">✈️</div>
                     <p>Loading your travel authorizations...</p>
@@ -2447,6 +2591,18 @@
         // TRAVEL AUTHORIZATION (AT) MANAGEMENT FUNCTIONS
         // ═══════════════════════════════════════════════════════════════════════════════
         
+        let selectedAuthId = null;
+        let authExpenses = [];
+
+        // Show message in travel auth tab
+        function showTAMessage(type, text) {
+            const el = document.getElementById(`ta-${type}`);
+            const textEl = document.getElementById(`ta-${type}-text`);
+            textEl.textContent = text;
+            el.style.display = 'block';
+            setTimeout(() => { el.style.display = 'none'; }, 5000);
+        }
+
         // Load travel authorizations
         async function loadTravelAuths() {
             try {
@@ -2475,80 +2631,78 @@
             }
         }
         
-        // Render travel authorizations
+        // Render travel authorizations (cards + populate dropdown)
         function renderTravelAuths(auths) {
             const container = document.getElementById('travel-auth-container');
+            const select = document.getElementById('ta-auth-select');
             
-            // Always show Create button at top
-            let html = `
-                <div style="margin-bottom: 20px;">
-                    <button type="button" onclick="showCreateATModal()" class="btn" style="background: #28a745; padding: 10px 20px; font-size: 14px;">
-                        ➕ New Travel Authorization
-                    </button>
-                </div>
-            `;
+            // Populate dropdown
+            let options = '<option value="">-- Select a travel authorization --</option>';
+            if (auths && auths.length > 0) {
+                auths.forEach(at => {
+                    const status = at.status || 'draft';
+                    const statusEmoji = { draft: '📝', pending: '⏳', approved: '✅', rejected: '❌' }[status] || '📋';
+                    const total = parseFloat(at.expenses_total || at.est_total || 0).toFixed(2);
+                    const count = at.expense_count || 0;
+                    options += `<option value="${at.id}" data-status="${status}">${statusEmoji} ${sanitizeForDisplay(at.name || at.destination)} (${at.start_date} → ${at.end_date}) — ${count} expenses, $${total}</option>`;
+                });
+            }
+            select.innerHTML = options;
             
+            // Re-select if we had one selected
+            if (selectedAuthId) {
+                select.value = selectedAuthId;
+            }
+            
+            // Render cards
             if (!auths || auths.length === 0) {
-                html += `
-                    <div style="text-align: center; padding: 60px 20px; color: #6c757d; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); border-radius: 12px; border: 2px dashed #ffc107;">
-                        <div style="font-size: 64px; margin-bottom: 20px;">✈️</div>
-                        <h3 style="color: #2c3e50; margin-bottom: 12px;">No travel authorizations yet</h3>
-                        <p style="margin-bottom: 15px; font-size: 16px;">Create a travel authorization to get approval for your business trip.</p>
-                        <p style="font-size: 14px; color: #8e9aaf;">💡 Once approved, you can create a trip and add expenses under the Trips tab</p>
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 40px 20px; color: #6c757d; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); border-radius: 12px; border: 2px dashed #ffc107;">
+                        <div style="font-size: 48px; margin-bottom: 15px;">✈️</div>
+                        <h4 style="color: #2c3e50; margin-bottom: 10px;">No travel authorizations yet</h4>
+                        <p>Click "New Authorization" above to get started.</p>
                     </div>
                 `;
-                container.innerHTML = html;
                 return;
             }
             
-            html += '<div style="display: grid; gap: 15px;">';
+            let html = '<h4 style="margin-bottom: 15px; color: #2c3e50;">📋 All Authorizations</h4><div style="display: grid; gap: 12px;">';
             
             auths.forEach(at => {
                 const status = at.status || 'draft';
                 const statusBadge = getStatusBadgeHTML(status);
-                
-                const statusColor = {
-                    'pending': '#ffc107',
-                    'approved': '#28a745',
-                    'rejected': '#dc3545',
-                    'draft': '#6c757d'
-                }[status] || '#6c757d';
-                
+                const statusColor = { pending: '#ffc107', approved: '#28a745', rejected: '#dc3545', draft: '#6c757d' }[status] || '#6c757d';
                 const canEdit = status === 'rejected' || status === 'draft';
+                const count = at.expense_count || 0;
+                const total = parseFloat(at.expenses_total || at.est_total || 0).toFixed(2);
                 
                 html += `
-                    <div class="trip-card ${status}" style="border-left: 4px solid ${statusColor};">
+                    <div class="trip-card ${status}" style="border-left: 4px solid ${statusColor}; cursor: pointer;" onclick="document.getElementById('ta-auth-select').value='${at.id}'; handleAuthSelection();">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
                             <div style="flex: 1;">
-                                <div style="font-size: 18px; font-weight: bold; color: #2c3e50; margin-bottom: 6px;">
+                                <div style="font-size: 16px; font-weight: bold; color: #2c3e50; margin-bottom: 4px;">
                                     ✈️ ${sanitizeForDisplay(at.name || at.destination)}
                                 </div>
-                                <div style="color: #666; font-size: 14px; line-height: 1.6;">
+                                <div style="color: #666; font-size: 13px; line-height: 1.5;">
                                     📅 ${at.start_date} → ${at.end_date}
-                                    ${at.destination ? `<br>📍 ${at.destination}` : ''}
-                                    ${at.approver_name ? `<br>👤 Approver: ${at.approver_name}` : ''}
+                                    ${at.destination ? ` · 📍 ${sanitizeForDisplay(at.destination)}` : ''}
+                                    ${at.approver_name ? ` · 👤 ${sanitizeForDisplay(at.approver_name)}` : ''}
                                 </div>
-                                ${at.purpose ? `<div style="font-size: 12px; color: #888; margin-top: 6px;">📋 ${at.purpose}</div>` : ''}
-                                ${at.status === 'rejected' && at.rejection_reason ? `
-                                    <div style="font-size: 12px; color: #721c24; margin-top: 6px; padding: 6px 10px; background: #f8d7da; border-radius: 6px;">
-                                        ❌ <strong>Rejected:</strong> ${sanitizeForDisplay(at.rejection_reason)}
-                                    </div>
-                                ` : ''}
+                                <div style="font-size: 13px; color: #17a2b8; margin-top: 4px; font-weight: 600;">
+                                    💰 ${count} expense${count !== 1 ? 's' : ''} · $${total} estimated
+                                </div>
+                                ${at.purpose ? `<div style="font-size: 12px; color: #888; margin-top: 4px;">📋 ${sanitizeForDisplay(at.purpose)}</div>` : ''}
+                                ${status === 'rejected' && at.rejection_reason ? `
+                                    <div style="font-size: 12px; color: #721c24; margin-top: 4px; padding: 4px 8px; background: #f8d7da; border-radius: 4px;">
+                                        ❌ ${sanitizeForDisplay(at.rejection_reason)}
+                                    </div>` : ''}
                             </div>
                             <div style="text-align: right;">
                                 ${statusBadge}
-                                ${canEdit ? `
-                                    <div style="margin-top: 8px;">
-                                        <button onclick="editTravelAuth(${at.id})" class="btn" style="background: #ffc107; color: #212529; padding: 6px 12px; font-size: 12px;">
-                                            ✏️ Edit
-                                        </button>
-                                    </div>
-                                ` : ''}
-                                ${at.trip_id ? `
-                                    <div style="margin-top: 8px;">
-                                        <span style="color: #28a745; font-size: 12px; font-weight: bold;">🧳 Linked to Trip</span>
-                                    </div>
-                                ` : ''}
+                                ${canEdit ? `<div style="margin-top: 6px;">
+                                    <button onclick="event.stopPropagation(); editTravelAuth(${at.id})" class="btn" style="background: #ffc107; color: #212529; padding: 4px 10px; font-size: 12px;">✏️ Edit</button>
+                                </div>` : ''}
+                                ${at.trip_id ? '<div style="margin-top: 6px;"><span style="color: #28a745; font-size: 12px; font-weight: bold;">🧳 Linked</span></div>' : ''}
                             </div>
                         </div>
                     </div>
@@ -2559,230 +2713,288 @@
             container.innerHTML = html;
         }
         
+        // Handle auth selection from dropdown
+        async function handleAuthSelection() {
+            const select = document.getElementById('ta-auth-select');
+            const atId = select.value;
+            const infoDiv = document.getElementById('ta-auth-info');
+            const expenseSection = document.getElementById('ta-expense-section');
+            
+            if (!atId) {
+                selectedAuthId = null;
+                infoDiv.style.display = 'none';
+                expenseSection.style.display = 'none';
+                return;
+            }
+            
+            selectedAuthId = atId;
+            
+            // Get status from option
+            const option = select.selectedOptions[0];
+            const status = option?.dataset?.status || 'draft';
+            const canAddExpenses = status === 'draft' || status === 'rejected';
+            
+            // Show info
+            const statusColors = { draft: '#6c757d', pending: '#ffc107', approved: '#28a745', rejected: '#dc3545' };
+            infoDiv.style.display = 'block';
+            infoDiv.style.background = `${statusColors[status]}22`;
+            infoDiv.style.border = `1px solid ${statusColors[status]}`;
+            infoDiv.innerHTML = `<strong>Status:</strong> ${status.toUpperCase()} ${canAddExpenses ? '— You can add/remove estimated expenses' : status === 'pending' ? '— Waiting for approval (read-only)' : '— Approved ✅'}`;
+            
+            // Show expense section
+            expenseSection.style.display = 'block';
+            
+            // Show/hide form based on editability
+            document.getElementById('ta-expense-form').style.display = canAddExpenses ? 'block' : 'none';
+            
+            // Load expenses
+            await loadAuthExpenses(atId, canAddExpenses);
+        }
+        
+        // Load expenses for selected auth
+        async function loadAuthExpenses(atId, canEdit) {
+            try {
+                const response = await fetch(`/api/travel-auth/${atId}/expenses`, {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                const expenses = await response.json();
+                authExpenses = Array.isArray(expenses) ? expenses : [];
+                renderAuthExpenses(canEdit);
+            } catch (error) {
+                console.error('Error loading auth expenses:', error);
+                authExpenses = [];
+                renderAuthExpenses(canEdit);
+            }
+        }
+        
+        // Render auth expenses list
+        function renderAuthExpenses(canEdit) {
+            const list = document.getElementById('ta-expenses-list');
+            const countEl = document.getElementById('ta-expense-count');
+            const totalEl = document.getElementById('ta-expense-total');
+            const submitSection = document.getElementById('ta-submit-section');
+            
+            countEl.textContent = authExpenses.length;
+            const total = authExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
+            totalEl.textContent = `$${total.toFixed(2)}`;
+            
+            if (authExpenses.length === 0) {
+                list.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 15px;">No estimated expenses yet. Add some above!</p>';
+                submitSection.style.display = canEdit ? 'block' : 'none';
+                return;
+            }
+            
+            const typeIcons = { breakfast: '🥐', lunch: '🥗', dinner: '🍽️', incidentals: '📱', vehicle_km: '🚗', hotel: '🏨', other: '📝' };
+            
+            let html = '';
+            authExpenses.forEach(e => {
+                html += `
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: white; border-radius: 8px; margin-bottom: 8px; border: 1px solid #dee2e6;">
+                        <div style="flex: 1;">
+                            <strong>${typeIcons[e.expense_type] || '📋'} ${e.expense_type}</strong>
+                            <span style="color: #666; font-size: 13px;"> · ${e.date} · ${sanitizeForDisplay(e.location || '')}</span>
+                            ${e.vendor ? `<span style="color: #888; font-size: 12px;"> · ${sanitizeForDisplay(e.vendor)}</span>` : ''}
+                            ${e.description ? `<div style="font-size: 12px; color: #888; margin-top: 2px;">${sanitizeForDisplay(e.description)}</div>` : ''}
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <strong style="color: #17a2b8;">$${parseFloat(e.amount).toFixed(2)}</strong>
+                            ${canEdit ? `<button onclick="removeAuthExpense(${e.id})" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer;">🗑️</button>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            list.innerHTML = html;
+            submitSection.style.display = canEdit ? 'block' : 'none';
+        }
+        
+        // Update TA per diem rate display
+        function updateTAPerDiemRate() {
+            const type = document.getElementById('ta-expense-type').value;
+            const display = document.getElementById('ta-per-diem-display');
+            const amountInput = document.getElementById('ta-amount');
+            const vehicleGroup = document.getElementById('ta-vehicle-km-group');
+            const hotelGroup = document.getElementById('ta-hotel-group');
+            
+            vehicleGroup.style.display = 'none';
+            hotelGroup.style.display = 'none';
+            amountInput.readOnly = false;
+            
+            if (njcRates[type]) {
+                const r = njcRates[type];
+                if (r.rate !== null) {
+                    display.innerHTML = `${r.icon} <strong>${r.name}</strong> — NJC Rate: <strong>$${r.rate.toFixed(2)}</strong><div style="font-size:12px;opacity:0.8;margin-top:4px;">Amount is locked to official rate (estimate)</div>`;
+                    display.style.background = '#e8f5e9';
+                    display.style.color = '#2e7d32';
+                    amountInput.value = r.rate.toFixed(2);
+                    amountInput.readOnly = true;
+                } else {
+                    display.innerHTML = `${r.icon} <strong>${r.name}</strong> — Enter estimated amount<div style="font-size:12px;opacity:0.8;margin-top:4px;">No receipt required for estimates</div>`;
+                    display.style.background = '#fff3cd';
+                    display.style.color = '#856404';
+                    amountInput.value = '';
+                }
+            } else if (type === 'other') {
+                display.innerHTML = '📝 <strong>Other Expense</strong> — Enter estimated amount';
+                display.style.background = '#e3f2fd';
+                display.style.color = '#0d47a1';
+                amountInput.value = '';
+            } else {
+                display.innerHTML = '💰 Select expense type above to see official NJC government rates<div style="font-size:12px;opacity:0.8;margin-top:5px;">These are ESTIMATES — no receipt required</div>';
+                display.style.background = '';
+                display.style.color = '';
+                amountInput.value = '';
+            }
+            
+            if (type === 'vehicle_km') {
+                vehicleGroup.style.display = 'block';
+                amountInput.value = '';
+                amountInput.readOnly = true;
+            }
+            if (type === 'hotel') {
+                hotelGroup.style.display = 'block';
+                amountInput.value = '';
+                amountInput.readOnly = true;
+            }
+        }
+        
+        // Calculate TA vehicle amount
+        function calculateTAVehicleAmount() {
+            const km = parseFloat(document.getElementById('ta-kilometers').value || 0);
+            const rate = njcRates.vehicle_km.rate;
+            const total = km * rate;
+            document.getElementById('ta-amount').value = total.toFixed(2);
+        }
+        
+        // Calculate TA hotel amount
+        function calculateTAHotelAmount() {
+            const checkin = document.getElementById('ta-hotel-checkin').value;
+            const checkout = document.getElementById('ta-hotel-checkout').value;
+            const rate = parseFloat(document.getElementById('ta-hotel-rate').value || 0);
+            const calcDiv = document.getElementById('ta-hotel-calc');
+            
+            if (checkin && checkout && rate > 0) {
+                const nights = Math.max(0, Math.ceil((new Date(checkout) - new Date(checkin)) / (1000 * 60 * 60 * 24)));
+                const total = nights * rate;
+                calcDiv.style.display = 'block';
+                calcDiv.textContent = `${nights} night${nights !== 1 ? 's' : ''} × $${rate.toFixed(2)} = $${total.toFixed(2)}`;
+                document.getElementById('ta-amount').value = total.toFixed(2);
+            } else {
+                calcDiv.style.display = 'none';
+            }
+        }
+        
+        // Add expense to auth
+        async function addAuthExpense(event) {
+            event.preventDefault();
+            if (!selectedAuthId) { showTAMessage('error', 'Please select an authorization first'); return; }
+            
+            const type = document.getElementById('ta-expense-type').value;
+            const date = document.getElementById('ta-expense-date').value;
+            const location = document.getElementById('ta-location').value;
+            const amount = document.getElementById('ta-amount').value;
+            const vendor = document.getElementById('ta-vendor').value;
+            const description = document.getElementById('ta-description').value;
+            
+            if (!type || !date || !amount || parseFloat(amount) <= 0) {
+                showTAMessage('error', 'Please fill in all required fields');
+                return;
+            }
+            
+            const body = { expense_type: type, date, location, amount: parseFloat(amount), vendor, description };
+            
+            if (type === 'vehicle_km') {
+                body.kilometers = document.getElementById('ta-kilometers').value;
+                body.vehicle_from = document.getElementById('ta-vehicle-from').value;
+                body.vehicle_to = document.getElementById('ta-vehicle-to').value;
+            }
+            if (type === 'hotel') {
+                body.hotel_checkin = document.getElementById('ta-hotel-checkin').value;
+                body.hotel_checkout = document.getElementById('ta-hotel-checkout').value;
+            }
+            
+            try {
+                const response = await fetch(`/api/travel-auth/${selectedAuthId}/expenses`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                    body: JSON.stringify(body)
+                });
+                const result = await response.json();
+                if (result.success) {
+                    showTAMessage('success', 'Estimated expense added!');
+                    document.getElementById('ta-expense-form').reset();
+                    document.getElementById('ta-vehicle-km-group').style.display = 'none';
+                    document.getElementById('ta-hotel-group').style.display = 'none';
+                    document.getElementById('ta-per-diem-display').innerHTML = '💰 Select expense type above to see official NJC government rates<div style="font-size:12px;opacity:0.8;margin-top:5px;">These are ESTIMATES — no receipt required</div>';
+                    document.getElementById('ta-per-diem-display').style.background = '';
+                    await loadAuthExpenses(selectedAuthId, true);
+                    await loadTravelAuths(); // refresh totals in cards
+                } else {
+                    showTAMessage('error', result.error || 'Failed to add expense');
+                }
+            } catch (error) {
+                showTAMessage('error', 'Network error: ' + error.message);
+            }
+        }
+        
+        // Remove expense from auth
+        async function removeAuthExpense(expenseId) {
+            if (!selectedAuthId) return;
+            if (!confirm('Remove this estimated expense?')) return;
+            
+            try {
+                const response = await fetch(`/api/travel-auth/${selectedAuthId}/expenses/${expenseId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                const result = await response.json();
+                if (result.success) {
+                    await loadAuthExpenses(selectedAuthId, true);
+                    await loadTravelAuths();
+                } else {
+                    showTAMessage('error', result.error || 'Failed to remove expense');
+                }
+            } catch (error) {
+                showTAMessage('error', 'Network error: ' + error.message);
+            }
+        }
+        
+        // Submit auth for approval
+        async function submitAuthForApproval() {
+            if (!selectedAuthId) return;
+            if (!confirm('Submit this authorization with all estimated expenses for manager approval?')) return;
+            
+            try {
+                const response = await fetch(`/api/travel-auth/${selectedAuthId}/submit`, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                const result = await response.json();
+                if (result.success) {
+                    showTAMessage('success', 'Authorization submitted for approval! ✅');
+                    await loadTravelAuths();
+                    handleAuthSelection(); // refresh view
+                } else {
+                    showTAMessage('error', result.error || 'Failed to submit');
+                }
+            } catch (error) {
+                showTAMessage('error', 'Network error: ' + error.message);
+            }
+        }
+        
         // Show create AT modal
         async function showCreateATModal() {
             document.getElementById('create-at-modal').style.display = 'flex';
-            // Clear form
             document.getElementById('create-at-form').reset();
-            
-            // Set default dates
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('at-start-date').value = today;
             document.getElementById('at-end-date').value = today;
+            resetATFormToCreate();
         }
         
         // Hide create AT modal
         function hideCreateATModal() {
             document.getElementById('create-at-modal').style.display = 'none';
-        }
-        
-        // Global variable to store current NJC rates
-        let currentNJCRates = null;
-        
-        // Load NJC rates for AT form
-        async function loadNJCRatesForAT() {
-            const loadingDiv = document.getElementById('at-loading-rates');
-            const breakdownDiv = document.getElementById('at-trip-breakdown');
-            
-            loadingDiv.style.display = 'block';
-            breakdownDiv.style.display = 'none';
-            
-            try {
-                const response = await fetch('/api/njc-rates/current', {
-                    headers: { 'Authorization': `Bearer ${sessionId}` }
-                });
-                
-                if (!response.ok) {
-                    throw new Error('Failed to load NJC rates');
-                }
-                
-                const data = await response.json();
-                currentNJCRates = data.rates;
-                
-                // Update vehicle rate display
-                document.getElementById('at-vehicle-rate').value = `$${currentNJCRates.vehicle_km ? currentNJCRates.vehicle_km.amount.toFixed(2) : currentNJCRates.vehicle.amount.toFixed(2)}/km`;
-                
-                loadingDiv.style.display = 'none';
-                breakdownDiv.style.display = 'block';
-                
-                // Setup initial date range if dates are already filled
-                updateATDateRange();
-                
-            } catch (error) {
-                console.error('❌ Error loading NJC rates:', error);
-                loadingDiv.innerHTML = `
-                    <div style="color: #dc3545;">
-                        <div style="font-size: 24px; margin-bottom: 10px;">❌</div>
-                        <p>Failed to load NJC rates. Please try again.</p>
-                        <button onclick="loadNJCRatesForAT()" class="btn" style="background: #dc3545; color: white; padding: 5px 10px; font-size: 12px;">Retry</button>
-                    </div>
-                `;
-            }
-        }
-        
-        // Update AT date range and rebuild daily breakdown
-        function updateATDateRange() {
-            const startDate = document.getElementById('at-start-date').value;
-            const endDate = document.getElementById('at-end-date').value;
-            
-            if (!startDate || !endDate || !currentNJCRates) {
-                return;
-            }
-            
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-            
-            if (start > end) {
-                return;
-            }
-            
-            // Calculate number of days and nights
-            const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
-            const nights = Math.max(0, days - 1);
-            
-            // Update hotel nights display
-            document.getElementById('at-hotel-nights').value = nights;
-            
-            // Build per-day breakdown
-            buildATDayBreakdown(start, end, days);
-            
-            // Recalculate all totals
-            calculateATMealsTotal();
-            calculateATIncidentalsTotal();
-            calculateATVehicle();
-            calculateATHotel();
-            calculateATGrandTotal();
-        }
-        
-        // Build per-day meal and incidentals breakdown
-        function buildATDayBreakdown(startDate, endDate, totalDays) {
-            const mealsContainer = document.getElementById('at-meals-breakdown');
-            const incidentalsContainer = document.getElementById('at-incidentals-breakdown');
-            
-            let mealsHtml = '<div style="display: grid; gap: 15px;">';
-            let incidentalsHtml = '<div style="display: grid; gap: 10px;">';
-            
-            const currentDate = new Date(startDate);
-            let dayIndex = 0;
-            
-            while (currentDate <= endDate) {
-                const dateStr = currentDate.toISOString().split('T')[0];
-                const dayName = currentDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                
-                // Meals for this day
-                mealsHtml += `
-                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
-                        <h6 style="margin: 0 0 10px 0; color: #2c3e50; font-weight: bold;">${dayName}</h6>
-                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-                            <label style="display: flex; align-items: center; font-size: 14px; cursor: pointer;">
-                                <input type="checkbox" id="meals-${dayIndex}-breakfast" onchange="calculateATMealsTotal()" style="margin-right: 8px;">
-                                Breakfast — $${currentNJCRates.breakfast.amount.toFixed(2)}
-                            </label>
-                            <label style="display: flex; align-items: center; font-size: 14px; cursor: pointer;">
-                                <input type="checkbox" id="meals-${dayIndex}-lunch" onchange="calculateATMealsTotal()" style="margin-right: 8px;">
-                                Lunch — $${currentNJCRates.lunch.amount.toFixed(2)}
-                            </label>
-                            <label style="display: flex; align-items: center; font-size: 14px; cursor: pointer;">
-                                <input type="checkbox" id="meals-${dayIndex}-dinner" onchange="calculateATMealsTotal()" style="margin-right: 8px;">
-                                Dinner — $${currentNJCRates.dinner.amount.toFixed(2)}
-                            </label>
-                        </div>
-                    </div>
-                `;
-                
-                // Incidentals for this day
-                incidentalsHtml += `
-                    <label style="display: flex; align-items: center; font-size: 14px; cursor: pointer; background: #f8f9fa; padding: 10px; border-radius: 6px;">
-                        <input type="checkbox" id="incidentals-${dayIndex}" onchange="calculateATIncidentalsTotal()" style="margin-right: 8px;">
-                        ${dayName} — Incidentals $${currentNJCRates.incidentals.amount.toFixed(2)}
-                    </label>
-                `;
-                
-                currentDate.setDate(currentDate.getDate() + 1);
-                dayIndex++;
-            }
-            
-            mealsHtml += '</div>';
-            incidentalsHtml += '</div>';
-            
-            mealsContainer.innerHTML = mealsHtml;
-            incidentalsContainer.innerHTML = incidentalsHtml;
-        }
-        
-        // Calculate meals total
-        function calculateATMealsTotal() {
-            if (!currentNJCRates) return 0;
-            
-            let total = 0;
-            const checkboxes = document.querySelectorAll('[id^="meals-"][id*="-"]');
-            
-            checkboxes.forEach(checkbox => {
-                if (checkbox.checked) {
-                    const mealType = checkbox.id.split('-')[2]; // breakfast, lunch, dinner
-                    if (currentNJCRates[mealType]) {
-                        total += currentNJCRates[mealType].amount;
-                    }
-                }
-            });
-            
-            document.getElementById('meals-total-badge').textContent = `$${total.toFixed(2)}`;
-            return total;
-        }
-        
-        // Calculate incidentals total
-        function calculateATIncidentalsTotal() {
-            if (!currentNJCRates) return 0;
-            
-            let total = 0;
-            const checkboxes = document.querySelectorAll('[id^="incidentals-"]');
-            
-            checkboxes.forEach(checkbox => {
-                if (checkbox.checked) {
-                    total += currentNJCRates.incidentals.amount;
-                }
-            });
-            
-            document.getElementById('incidentals-total-badge').textContent = `$${total.toFixed(2)}`;
-            return total;
-        }
-        
-        // Calculate vehicle total
-        function calculateATVehicle() {
-            if (!currentNJCRates) return 0;
-            
-            const km = parseFloat(document.getElementById('at-vehicle-km').value || 0);
-            const rate = currentNJCRates.vehicle_km ? currentNJCRates.vehicle_km.amount : currentNJCRates.vehicle.amount;
-            const total = km * rate;
-            
-            document.getElementById('at-vehicle-total').value = `$${total.toFixed(2)}`;
-            document.getElementById('vehicle-total-badge').textContent = `$${total.toFixed(2)}`;
-            
-            return total;
-        }
-        
-        // Calculate hotel total
-        function calculateATHotel() {
-            const rate = parseFloat(document.getElementById('at-hotel-rate').value || 0);
-            const nights = parseInt(document.getElementById('at-hotel-nights').value || 0);
-            const total = rate * nights;
-            
-            document.getElementById('at-hotel-total').value = `$${total.toFixed(2)}`;
-            document.getElementById('hotel-total-badge').textContent = `$${total.toFixed(2)}`;
-            
-            return total;
-        }
-        
-        // Calculate grand total for AT
-        function calculateATGrandTotal() {
-            const mealsTotal = calculateATMealsTotal();
-            const incidentalsTotal = calculateATIncidentalsTotal();
-            const vehicleTotal = calculateATVehicle();
-            const hotelTotal = calculateATHotel();
-            
-            const grandTotal = mealsTotal + incidentalsTotal + vehicleTotal + hotelTotal;
-            document.getElementById('at-est-total').value = grandTotal.toFixed(2);
-            
-            return grandTotal;
         }
         
         // Create travel authorization
@@ -2795,200 +3007,104 @@
             const destination = document.getElementById('at-destination').value;
             const purpose = document.getElementById('at-purpose').value;
             
-            // Validation
             if (!name || !startDate || !endDate) {
-                showMessage('error', '❌ Please fill in all required fields.');
+                showTAMessage('error', 'Please fill in all required fields.');
                 return;
             }
-            
             if (new Date(startDate) > new Date(endDate)) {
-                showMessage('error', '❌ End date must be after start date.');
+                showTAMessage('error', 'End date must be after start date.');
                 return;
             }
-            
-            const formData = {
-                name: sanitizeInput(name),
-                destination: sanitizeInput(destination || ''),
-                start_date: startDate,
-                end_date: endDate,
-                purpose: sanitizeInput(purpose || ''),
-                est_transport: 0,
-                est_lodging: 0,
-                est_meals: 0,
-                est_other: 0,
-                details: JSON.stringify({})
-            };
             
             try {
                 const response = await fetch('/api/travel-auth', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${sessionId}`
-                    },
-                    body: JSON.stringify(formData)
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                    body: JSON.stringify({
+                        name: sanitizeInput(name),
+                        destination: sanitizeInput(destination || ''),
+                        start_date: startDate,
+                        end_date: endDate,
+                        purpose: sanitizeInput(purpose || ''),
+                        est_transport: 0, est_lodging: 0, est_meals: 0, est_other: 0,
+                        details: JSON.stringify({})
+                    })
                 });
-                
                 const result = await response.json();
-                
                 if (result.success) {
-                    showMessage('success', `✅ Authorization "${name}" created successfully!`);
+                    showTAMessage('success', `Authorization "${name}" created as draft!`);
                     hideCreateATModal();
                     await loadTravelAuths();
+                    // Auto-select the new auth
+                    document.getElementById('ta-auth-select').value = result.id;
+                    handleAuthSelection();
                 } else {
-                    showMessage('error', `❌ Error: ${result.error || 'Failed to create authorization'}`);
+                    showTAMessage('error', result.error || 'Failed to create authorization');
                 }
-                
             } catch (error) {
-                console.error('❌ Error creating travel authorization:', error);
-                showMessage('error', `❌ Failed to create authorization: ${error.message}`);
+                showTAMessage('error', 'Failed to create authorization: ' + error.message);
             }
         }
         
-        // Helper function to get date for day index
-        function getDateForDayIndex(startDateStr, dayIndex) {
-            const date = new Date(startDateStr);
-            date.setDate(date.getDate() + parseInt(dayIndex));
-            return date.toISOString().split('T')[0];
-        }
-        
-        // Edit travel authorization (for rejected/draft ATs)
+        // Edit travel authorization
         async function editTravelAuth(atId) {
             try {
                 const response = await fetch(`/api/travel-auth/${atId}`, {
                     headers: { 'Authorization': `Bearer ${sessionId}` }
                 });
-                
-                if (!response.ok) {
-                    showMessage('error', '❌ Failed to load travel authorization details.');
-                    return;
-                }
-                
+                if (!response.ok) { showTAMessage('error', 'Failed to load authorization details.'); return; }
                 const at = await response.json();
                 
-                // Populate form fields
                 document.getElementById('at-name').value = at.name || at.destination || '';
                 document.getElementById('at-destination').value = at.destination || '';
                 document.getElementById('at-start-date').value = at.start_date || '';
                 document.getElementById('at-end-date').value = at.end_date || '';
                 document.getElementById('at-purpose').value = at.purpose || '';
                 
-                // Change form submission to update instead of create
                 const form = document.getElementById('create-at-form');
                 form.onsubmit = (event) => updateTravelAuth(event, atId);
-                
-                // Update modal title and button text
                 document.querySelector('#create-at-modal h3').textContent = '✏️ Edit Authorization to Travel';
                 document.querySelector('#create-at-form button[type="submit"]').innerHTML = '✅ Update Authorization';
-                
-                // Show modal
                 document.getElementById('create-at-modal').style.display = 'flex';
-                
             } catch (error) {
-                console.error('❌ Error loading travel authorization:', error);
-                showMessage('error', `❌ Failed to load authorization: ${error.message}`);
-            }
-        }
-        
-        // Populate AT form from stored details
-        async function populateATFormFromDetails(details) {
-            if (!details) return;
-            
-            // Populate vehicle info
-            if (details.vehicle) {
-                document.getElementById('at-vehicle-km').value = details.vehicle.km || 0;
-            }
-            
-            // Populate hotel info
-            if (details.hotel) {
-                document.getElementById('at-hotel-rate').value = details.hotel.nightly_rate || 0;
-            }
-            
-            // Wait for the form to be built first
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            // Populate meals checkboxes
-            if (details.meals && Array.isArray(details.meals)) {
-                details.meals.forEach(meal => {
-                    const checkboxId = `meals-${meal.day}-${meal.meal_type}`;
-                    const checkbox = document.getElementById(checkboxId);
-                    if (checkbox) {
-                        checkbox.checked = true;
-                    }
-                });
-            }
-            
-            // Populate incidentals checkboxes
-            if (details.incidentals && Array.isArray(details.incidentals)) {
-                details.incidentals.forEach(inc => {
-                    const checkboxId = `incidentals-${inc.day}`;
-                    const checkbox = document.getElementById(checkboxId);
-                    if (checkbox) {
-                        checkbox.checked = true;
-                    }
-                });
+                showTAMessage('error', 'Failed to load authorization: ' + error.message);
             }
         }
         
         // Update travel authorization
         async function updateTravelAuth(event, atId) {
             event.preventDefault();
-            
             const name = document.getElementById('at-name').value;
             const startDate = document.getElementById('at-start-date').value;
             const endDate = document.getElementById('at-end-date').value;
             const destination = document.getElementById('at-destination').value;
             const purpose = document.getElementById('at-purpose').value;
             
-            // Validation
-            if (!name || !startDate || !endDate) {
-                showMessage('error', '❌ Please fill in all required fields.');
-                return;
-            }
-            
-            if (new Date(startDate) > new Date(endDate)) {
-                showMessage('error', '❌ End date must be after start date.');
-                return;
-            }
-            
-            const formData = {
-                name: sanitizeInput(name),
-                destination: sanitizeInput(destination || ''),
-                start_date: startDate,
-                end_date: endDate,
-                purpose: sanitizeInput(purpose || ''),
-                est_transport: 0,
-                est_lodging: 0,
-                est_meals: 0,
-                est_other: 0,
-                details: JSON.stringify({})
-            };
+            if (!name || !startDate || !endDate) { showTAMessage('error', 'Please fill in all required fields.'); return; }
+            if (new Date(startDate) > new Date(endDate)) { showTAMessage('error', 'End date must be after start date.'); return; }
             
             try {
                 const response = await fetch(`/api/travel-auth/${atId}`, {
                     method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${sessionId}`
-                    },
-                    body: JSON.stringify(formData)
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                    body: JSON.stringify({
+                        name: sanitizeInput(name), destination: sanitizeInput(destination || ''),
+                        start_date: startDate, end_date: endDate, purpose: sanitizeInput(purpose || ''),
+                        est_transport: 0, est_lodging: 0, est_meals: 0, est_other: 0,
+                        details: JSON.stringify({})
+                    })
                 });
-                
                 const result = await response.json();
-                
                 if (result.success) {
-                    showMessage('success', `✅ Authorization "${name}" updated successfully!`);
+                    showTAMessage('success', `Authorization "${name}" updated!`);
                     hideCreateATModal();
-                    // Reset form back to create mode
                     resetATFormToCreate();
                     await loadTravelAuths();
                 } else {
-                    showMessage('error', `❌ Error: ${result.error || 'Failed to update authorization'}`);
+                    showTAMessage('error', result.error || 'Failed to update authorization');
                 }
-                
             } catch (error) {
-                console.error('❌ Error updating travel authorization:', error);
-                showMessage('error', `❌ Failed to update authorization: ${error.message}`);
+                showTAMessage('error', 'Failed to update: ' + error.message);
             }
         }
         
