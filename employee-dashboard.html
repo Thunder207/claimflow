@@ -1618,7 +1618,7 @@
                         const duplicateSubmitted = expenses.find(exp => 
                             exp.expense_type === expenseType && 
                             exp.date === expenseDate && 
-                            exp.status !== 'rejected'
+                            exp.status !== 'rejected' && exp.status !== 'estimate'
                         );
                         
                         if (duplicateSubmitted) {
@@ -2019,7 +2019,7 @@
                         const duplicateSubmitted = expenses.find(exp => 
                             exp.expense_type === expenseType && 
                             exp.date === expenseDate && 
-                            exp.status !== 'rejected'
+                            exp.status !== 'rejected' && exp.status !== 'estimate'
                         );
                         
                         if (duplicateSubmitted) {
