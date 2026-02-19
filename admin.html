@@ -502,6 +502,32 @@ try {
                 </div>
             </div>
         </div>
+        
+        <!-- Signup Link Modal -->
+        <div id="signup-link-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000;">
+            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; max-width: 500px; width: 90%;">
+                <h3 style="margin-bottom: 20px; color: #28a745;">🔗 Employee Invitation Created</h3>
+                <p style="margin-bottom: 15px;">
+                    <strong id="signup-employee-name"></strong> has been added to the system. 
+                    Share this signup link with them to complete their account setup:
+                </p>
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; border: 1px solid #dee2e6;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <input type="text" id="signup-url" readonly style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 12px;" />
+                        <button class="btn btn-primary" onclick="copySignupUrl()" style="white-space: nowrap;">📋 Copy</button>
+                    </div>
+                </div>
+                <div style="background: #e7f3ff; padding: 12px; border-radius: 6px; border: 1px solid #b3d9ff; margin: 15px 0;">
+                    <p style="margin: 0; font-size: 14px; color: #0066cc;">
+                        💡 <strong>Note:</strong> This link expires in 48 hours. The employee must use it to set their password before they can log in.
+                    </p>
+                </div>
+                <div style="margin-top: 20px; text-align: right; gap: 10px; display: flex; justify-content: flex-end;">
+                    <button class="btn btn-secondary" onclick="closeSignupModal()">Close</button>
+                    <button class="btn btn-primary" onclick="copyAndClose()">📋 Copy & Close</button>
+                </div>
+            </div>
+        </div>
 
         <!-- 📋 NJC RATES MANAGEMENT TAB -->
         <div id="njc-rates-tab" class="tab-content">
@@ -1199,8 +1225,14 @@ try {
                 container.innerHTML = employees.map(emp => {
                     let actionButtons = '';
                     if (currentUserRole === 'admin') {
+                        let resendButton = '';
+                        if (!emp.password_hash || emp.is_active === 0) {
+                            resendButton = `<button class="btn btn-info" onclick="resendInvite(${emp.id}, '${emp.name}')" style="margin-right: 5px;">🔗 Resend Invite</button>`;
+                        }
+                        
                         actionButtons = `
                             <div style="margin-top: 8px;">
+                                ${resendButton}
                                 <button class="btn btn-warning" onclick="editEmployee(${emp.id})" style="margin-right: 5px;">✏️ Edit</button>
                                 <button class="btn btn-danger" onclick="deleteEmployee(${emp.id}, '${emp.name}')">🗑️ Delete</button>
                             </div>
@@ -1221,6 +1253,14 @@ try {
                                 <span style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); color: #1976d2; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;">
                                     ${emp.employee_number || 'No ID'}
                                 </span>
+                                ${(!emp.password_hash || emp.is_active === 0) ? 
+                                    `<div style="background: #fff3cd; color: #856404; padding: 4px 8px; border-radius: 6px; font-size: 11px; margin-top: 4px; border: 1px solid #ffeaa7;">
+                                        ⏳ Awaiting Signup
+                                    </div>` : 
+                                    `<div style="background: #d1e7dd; color: #0f5132; padding: 4px 8px; border-radius: 6px; font-size: 11px; margin-top: 4px; border: 1px solid #a3cfbb;">
+                                        ✅ Active
+                                    </div>`
+                                }
                                 ${currentUserRole === 'admin' ? `<div style="color: #666; font-size: 12px; margin-top: 5px;">ID: ${emp.id}</div>` : ''}
                             </div>
                         </div>
@@ -1364,7 +1404,6 @@ try {
                         name,
                         employee_number: employeeNumber,
                         email,
-                        password: 'temp123', // Default password - user should change on first login
                         position: position || null,
                         department: department || null,
                         supervisor_id: supervisorId || null,
@@ -1378,6 +1417,8 @@ try {
                     showMessage('success', '✅ Employee added successfully!');
                     hideAddEmployeeForm();
                     loadEmployees();
+                    // Show signup link modal
+                    showSignupLinkModal(result.signupUrl, name);
                 } else {
                     showMessage('danger', result.error || 'Failed to add employee');
                 }
@@ -2790,6 +2831,63 @@ try {
             if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
             
             return date.toLocaleDateString();
+        }
+        
+        // Signup modal functions
+        function showSignupLinkModal(signupUrl, employeeName) {
+            document.getElementById('signup-employee-name').textContent = employeeName;
+            document.getElementById('signup-url').value = signupUrl;
+            document.getElementById('signup-link-modal').style.display = 'block';
+        }
+        
+        function closeSignupModal() {
+            document.getElementById('signup-link-modal').style.display = 'none';
+        }
+        
+        function copySignupUrl() {
+            const urlInput = document.getElementById('signup-url');
+            urlInput.select();
+            urlInput.setSelectionRange(0, 99999); // For mobile devices
+            navigator.clipboard.writeText(urlInput.value).then(() => {
+                showMessage('success', '📋 Signup link copied to clipboard!');
+            }).catch(() => {
+                // Fallback for browsers that don't support clipboard API
+                document.execCommand('copy');
+                showMessage('success', '📋 Signup link copied to clipboard!');
+            });
+        }
+        
+        function copyAndClose() {
+            copySignupUrl();
+            setTimeout(() => {
+                closeSignupModal();
+            }, 1000);
+        }
+        
+        // Resend signup invite for inactive employees
+        async function resendInvite(employeeId, employeeName) {
+            try {
+                const response = await fetch(`/api/employees/${employeeId}/resend-invite`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${sessionId}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage('success', '✅ Signup invite resent successfully!');
+                    // Show the signup link modal
+                    showSignupLinkModal(result.signupUrl, employeeName);
+                } else {
+                    showMessage('danger', result.error || 'Failed to resend invite');
+                }
+            } catch (error) {
+                console.error('❌ Error resending invite:', error);
+                showMessage('danger', '❌ Failed to resend invite');
+            }
         }
 
     </script>

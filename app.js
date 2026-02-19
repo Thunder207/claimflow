@@ -388,6 +388,17 @@ function initializeDatabase() {
             created_by TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`,
+        
+        // Signup tokens table for employee self-service signup
+        `CREATE TABLE IF NOT EXISTS signup_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            expires_at DATETIME NOT NULL,
+            used INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees (id)
         )`
     ];
     
@@ -674,20 +685,28 @@ app.post('/api/auth/login', async (req, res) => {
             });
         }
         
-        if (!employee || !verifyPassword(password, employee.password_hash)) {
+        if (!employee || !employee.password_hash || !verifyPassword(password, employee.password_hash)) {
             // Track failed login attempt
             attempts.count += 1;
             attempts.firstAttempt = attempts.firstAttempt || Date.now();
             loginAttempts.set(clientKey, attempts);
             
             // Log failed login attempt
-            const failureReason = !employee ? 'User not found' : 'Invalid password';
+            let failureReason = 'Invalid password';
+            if (!employee) {
+                failureReason = 'User not found';
+            } else if (!employee.password_hash) {
+                failureReason = 'Account setup incomplete - user must complete signup process';
+            }
+            
             logLoginAttempt(email, employee?.id || null, false, failureReason, 
                 req.ip || req.connection.remoteAddress, req.get('User-Agent'));
             
             return res.status(401).json({
                 success: false,
-                error: 'Invalid email or password'
+                error: !employee || !employee.password_hash ? 
+                    'Account setup incomplete. Please check your email for a signup link.' :
+                    'Invalid email or password'
             });
         }
         
@@ -1907,7 +1926,7 @@ app.get('/api/employees', requireAuth, requireRole('admin', 'supervisor'), (req,
 
 // Add new employee (admin only)
 app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) => {
-    const { name, employee_number, email, password, position, department, supervisor_id, cost_center_id } = req.body;
+    const { name, employee_number, email, position, department, supervisor_id, cost_center_id } = req.body;
     
     // Validation
     if (!name || name.trim().length === 0) {
@@ -1943,18 +1962,16 @@ app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) =
         } catch (err) { console.error('Error checking supervisor role:', err); }
     }
     
-    const password_hash = hashPassword(password || 'temp123');
-    
+    // Create employee without password (inactive until signup is completed)
     const query = `
-        INSERT INTO employees (name, employee_number, email, password_hash, position, department, supervisor_id, cost_center_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO employees (name, employee_number, email, position, department, supervisor_id, cost_center_id, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0)
     `;
     
     const params = [
         name.trim(), 
         employee_number.trim(),
         email.trim().toLowerCase(),
-        password_hash,
         position ? position.trim() : null, 
         department ? department.trim() : null, 
         supervisor_id || null,
@@ -1979,30 +1996,55 @@ app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) =
         const newEmployeeId = this.lastID;
         console.log(`✅ Employee added with ID: ${newEmployeeId}`);
         
-        // Log all initial field values for audit trail
-        const fieldsToLog = [
-            { field: 'name', value: name.trim() },
-            { field: 'employee_number', value: employee_number.trim() },
-            { field: 'position', value: position ? position.trim() : null },
-            { field: 'department', value: department ? department.trim() : null },
-            { field: 'supervisor_id', value: supervisor_id || null },
-            { field: 'cost_center_id', value: cost_center_id || null }
-        ];
+        // Generate signup token
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours from now
         
-        fieldsToLog.forEach(item => {
-            if (item.value !== null && item.value !== '') {
-                logEmployeeAudit(newEmployeeId, 'created', item.field, null, item.value, req.user.employeeId);
+        // Insert signup token
+        db.run(
+            'INSERT INTO signup_tokens (employee_id, token, expires_at) VALUES (?, ?, ?)',
+            [newEmployeeId, token, expiresAt.toISOString()],
+            function(tokenErr) {
+                if (tokenErr) {
+                    console.error('❌ Error creating signup token:', tokenErr);
+                    return res.status(500).json({ 
+                        success: false, 
+                        error: 'Failed to create signup token' 
+                    });
+                }
+                
+                // Log all initial field values for audit trail
+                const fieldsToLog = [
+                    { field: 'name', value: name.trim() },
+                    { field: 'employee_number', value: employee_number.trim() },
+                    { field: 'position', value: position ? position.trim() : null },
+                    { field: 'department', value: department ? department.trim() : null },
+                    { field: 'supervisor_id', value: supervisor_id || null },
+                    { field: 'cost_center_id', value: cost_center_id || null }
+                ];
+                
+                fieldsToLog.forEach(item => {
+                    if (item.value !== null && item.value !== '') {
+                        logEmployeeAudit(newEmployeeId, 'created', item.field, null, item.value, req.user.employeeId);
+                    }
+                });
+                
+                // Log the creation action
+                logEmployeeAudit(newEmployeeId, 'created', null, null, 'Employee record created', req.user.employeeId);
+                
+                // Create signup URL
+                const baseUrl = req.protocol + '://' + req.get('host');
+                const signupUrl = `${baseUrl}/signup?token=${token}`;
+                
+                res.json({ 
+                    success: true, 
+                    id: newEmployeeId,
+                    message: 'Employee added successfully!',
+                    signupUrl: signupUrl,
+                    token: token
+                });
             }
-        });
-        
-        // Log the creation action
-        logEmployeeAudit(newEmployeeId, 'created', null, null, 'Employee record created', req.user.employeeId);
-        
-        res.json({ 
-            success: true, 
-            id: newEmployeeId,
-            message: 'Employee added successfully!' 
-        });
+        );
     });
 });
 
@@ -3469,6 +3511,245 @@ app.get('/api/sage/export', requireAuth, requireRole('admin'), (req, res) => {
         res.setHeader('Content-Disposition', 'attachment; filename="sage300_expenses_' + new Date().toISOString().split('T')[0] + '.csv"');
         res.send(csvContent);
     });
+});
+
+// 🔗 EMPLOYEE SIGNUP ROUTES
+
+// Serve the signup HTML page
+app.get('/signup', (req, res) => {
+    res.sendFile(path.join(__dirname, 'signup.html'));
+});
+
+// Get employee info for signup (validate token)
+app.get('/api/signup/:token', (req, res) => {
+    const { token } = req.params;
+    
+    const query = `
+        SELECT st.id, st.expires_at, st.used, e.id as employee_id, e.name, e.email
+        FROM signup_tokens st
+        JOIN employees e ON st.employee_id = e.id
+        WHERE st.token = ?
+    `;
+    
+    db.get(query, [token], (err, row) => {
+        if (err) {
+            console.error('❌ Error validating signup token:', err);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Server error validating token' 
+            });
+        }
+        
+        if (!row) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Invalid or expired signup link' 
+            });
+        }
+        
+        if (row.used) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'This signup link has already been used' 
+            });
+        }
+        
+        const now = new Date();
+        const expires = new Date(row.expires_at);
+        
+        if (now > expires) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'This signup link has expired. Contact your administrator.' 
+            });
+        }
+        
+        res.json({
+            success: true,
+            employee: {
+                name: row.name,
+                email: row.email
+            }
+        });
+    });
+});
+
+// Complete signup (set password)
+app.post('/api/signup/:token', (req, res) => {
+    const { token } = req.params;
+    const { password } = req.body;
+    
+    // Validate password
+    if (!password || password.length < 6) {
+        return res.status(400).json({
+            success: false,
+            error: 'Password must be at least 6 characters long'
+        });
+    }
+    
+    // First, validate the token again
+    const tokenQuery = `
+        SELECT st.id, st.expires_at, st.used, st.employee_id
+        FROM signup_tokens st
+        WHERE st.token = ?
+    `;
+    
+    db.get(tokenQuery, [token], (err, tokenRow) => {
+        if (err) {
+            console.error('❌ Error validating signup token:', err);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Server error validating token' 
+            });
+        }
+        
+        if (!tokenRow || tokenRow.used) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Invalid or already used signup link' 
+            });
+        }
+        
+        const now = new Date();
+        const expires = new Date(tokenRow.expires_at);
+        
+        if (now > expires) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'This signup link has expired. Contact your administrator.' 
+            });
+        }
+        
+        // Hash the password and update employee
+        const password_hash = hashPassword(password);
+        
+        db.serialize(() => {
+            db.run('BEGIN TRANSACTION');
+            
+            // Update employee with password and activate account
+            db.run(
+                'UPDATE employees SET password_hash = ?, is_active = 1 WHERE id = ?',
+                [password_hash, tokenRow.employee_id],
+                function(updateErr) {
+                    if (updateErr) {
+                        console.error('❌ Error updating employee password:', updateErr);
+                        db.run('ROLLBACK');
+                        return res.status(500).json({
+                            success: false,
+                            error: 'Failed to set password'
+                        });
+                    }
+                    
+                    // Mark token as used
+                    db.run(
+                        'UPDATE signup_tokens SET used = 1 WHERE id = ?',
+                        [tokenRow.id],
+                        function(tokenUpdateErr) {
+                            if (tokenUpdateErr) {
+                                console.error('❌ Error marking token as used:', tokenUpdateErr);
+                                db.run('ROLLBACK');
+                                return res.status(500).json({
+                                    success: false,
+                                    error: 'Failed to complete signup'
+                                });
+                            }
+                            
+                            db.run('COMMIT');
+                            
+                            console.log(`✅ Employee ${tokenRow.employee_id} completed signup successfully`);
+                            
+                            res.json({
+                                success: true,
+                                message: 'Account activated successfully! You can now log in.'
+                            });
+                        }
+                    );
+                }
+            );
+        });
+    });
+});
+
+// Resend signup invite
+app.post('/api/employees/:id/resend-invite', requireAuth, requireRole('admin'), (req, res) => {
+    const employeeId = req.params.id;
+    
+    // First, check if employee exists and is inactive
+    db.get(
+        'SELECT id, name, email, password_hash, is_active FROM employees WHERE id = ?',
+        [employeeId],
+        (err, employee) => {
+            if (err) {
+                console.error('❌ Error finding employee:', err);
+                return res.status(500).json({
+                    success: false,
+                    error: 'Failed to find employee'
+                });
+            }
+            
+            if (!employee) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Employee not found'
+                });
+            }
+            
+            if (employee.password_hash && employee.is_active) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Employee has already completed account setup'
+                });
+            }
+            
+            // Generate new signup token (invalidate any existing ones)
+            const token = crypto.randomBytes(32).toString('hex');
+            const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours from now
+            
+            db.serialize(() => {
+                // Mark any existing tokens for this employee as used
+                db.run(
+                    'UPDATE signup_tokens SET used = 1 WHERE employee_id = ? AND used = 0',
+                    [employeeId],
+                    (updateErr) => {
+                        if (updateErr) {
+                            console.error('❌ Error invalidating old tokens:', updateErr);
+                        }
+                        
+                        // Insert new token
+                        db.run(
+                            'INSERT INTO signup_tokens (employee_id, token, expires_at) VALUES (?, ?, ?)',
+                            [employeeId, token, expiresAt.toISOString()],
+                            function(tokenErr) {
+                                if (tokenErr) {
+                                    console.error('❌ Error creating signup token:', tokenErr);
+                                    return res.status(500).json({
+                                        success: false,
+                                        error: 'Failed to create signup token'
+                                    });
+                                }
+                                
+                                // Create signup URL
+                                const baseUrl = req.protocol + '://' + req.get('host');
+                                const signupUrl = `${baseUrl}/signup?token=${token}`;
+                                
+                                console.log(`✅ Resent signup invite for employee ${employeeId} (${employee.name})`);
+                                
+                                res.json({
+                                    success: true,
+                                    message: 'Signup invite resent successfully!',
+                                    signupUrl: signupUrl,
+                                    employee: {
+                                        name: employee.name,
+                                        email: employee.email
+                                    }
+                                });
+                            }
+                        );
+                    }
+                );
+            });
+        }
+    );
 });
 
 // 🚀 Start server
