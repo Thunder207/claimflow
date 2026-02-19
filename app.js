@@ -3344,14 +3344,14 @@ app.post('/api/travel-auth', requireAuth, async (req, res) => {
         
         const query = `
             INSERT INTO travel_authorizations 
-            (employee_id, destination, start_date, end_date, purpose, 
+            (employee_id, name, destination, start_date, end_date, purpose, 
              est_transport, est_lodging, est_meals, est_other, est_total, 
              approver_id, status, details)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
         `;
         
         const params = [
-            req.user.employeeId, name || destination, start_date, end_date, purpose,
+            req.user.employeeId, name, destination, start_date, end_date, purpose,
             est_transport, est_lodging, est_meals, est_other, est_total,
             employee.supervisor_id, details
         ];
@@ -3595,7 +3595,8 @@ app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
         // Update the AT and reset status to pending
         const updateQuery = `
             UPDATE travel_authorizations 
-            SET destination = COALESCE(?, destination),
+            SET name = COALESCE(?, name),
+                destination = COALESCE(?, destination),
                 start_date = COALESCE(?, start_date),
                 end_date = COALESCE(?, end_date),
                 purpose = COALESCE(?, purpose),
@@ -3611,7 +3612,7 @@ app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
             WHERE id = ?
         `;
         
-        const params = [name || destination, start_date, end_date, purpose, 
+        const params = [name, destination, start_date, end_date, purpose, 
                        est_transport, est_lodging, est_meals, est_other, est_total, details, atId];
         
         db.run(updateQuery, params, function(err) {
@@ -3624,7 +3625,7 @@ app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
             // Notify supervisor of resubmission
             if (at.approver_id) {
                 createNotification(at.approver_id, 'at_updated', 
-                    `Travel Authorization "${name || destination || at.destination}" has been revised and resubmitted.`);
+                    `Travel Authorization "${name || at.name || at.destination}" has been revised and resubmitted.`);
             }
             
             res.json({ 

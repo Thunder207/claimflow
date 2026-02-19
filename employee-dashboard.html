@@ -1120,6 +1120,14 @@
             
             <form id="new-trip-form" onsubmit="createNewTrip(event)">
                 <div class="form-group">
+                    <label for="trip-auth-select">Link to Travel Authorization (Optional)</label>
+                    <select id="trip-auth-select" onchange="populateFromAuth()">
+                        <option value="">Create trip without authorization...</option>
+                    </select>
+                    <small style="color: #6c757d; display: block; margin-top: 5px;">Select an approved travel authorization to auto-populate trip details</small>
+                </div>
+                
+                <div class="form-group">
                     <label for="trip-name" data-i18n="trip_name">Trip Name *</label>
                     <input type="text" id="trip-name" data-i18n="trip_placeholder" placeholder="e.g., Montreal to Toronto Training" required>
                 </div>
@@ -2516,9 +2524,9 @@
                     <div style="background: white; padding: 20px; border-radius: 12px; border-left: 4px solid ${statusColor}; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
                         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
                             <div>
-                                <h4 style="margin: 0 0 5px; color: #2c3e50;">${sanitizeForDisplay(at.destination)}</h4>
+                                <h4 style="margin: 0 0 5px; color: #2c3e50;">${sanitizeForDisplay(at.name || at.destination)}</h4>
                                 <div style="font-size: 14px; color: #6c757d;">
-                                    ${formatDate(at.start_date)} to ${formatDate(at.end_date)} • ${at.purpose}
+                                    ${formatDate(at.start_date)} to ${formatDate(at.end_date)}${at.destination ? ` • ${at.destination}` : ''}${at.purpose ? ` • ${at.purpose}` : ''}
                                 </div>
                             </div>
                             <div style="text-align: right;">
@@ -2528,17 +2536,9 @@
                             </div>
                         </div>
                         
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 15px; font-size: 14px;">
-                            <div><strong>Transport:</strong> $${parseFloat(at.est_transport || 0).toFixed(2)}</div>
-                            <div><strong>Lodging:</strong> $${parseFloat(at.est_lodging || 0).toFixed(2)}</div>
-                            <div><strong>Meals:</strong> $${parseFloat(at.est_meals || 0).toFixed(2)}</div>
-                            <div><strong>Other:</strong> $${parseFloat(at.est_other || 0).toFixed(2)}</div>
-                        </div>
-                        
                         <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 15px; border-top: 1px solid #eee;">
                             <div>
-                                <strong>Total: $${parseFloat(at.est_total || 0).toFixed(2)}</strong>
-                                ${at.approver_name ? `<br><small style="color: #6c757d;">Approver: ${at.approver_name}</small>` : ''}
+                                ${at.approver_name ? `<small style="color: #6c757d;">Approver: ${at.approver_name}</small>` : ''}
                             </div>
                             <div>
                                 ${canEdit ? `
@@ -3647,7 +3647,7 @@
         }
         
         // Show new trip modal
-        function showNewTripModal() {
+        async function showNewTripModal() {
             const modal = document.getElementById('new-trip-modal');
             modal.style.display = 'flex';
             
@@ -3655,6 +3655,9 @@
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('trip-start-date').value = today;
             document.getElementById('trip-end-date').value = today;
+            
+            // Load approved travel authorizations
+            await loadApprovedAuths();
         }
         
         // Hide new trip modal
@@ -3664,6 +3667,60 @@
             
             // Clear form
             document.getElementById('new-trip-form').reset();
+            
+            // Clear auth dropdown
+            document.getElementById('trip-auth-select').innerHTML = '<option value="">Create trip without authorization...</option>';
+        }
+        
+        // Load approved travel authorizations for trip linking
+        async function loadApprovedAuths() {
+            try {
+                const response = await fetch('/api/travel-auth', {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                
+                if (response.ok) {
+                    const auths = await response.json();
+                    const approvedAuths = auths.filter(auth => auth.status === 'approved' && !auth.trip_id);
+                    
+                    const select = document.getElementById('trip-auth-select');
+                    select.innerHTML = '<option value="">Create trip without authorization...</option>';
+                    
+                    approvedAuths.forEach(auth => {
+                        const option = document.createElement('option');
+                        option.value = auth.id;
+                        option.textContent = `${auth.name || auth.destination} (${formatDate(auth.start_date)} - ${formatDate(auth.end_date)})`;
+                        option.dataset.auth = JSON.stringify(auth);
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading approved authorizations:', error);
+            }
+        }
+        
+        // Populate trip form from selected authorization
+        function populateFromAuth() {
+            const select = document.getElementById('trip-auth-select');
+            const selectedOption = select.options[select.selectedIndex];
+            
+            if (selectedOption.value && selectedOption.dataset.auth) {
+                const auth = JSON.parse(selectedOption.dataset.auth);
+                
+                document.getElementById('trip-name').value = auth.name || auth.destination;
+                document.getElementById('trip-destination').value = auth.destination || '';
+                document.getElementById('trip-purpose').value = auth.purpose || '';
+                document.getElementById('trip-start-date').value = auth.start_date;
+                document.getElementById('trip-end-date').value = auth.end_date;
+            } else {
+                // Clear form if no auth selected
+                document.getElementById('trip-name').value = '';
+                document.getElementById('trip-destination').value = '';
+                document.getElementById('trip-purpose').value = '';
+                const today = new Date().toISOString().split('T')[0];
+                document.getElementById('trip-start-date').value = today;
+                document.getElementById('trip-end-date').value = today;
+            }
         }
         
         // Create new trip
@@ -3708,7 +3765,32 @@
                 const result = await response.json();
                 
                 if (result.success) {
-                    showMessage('success', `✅ Trip "${tripData.trip_name}" created successfully!`);
+                    // Link to travel authorization if one was selected
+                    const authSelect = document.getElementById('trip-auth-select');
+                    const authId = authSelect.value;
+                    
+                    if (authId) {
+                        try {
+                            const linkResponse = await fetch(`/api/travel-auth/${authId}/link-trip/${result.tripId}`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${sessionId}`
+                                }
+                            });
+                            
+                            if (linkResponse.ok) {
+                                showMessage('success', `✅ Trip "${tripData.trip_name}" created and linked to travel authorization!`);
+                            } else {
+                                showMessage('warning', `⚠️ Trip created but failed to link to authorization. You can link it manually later.`);
+                            }
+                        } catch (linkError) {
+                            console.error('Error linking to authorization:', linkError);
+                            showMessage('warning', `⚠️ Trip created but failed to link to authorization.`);
+                        }
+                    } else {
+                        showMessage('success', `✅ Trip "${tripData.trip_name}" created successfully!`);
+                    }
+                    
                     hideNewTripModal();
                     await loadTrips(); // Refresh the trips list
                 } else {
