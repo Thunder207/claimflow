@@ -3728,12 +3728,12 @@
                     const serverTripIds = new Set();
                     let hasOptions = false;
                     
-                    // 1. Server-side draft trips (with combined draft counts)
+                    // 1. Server-side trips (draft + active)
                     trips.forEach(trip => {
                         serverTripIds.add(String(trip.id));
                         // Also add numeric version to catch type mismatches
                         serverTripIds.add(String(Number(trip.id)));
-                        if (trip.status === 'draft') {
+                        if (trip.status === 'draft' || trip.status === 'active') {
                             const option = document.createElement('option');
                             option.value = trip.id;
                             const serverCount = trip.expense_count || 0;
