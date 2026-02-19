@@ -3740,6 +3740,16 @@ app.post('/api/travel-auth/:id/expenses', requireAuth, async (req, res) => {
         return res.status(400).json({ error: `Expense date must be within the authorization dates (${at.start_date} to ${at.end_date})` });
     }
 
+    // Validate hotel check-in/check-out dates are within authorization range
+    if (expense_type === 'hotel' && hotel_checkin && hotel_checkout) {
+        if (hotel_checkin < at.start_date || hotel_checkin > at.end_date) {
+            return res.status(400).json({ error: `Hotel check-in must be within travel dates (${at.start_date} to ${at.end_date})` });
+        }
+        if (hotel_checkout < at.start_date || hotel_checkout > at.end_date) {
+            return res.status(400).json({ error: `Hotel check-out must be within travel dates (${at.start_date} to ${at.end_date})` });
+        }
+    }
+
     // Prevent duplicate per diem claims on same day
     const perDiemTypes = ['breakfast', 'lunch', 'dinner', 'incidentals'];
     if (perDiemTypes.includes(expense_type)) {

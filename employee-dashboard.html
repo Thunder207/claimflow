@@ -2772,7 +2772,7 @@
             // Show expense section
             expenseSection.style.display = 'block';
             
-            // Restrict date picker to authorization date range
+            // Restrict date pickers to authorization date range
             const startDate = option?.dataset?.startDate;
             const endDate = option?.dataset?.endDate;
             const dateField = document.getElementById('ta-expense-date');
@@ -2780,6 +2780,11 @@
                 dateField.min = startDate;
                 dateField.max = endDate;
                 dateField.value = startDate; // default to first day
+                // Also restrict hotel check-in/check-out dates
+                const checkinField = document.getElementById('ta-hotel-checkin');
+                const checkoutField = document.getElementById('ta-hotel-checkout');
+                if (checkinField) { checkinField.min = startDate; checkinField.max = endDate; }
+                if (checkoutField) { checkoutField.min = startDate; checkoutField.max = endDate; }
             }
             
             // Show/hide form based on editability
