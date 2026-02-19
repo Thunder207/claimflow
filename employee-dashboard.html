@@ -554,12 +554,100 @@
         </div>
         
         <div class="nav-tabs">
-            <button class="nav-tab active" onclick="showTab('submit')" title="Add new expenses to trips" data-i18n="submit_expense">📝 Submit Expense</button>
-            <button class="nav-tab" onclick="showTab('trips')" title="View your business trips" data-i18n="my_trips">🧳 My Trips</button>
-            <button class="nav-tab" onclick="showTab('history')" title="Review submitted expenses" data-i18n="expense_history">📋 Expense History</button>
+            <button class="nav-tab active" onclick="showTab('expenses')" title="Submit standalone expenses" data-i18n="standalone_expenses">📋 Expenses</button>
+            <button class="nav-tab" onclick="showTab('trips')" title="View your business trips and trip-based expenses" data-i18n="my_trips">🧳 Trips</button>
+            <button class="nav-tab" onclick="showTab('history')" title="Review submitted expenses" data-i18n="expense_history">📜 History</button>
         </div>
         
-        <div id="submit-tab" class="tab-content active">
+        <div id="expenses-tab" class="tab-content active">
+            <div id="standalone-guide" style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 15px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #2196f3;">
+                <h4 style="margin: 0 0 8px 0; color: #0d47a1; cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="toggleStandaloneGuide()">
+                    <span>📋 Standalone Expenses Guide</span>
+                    <span id="standalone-guide-toggle" style="font-size: 12px;">📖 Hide</span>
+                </h4>
+                <div id="standalone-guide-content">
+                <div style="font-size: 13px; color: #0d47a1; line-height: 1.5;">
+                    <strong>Submit individual expenses</strong> that don't require a business trip:
+                    <br><strong>•</strong> Office supplies, software subscriptions, phone bills
+                    <br><strong>•</strong> Parking fees, internet costs, professional development  
+                    <br><strong>•</strong> Directly submitted to supervisor for approval
+                </div>
+                <div style="font-size: 12px; color: #0d47a1; margin-top: 8px; opacity: 0.9;">💡 No trip creation needed • Receipt scanning available • Fast approval process</div>
+                </div>
+            </div>
+            <h3 style="margin-bottom: 20px; color: #2c3e50;">📋 Submit Standalone Expense</h3>
+            
+            <div class="success-message" id="standalone-success-message">
+                ✅ <span id="standalone-success-text">Standalone expense submitted successfully!</span>
+            </div>
+            
+            <div class="error-message" id="standalone-error-message">
+                ❌ <span id="standalone-error-text">Something went wrong</span>
+            </div>
+            
+            <form id="standalone-expense-form" class="expense-form">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+                    <div class="form-group">
+                        <label for="standalone-category">Expense Category *</label>
+                        <select id="standalone-category" name="category" required title="Choose the category that best matches your expense">
+                            <option value="">Choose expense category...</option>
+                            <option value="Transport">🚗 Transport</option>
+                            <option value="Phone/Telecom">📱 Phone/Telecom</option>
+                            <option value="Office Supplies">📝 Office Supplies</option>
+                            <option value="Professional Development">🎓 Professional Development</option>
+                            <option value="Software/Subscriptions">💻 Software/Subscriptions</option>
+                            <option value="Parking">🅿️ Parking</option>
+                            <option value="Internet">🌐 Internet</option>
+                            <option value="Other">📋 Other</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="standalone-date">Date *</label>
+                        <input type="date" id="standalone-date" name="date" required>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+                    <div class="form-group">
+                        <label for="standalone-amount">Amount *</label>
+                        <input type="number" id="standalone-amount" name="amount" step="0.01" placeholder="25.50" required>
+                        <small style="color: #666; font-size: 12px; display: block; margin-top: 4px;">💡 Enter the exact amount you paid (e.g., 25.50)</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="standalone-vendor">Vendor/Details *</label>
+                        <input type="text" id="standalone-vendor" name="vendor" placeholder="e.g., Staples, Microsoft, Uber" required title="Enter the business name or vendor">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="standalone-description">Description (Optional)</label>
+                    <textarea id="standalone-description" name="description" rows="3" placeholder="e.g., Office supplies for quarterly reports, Monthly software subscription"></textarea>
+                    <div style="font-size: 12px; color: #666; margin-top: 4px;">💡 <strong>Tip:</strong> Adding business context helps supervisors approve faster</div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Receipt Photo (Optional)</label>
+                    <div class="photo-section" onclick="document.getElementById('standalone-file-input').click()">
+                        <div class="camera-icon">📷</div>
+                        <div><strong>Tap to capture or upload receipt</strong></div>
+                        <div style="font-size: 12px; color: #6c757d; margin-top: 5px;">✅ Supports: JPG, PNG, GIF, WebP (Max 10MB)</div>
+                        <div style="font-size: 11px; color: #666; margin-top: 3px;">💡 Receipt photo helps with faster approval</div>
+                        <img id="standalone-photo-preview" class="photo-preview" style="display: none;">
+                    </div>
+                    <input type="file" id="standalone-file-input" accept="image/*" capture="environment">
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <button type="button" onclick="submitStandaloneExpense()" class="btn btn-success" style="padding: 18px; font-size: 16px; width: 100%;">
+                        📋 Submit Standalone Expense
+                    </button>
+                </div>
+            </form>
+        </div>
+        
+        <div id="trips-tab" class="tab-content">
             <div id="quick-start-guide" style="background: linear-gradient(135deg, #e8f5e8 0%, #d4edda 100%); padding: 15px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #28a745;">
                 <h4 style="margin: 0 0 8px 0; color: #155724; cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="toggleQuickStartGuide()">
                     <span>🚀 Quick Start Guide</span>
@@ -567,7 +655,7 @@
                 </h4>
                 <div id="guide-content">
                 <div style="font-size: 13px; color: #155724; line-height: 1.5;">
-                    <strong>New user?</strong> Here's how to submit expenses:
+                    <strong>New user?</strong> Here's how to submit trip expenses:
                     <br><strong>1.</strong> Create a trip (like "Montreal Conference Jan 2026")
                     <br><strong>2.</strong> Add expenses to that trip one by one
                     <br><strong>3.</strong> Submit the entire trip when done
@@ -576,214 +664,22 @@
                 <div style="font-size: 12px; color: #155724; margin-top: 8px; opacity: 0.9;">💡 Government rates are automatically applied for meals • Receipts required for hotels</div>
                 </div>
             </div>
-            <h3 style="margin-bottom: 20px; color: #2c3e50;">📝 Add Expense to Trip</h3>
+            <h3 style="margin-bottom: 20px; color: #2c3e50;">🧳 Add Expense to Trip</h3>
             
-            <div class="success-message" id="success-message">
-                ✅ <span id="success-text">Expense submitted successfully!</span>
+            <div class="success-message" id="trip-success-message">
+                ✅ <span id="trip-success-text">Expense submitted successfully!</span>
             </div>
             
-            <div class="error-message" id="error-message">
-                ❌ <span id="error-text">Something went wrong</span>
+            <div class="error-message" id="trip-error-message">
+                ❌ <span id="trip-error-text">Something went wrong</span>
             </div>
             
-            <form id="expense-form" class="expense-form">
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
-                    <div class="form-group">
-                        <label for="expense-type">What type of expense is this? *</label>
-                        <select id="expense-type" name="expense_type" required onchange="updatePerDiemRate()" title="Choose the category that best matches your expense" aria-describedby="expense-type-help">
-                            <option value="">Choose your expense type...</option>
-                            <optgroup label="🏛️ Government Per Diem (NJC Fixed Rates - One per day)">
-                                <option value="breakfast">🥐 Breakfast - $23.45</option>
-                                <option value="lunch">🥗 Lunch - $29.75</option>
-                                <option value="dinner">🍽️ Dinner - $47.05</option>
-                                <option value="incidentals">📱 Incidentals - $32.08</option>
-                            </optgroup>
-                            <optgroup label="🚗 Travel & Accommodation">
-                                <option value="vehicle_km">🚗 Vehicle (per km) - $0.68</option>
-                                <option value="hotel">🏨 Hotel (Receipt Required) - No Limit</option>
-                            </optgroup>
-                            <optgroup label="📝 Other Business Expenses">
-                                <option value="other">📝 Other Expense (Custom Amount)</option>
-                            </optgroup>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="expense-date" data-i18n="date">Date *</label>
-                        <input type="date" id="expense-date" name="date" required>
-                    </div>
-                </div>
-                
-                <!-- Hotel Date Range (hidden by default) -->
-                <div id="hotel-date-range" style="display: none; margin: 20px 0; padding: 20px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 12px;">
-                    <h4 style="color: #856404; margin-bottom: 8px;">🏨 Hotel Stay Information</h4>
-                    <p style="color: #856404; margin-bottom: 15px; font-size: 13px;">Government policy requires check-in and check-out dates for all hotel claims.</p>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label for="hotel-checkin">Check-in Date *</label>
-                            <input type="date" id="hotel-checkin" onchange="calculateHotelNights()" required>
-                        </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label for="hotel-checkout">Check-out Date *</label>
-                            <input type="date" id="hotel-checkout" onchange="calculateHotelNights()" required>
-                        </div>
-                    </div>
-                    <div id="hotel-nights-display" style="margin: 15px 0; padding: 15px; background: #fff; border: 1px solid #ffc107; border-radius: 8px; font-weight: bold; color: #856404; text-align: center;"></div>
-                    <div style="font-size: 12px; color: #856404; opacity: 0.8;">
-                        ℹ️ Don't forget to upload your hotel receipt below - it's required for all accommodation expenses.
-                    </div>
-                </div>
-                
-                <div class="form-group" style="margin: 20px 0;">
-                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                        <label for="trip-select" style="margin: 0; flex: 1;">🧳 Select Business Trip *</label>
-                        <button type="button" id="trip-lock-btn" onclick="toggleTripLock()" style="background: #6c757d; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; display: none;">
-                            🔓 Unlocked
-                        </button>
-                    </div>
-                    <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin-bottom: 12px; font-size: 14px; color: #1565c0;">
-                        <strong>ℹ️ How it works:</strong> All expenses must be part of a business trip (like Concur). Create a new trip or select an existing draft trip to add expenses.
-                    </div>
-                    <select id="trip-select" name="trip_id" style="margin-bottom: 10px;" onchange="handleTripSelection()">
-                        <option value="">-- Select a trip (all expenses need a trip) --</option>
-                    </select>
-                    <div id="trip-info" style="margin-top: 10px; padding: 10px; border-radius: 8px; display: none;"></div>
-                    <div style="margin-top: 10px;">
-                        <button type="button" onclick="showNewTripModal()" class="btn" style="background: #28a745; padding: 8px 16px; font-size: 14px;" title="Create a new business trip to group expenses">
-                            ➕ Create New Trip
-                        </button>
-                        <button type="button" onclick="loadTrips()" class="btn" style="background: #17a2b8; padding: 8px 16px; font-size: 14px; margin-left: 10px;" title="Reload trip list from server">
-                            🔄 Refresh Trips
-                        </button>
-                        <button type="button" onclick="clearTripSelection()" class="btn" style="background: #6c757d; padding: 8px 16px; font-size: 14px; margin-left: 10px;" title="Clear current selection">
-                            🚫 Clear Selection
-                        </button>
-                    </div>
-                </div>
-                
-                <div class="per-diem-info" id="per-diem-display" style="text-align: center; font-size: 15px;">
-                    💰 Select expense type above to see official NJC government rates
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Per diem rates are locked to prevent overpayment • Receipts required for hotels</div>
-                </div>
-                
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
-                    <div class="form-group">
-                        <label for="location">Where did this expense occur? *</label>
-                        <input type="text" id="location" name="location" placeholder="e.g., Ottawa, ON or Toronto Airport" required title="Enter the city or specific location where you incurred this expense" aria-describedby="location-help">
-                        <small id="location-help" style="color: #666; font-size: 12px; display: block; margin-top: 4px;">💡 Include city and province for accurate expense tracking</small>
-                    </div>
-                    
-                    <div id="vehicle-km-group" style="display: none;">
-                        <div class="form-group">
-                            <label for="vehicle-from">From (Departure Location) *</label>
-                            <input type="text" id="vehicle-from" name="vehicle_from" placeholder="e.g., 123 Main St, Ottawa, ON">
-                        </div>
-                        <div class="form-group">
-                            <label for="vehicle-to">To (Destination) *</label>
-                            <input type="text" id="vehicle-to" name="vehicle_to" placeholder="e.g., 456 Queen St, Toronto, ON">
-                        </div>
-                        <div class="form-group">
-                            <label for="kilometers">Kilometers Traveled *</label>
-                            <input type="number" id="kilometers" name="kilometers" step="0.1" min="0.1" max="10000" placeholder="e.g., 450" oninput="calculateVehicleAmount()">
-                            <small style="color: #666; font-size: 12px;">NJC rate: $0.68/km — Enter odometer-based or mapped distance</small>
-                        </div>
-                        <div id="vehicle-calc-display" style="display:none; background:#e8f5e9; border-radius:8px; padding:10px 14px; margin-top:8px; font-size:14px;">
-                            <strong>🚗 Mileage Calculation:</strong>
-                            <span id="vehicle-calc-text"></span>
-                        </div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="amount" id="amount-label" data-i18n="amount">Amount Paid *</label>
-                        <input type="number" id="amount" name="amount" step="0.01" data-i18n="amount_placeholder" placeholder="25.50" required aria-describedby="amount-help" oninput="validateAmount()">
-                        <div id="amount-info" style="margin-top: 5px; font-size: 12px; color: #666;"></div>
-                        <div id="amount-error" style="color: #dc3545; font-size: 12px; margin-top: 4px; display: none;" role="alert"></div>
-                        <small id="amount-help" style="color: #666; font-size: 12px; display: block; margin-top: 4px;">💡 Enter the exact amount you paid (e.g., 25.50)</small>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label for="vendor" data-i18n="vendor">Business name or details *</label>
-                    <input type="text" id="vendor" name="vendor" data-i18n="vendor_placeholder" placeholder="e.g., Tim Hortons, Marriott Hotel, or travel details" required title="Enter the business name where you spent money, or details for vehicle expenses">
-                </div>
-                
-                <div class="form-group">
-                    <label for="description" data-i18n="description">Business purpose or additional notes (Optional)</label>
-                    <textarea id="description" name="description" rows="3" data-i18n="description_placeholder" placeholder="e.g., Business lunch with client John Smith to discuss Q3 budget, or Conference travel for mandatory training" title="Explain the business purpose - this helps with approval and audit compliance"></textarea>
-                    <div style="font-size: 12px; color: #666; margin-top: 4px;">💡 <strong>Tip:</strong> Adding business context helps supervisors approve faster</div>
-                </div>
-                
-                <div class="form-group">
-                    <label>Receipt Photo <span style="color: #666; font-weight: normal;">(Required for hotels • Optional for per diem)</span></label>
-                    <div class="photo-section" onclick="document.getElementById('file-input').click()">
-                        <div class="camera-icon">📷</div>
-                        <div><strong>Tap to capture or upload receipt</strong></div>
-                        <div style="font-size: 12px; color: #6c757d; margin-top: 5px;">✅ Supports: JPG, PNG, GIF, WebP (Max 10MB)</div>
-                        <div style="font-size: 11px; color: #666; margin-top: 3px;">💡 Per diem meals: receipt optional | Hotels: receipt mandatory</div>
-                        <img id="photo-preview" class="photo-preview" style="display: none;">
-                    </div>
-                    <input type="file" id="file-input" accept="image/*" capture="environment">
-                </div>
-                
-                <!-- Single button - all expenses must be associated with a trip -->
-                <div style="margin-top: 20px;">
-                    <button type="button" onclick="addExpenseToTrip()" class="btn btn-success" style="padding: 18px; font-size: 16px; width: 100%;">
-                        🧳 Add Expense to Trip
-                    </button>
-                </div>
-                
-                <!-- Individual expenses draft list -->
-                <div id="individual-draft-section" style="display: none; margin-top: 30px; padding: 20px; background: #f0f8ff; border-radius: 12px;">
-                    <h4 style="color: #007bff; margin-bottom: 15px;">💰 Individual Expenses (Draft)</h4>
-                    <div id="draft-individual-list">
-                        <p style="text-align: center; color: #6c757d; padding: 20px;">
-                            No individual expenses added yet.<br>
-                            <small>Click "Add Individual Expense" to start building your expense batch.</small>
-                        </p>
-                    </div>
-                    <div id="individual-submit-section" style="margin-top: 20px; text-align: center; display: none;">
-                        <button type="button" onclick="submitIndividualExpensesForApproval()" class="btn btn-primary" style="padding: 15px 30px; font-size: 16px;">
-                            📤 Submit All Individual Expenses
-                        </button>
-                        <button type="button" onclick="clearIndividualDraft()" class="btn" style="background: #dc3545; color: white; padding: 15px 30px; font-size: 16px; margin-left: 15px;">
-                            🗑️ Clear Individual Draft
-                        </button>
-                    </div>
-                </div>
-
-            </form>
-
-                <!-- Trip expenses draft list (outside form to prevent form interference) -->
-                <div id="trip-draft-section" style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 12px; border-left: 4px solid #28a745;">
-                    <h4 style="color: #28a745; margin-bottom: 8px;">🧳 Your Trip Expenses</h4>
-                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">Build your expense report by adding expenses above, then submit the complete trip for approval.</p>
-                    <div id="draft-expenses-list">
-                        <p style="text-align: center; color: #6c757d; padding: 20px;">
-                            No expenses added yet.<br>
-                            <small>💡 <strong>Next step:</strong> Select a trip above and click "Add Expense to Trip" after filling out the form.</small>
-                        </p>
-                    </div>
-                    <div id="trip-submit-section" style="margin-top: 20px; text-align: center; display: none;">
-                        <button type="button" id="btn-submit-trip" class="btn btn-success" style="padding: 15px 30px; font-size: 16px; cursor: pointer; z-index: 999; position: relative;" title="Send entire trip to supervisor for approval">
-                            📤 Submit Trip for Approval
-                        </button>
-                        <button type="button" id="btn-clear-draft" class="btn" style="background: #dc3545; color: white; padding: 15px 30px; font-size: 16px; margin-left: 15px;" title="Remove all expenses from this draft">
-                            🗑️ Clear All Expenses
-                        </button>
-                        <div style="margin-top: 10px; font-size: 13px; color: #666;">
-                            💡 Trip will be submitted to your supervisor for review and approval
-                        </div>
-                    </div>
-                </div>
-        </div>
-        
-        <div id="trips-tab" class="tab-content">
-            <h3 style="margin-bottom: 20px; color: #2c3e50;">🧳 My Trips</h3>
-            <div id="trips-container">
-                <div style="text-align: center; padding: 40px; color: #6c757d;">
-                    <div style="font-size: 48px; margin-bottom: 15px;">🧳</div>
-                    <p>Loading your trips...</p>
-                </div>
+            <!-- This will contain the entire existing trip-based expense form moved from above -->
+            <!-- For now, just placeholder content - we'll add the full form in JavaScript -->
+            <div style="text-align: center; padding: 40px; color: #6c757d;">
+                <div style="font-size: 48px; margin-bottom: 15px;">🧳</div>
+                <p>Trip-based expense form will be loaded here...</p>
+                <small>Use the Expenses tab for standalone expenses that don't require a trip.</small>
             </div>
         </div>
 
@@ -899,6 +795,20 @@
             }
         }
         
+        // Toggle Standalone Guide visibility
+        function toggleStandaloneGuide() {
+            const content = document.getElementById('standalone-guide-content');
+            const toggle = document.getElementById('standalone-guide-toggle');
+            
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                toggle.textContent = '📖 Hide';
+            } else {
+                content.style.display = 'none';
+                toggle.textContent = '📖 Show';
+            }
+        }
+        
         // Real-time amount validation
         function validateAmount() {
             const amountInput = document.getElementById('amount');
@@ -927,6 +837,128 @@
         
         // Trip draft expenses (stored locally until trip submission)
         let draftTripExpenses = [];
+        
+        // ═══════════════════════════════════════════════════════════════════════════════
+        // STANDALONE EXPENSES FUNCTIONALITY  
+        // ═══════════════════════════════════════════════════════════════════════════════
+        
+        // Submit standalone expense directly to supervisor
+        async function submitStandaloneExpense() {
+            const form = document.getElementById('standalone-expense-form');
+            const successMessage = document.getElementById('standalone-success-message');
+            const errorMessage = document.getElementById('standalone-error-message');
+            const submitButton = document.querySelector('button[onclick="submitStandaloneExpense()"]');
+            
+            // Hide previous messages
+            successMessage.classList.remove('show');
+            errorMessage.classList.remove('show');
+            
+            // Validate required fields
+            const category = document.getElementById('standalone-category').value;
+            const date = document.getElementById('standalone-date').value;
+            const amount = document.getElementById('standalone-amount').value;
+            const vendor = document.getElementById('standalone-vendor').value;
+            
+            if (!category || !date || !amount || !vendor) {
+                showStandaloneMessage('error', 'Please fill in all required fields');
+                return;
+            }
+            
+            // Validate amount
+            const amountNum = parseFloat(amount);
+            if (isNaN(amountNum) || amountNum <= 0) {
+                showStandaloneMessage('error', 'Please enter a valid amount');
+                return;
+            }
+            
+            try {
+                // Disable submit button
+                submitButton.disabled = true;
+                submitButton.textContent = '⏳ Submitting...';
+                
+                // Prepare form data
+                const formData = new FormData();
+                formData.append('expense_type', 'other'); // Standalone expenses use 'other' type
+                formData.append('category', category);
+                formData.append('date', date);
+                formData.append('amount', amount);
+                formData.append('vendor', vendor);
+                formData.append('description', document.getElementById('standalone-description').value);
+                formData.append('location', 'N/A'); // Not required for standalone expenses
+                
+                // Add receipt photo if uploaded
+                const fileInput = document.getElementById('standalone-file-input');
+                if (fileInput.files[0]) {
+                    formData.append('receipt', fileInput.files[0]);
+                }
+                
+                // Submit to server
+                const response = await fetch('/api/expenses', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showStandaloneMessage('success', result.message || 'Standalone expense submitted successfully!');
+                    resetStandaloneForm();
+                } else {
+                    showStandaloneMessage('error', result.error || 'Failed to submit expense');
+                }
+                
+            } catch (error) {
+                console.error('Error submitting standalone expense:', error);
+                showStandaloneMessage('error', 'Network error. Please try again.');
+            } finally {
+                // Re-enable submit button
+                submitButton.disabled = false;
+                submitButton.textContent = '📋 Submit Standalone Expense';
+            }
+        }
+        
+        // Show success/error messages for standalone expenses
+        function showStandaloneMessage(type, text) {
+            const successMessage = document.getElementById('standalone-success-message');
+            const errorMessage = document.getElementById('standalone-error-message');
+            const successText = document.getElementById('standalone-success-text');
+            const errorText = document.getElementById('standalone-error-text');
+            
+            // Hide all messages first
+            successMessage.classList.remove('show');
+            errorMessage.classList.remove('show');
+            
+            if (type === 'success') {
+                successText.textContent = text;
+                successMessage.classList.add('show');
+                // Auto-hide after 5 seconds
+                setTimeout(() => successMessage.classList.remove('show'), 5000);
+            } else {
+                errorText.textContent = text;
+                errorMessage.classList.add('show');
+                // Auto-hide after 8 seconds
+                setTimeout(() => errorMessage.classList.remove('show'), 8000);
+            }
+        }
+        
+        // Reset standalone expense form
+        function resetStandaloneForm() {
+            const form = document.getElementById('standalone-expense-form');
+            form.reset();
+            
+            // Reset photo preview
+            const photoPreview = document.getElementById('standalone-photo-preview');
+            const photoSection = document.querySelector('.photo-section');
+            if (photoPreview) photoPreview.style.display = 'none';
+            if (photoSection) photoSection.classList.remove('has-photo');
+            
+            // Clear file input
+            const fileInput = document.getElementById('standalone-file-input');
+            if (fileInput) fileInput.value = '';
+        }
         
         // ═══════════════════════════════════════════════════════════════════════════════
         // DRAFT PERSISTENCE - Save/Load drafts to localStorage
@@ -1668,6 +1700,10 @@
             if (tabName === 'trips') {
                 loadTrips();
             }
+            if (tabName === 'expenses') {
+                // Initialize standalone expenses form
+                resetStandaloneForm();
+            }
         }
         
         // Get expense type display name
@@ -2068,6 +2104,42 @@
             }
         }
         
+        // Standalone expenses photo handling
+        const standaloneFileInput = document.getElementById('standalone-file-input');
+        if (standaloneFileInput) {
+            standaloneFileInput.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    if (file.size > 10 * 1024 * 1024) {
+                        showStandaloneMessage('error', '❌ File size too large. Maximum size is 10MB.');
+                        return;
+                    }
+                    
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const photoPreview = document.getElementById('standalone-photo-preview');
+                        const photoSection = document.querySelector('.photo-section');
+                        if (photoPreview && photoSection) {
+                            photoPreview.src = e.target.result;
+                            photoPreview.style.display = 'block';
+                            photoSection.classList.add('has-photo');
+                            
+                            // Update photo section content
+                            photoSection.innerHTML = `
+                                <div style="color: #27ae60; font-weight: 600;">✅ Receipt captured successfully!</div>
+                                <img id="standalone-photo-preview" class="photo-preview" src="${e.target.result}">
+                            `;
+                        }
+                        
+                        // For standalone expenses, we could also implement OCR similar to trip expenses
+                        // but for now, we'll keep it simple
+                        showStandaloneMessage('info', '📷 Receipt uploaded successfully. Please fill in the expense details.');
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        }
+        
         // Add date change listener to update rates and check per diem limits
         document.getElementById('expense-date').addEventListener('change', async function() {
             await updatePerDiemRate(); // Update rates based on new date
@@ -2324,10 +2396,10 @@
                 `;
             }
             
-            // Render ungrouped
+            // Render ungrouped (standalone expenses)
             if (ungrouped.length > 0) {
                 if (Object.keys(grouped).length > 0) {
-                    html += `<h4 style="margin: 20px 0 10px; color: #6c757d;">Individual Expenses</h4>`;
+                    html += `<h4 style="margin: 20px 0 10px; color: #2196f3; display: flex; align-items: center;"><span style="margin-right: 8px;">📋</span> Standalone Expenses</h4>`;
                 }
                 html += ungrouped.map(expense => renderExpenseItem(expense)).join('');
             }
@@ -2363,8 +2435,9 @@
                         <div style="flex-grow: 1;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                 <div style="font-weight: bold; color: #2c3e50; font-size: 15px;">
-                                    ${njcRates[expense.expense_type]?.icon || '💰'} ${expense.meal_name || expense.expense_type}
+                                    ${expense.trip_id ? '🧳' : '📋'} ${expense.category || expense.meal_name || expense.expense_type}
                                     <span style="color: #27ae60; font-size: 16px; font-weight: bold; margin-left: 8px;">$${parseFloat(expense.amount).toFixed(2)}</span>
+                                    ${expense.trip_id ? '' : '<span style="color: #2196f3; font-size: 10px; background: #e3f2fd; padding: 2px 6px; border-radius: 8px; margin-left: 8px; font-weight: normal;">STANDALONE</span>'}
                                 </div>
                                 <span class="status-badge ${statusClass}">${statusText}</span>
                             </div>
