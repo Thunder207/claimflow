@@ -431,15 +431,6 @@ function insertDefaultData() {
             if (err) console.error('❌ Error fixing Lisa supervisor:', err.message);
 
         });
-        
-        // Standalone Expenses Migration: Add category field to expenses table
-        db.run(`ALTER TABLE expenses ADD COLUMN category TEXT`, (err) => {
-            if (err && !err.message.includes('duplicate column name')) {
-                console.error('❌ Error adding category column:', err.message);
-            } else if (!err) {
-                console.log('✅ Added category column to expenses table');
-            }
-        });
     }
     
     // Seed NJC rates with historical and current periods
@@ -827,8 +818,7 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
             amount,
             vendor,
             description,
-            trip_id,
-            category
+            trip_id
         } = req.body;
         
         // Sanitize all string inputs
@@ -837,7 +827,6 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
         location = sanitizeString(location, 255);
         vendor = sanitizeString(vendor, 255);
         description = sanitizeString(description, 1000);
-        category = sanitizeString(category, 100);
         
         // Validate required fields
         if (!expense_type || !date || !amount) {
@@ -916,8 +905,8 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
     const perDiemTypes = ['breakfast', 'lunch', 'dinner', 'incidentals'];
     const isPerDiem = perDiemTypes.includes(expense_type);
     
-    // CRITICAL: Per diem duplicate prevention (only for trip-based expenses)
-    if (isPerDiem && trip_id) {
+    // CRITICAL: Per diem duplicate prevention (simple, no nested transactions)
+    if (isPerDiem) {
         const hasDuplicate = await new Promise((resolve, reject) => {
             db.get(
                 `SELECT COUNT(*) as count FROM expenses WHERE employee_id = ? AND expense_type = ? AND date = ? AND status != 'rejected'`,
@@ -943,8 +932,8 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
         });
     }
     
-    // Per diem rate validation (only for trip-based expenses)
-    if (njcRates.isPerDiem(expense_type) && trip_id) {
+    // Per diem rate validation
+    if (njcRates.isPerDiem(expense_type)) {
         try {
             const validation = await njcRates.validatePerDiemExpense(expense_type, amount, date);
             if (!validation.valid) {
@@ -991,8 +980,8 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
         
         // Simple insert for ALL expense types (per diem already validated above)
         const query = `
-            INSERT INTO expenses (employee_name, employee_id, trip_id, expense_type, meal_name, date, location, amount, vendor, description, receipt_photo, category)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO expenses (employee_name, employee_id, trip_id, expense_type, meal_name, date, location, amount, vendor, description, receipt_photo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         
         // Append future-date flag to description for supervisor visibility
@@ -1001,7 +990,7 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
             finalDescription = (finalDescription ? finalDescription + ' | ' : '') + '⚠️ FUTURE-DATED EXPENSE (submitted before expense date)';
         }
         
-        const params = [employee.name, req.user.employeeId, trip_id || null, expense_type, meal_name, date, location, amount, vendor, finalDescription, receiptPath, category];
+        const params = [employee.name, req.user.employeeId, trip_id || null, expense_type, meal_name, date, location, amount, vendor, finalDescription, receiptPath];
         
         db.run(query, params, function(err) {
             if (err) {
