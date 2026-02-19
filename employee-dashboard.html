@@ -562,21 +562,21 @@
         <div id="expenses-tab" class="tab-content active">
             <div style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 15px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #2196f3;">
                 <div style="font-size: 13px; color: #0d47a1; line-height: 1.5;">
-                    <strong>📋 Standalone Expenses</strong> — for items not tied to a business trip:
-                    office supplies, software, phone bills, parking, professional development, etc.
+                    <strong>📋 Standalone Expenses</strong> — for items not tied to a business trip.
+                    Add expenses to your draft, review, then submit all at once for approval.
                 </div>
             </div>
             
-            <h3 style="margin-bottom: 20px; color: #2c3e50;">📋 Submit Standalone Expense</h3>
+            <h3 style="margin-bottom: 20px; color: #2c3e50;">📋 Add Expense</h3>
             
             <div class="success-message" id="standalone-success" style="display:none;">
-                ✅ <span id="standalone-success-text">Expense submitted!</span>
+                ✅ <span id="standalone-success-text">Added to draft!</span>
             </div>
             <div class="error-message" id="standalone-error" style="display:none;">
                 ❌ <span id="standalone-error-text">Error</span>
             </div>
             
-            <form id="standalone-form" class="expense-form" onsubmit="submitStandaloneExpense(event)">
+            <form id="standalone-form" class="expense-form" onsubmit="addStandaloneDraft(event)">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
                     <div class="form-group">
                         <label for="sa-category">Expense Category *</label>
@@ -614,8 +614,21 @@
                     <input type="file" id="sa-receipt" accept="image/*" capture="environment">
                     <div id="sa-ocr-status" style="display:none; margin-top:8px; color:#2196f3; font-size:13px;">🔍 Scanning receipt...</div>
                 </div>
-                <button type="submit" class="btn btn-primary" style="margin-top: 15px; padding: 12px 30px; font-size: 16px;">📤 Submit Expense</button>
+                <button type="submit" class="btn" style="margin-top: 15px; padding: 12px 30px; font-size: 16px; background: #6c757d; color: white; border: none; border-radius: 8px; cursor: pointer;">➕ Add to Draft</button>
             </form>
+            
+            <!-- Draft Expenses List -->
+            <div id="sa-draft-section" style="margin-top: 30px; display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="color: #2c3e50; margin: 0;">📝 Draft Expenses (<span id="sa-draft-count">0</span>)</h3>
+                    <span id="sa-draft-total" style="font-size: 18px; font-weight: bold; color: #2196f3;">$0.00</span>
+                </div>
+                <div id="sa-draft-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
+                <div style="margin-top: 20px; display: flex; gap: 15px;">
+                    <button onclick="submitAllStandaloneExpenses()" class="btn btn-primary" style="padding: 14px 40px; font-size: 16px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer;">📤 Submit All for Approval</button>
+                    <button onclick="clearStandaloneDrafts()" class="btn" style="padding: 14px 20px; font-size: 14px; background: #dc3545; color: white; border: none; border-radius: 8px; cursor: pointer;">🗑️ Clear All</button>
+                </div>
+            </div>
         </div>
 
         <div id="submit-tab" class="tab-content">
@@ -3390,12 +3403,21 @@
             checkSupervisorRole();
         }
         
-        // === STANDALONE EXPENSES ===
+        // === STANDALONE EXPENSES (DRAFT SYSTEM) ===
         
-        // Set today's date on standalone form
+        let standaloneDrafts = [];
+        
+        // Load drafts from localStorage on init
         document.addEventListener('DOMContentLoaded', function() {
             const saDate = document.getElementById('sa-date');
             if (saDate) saDate.valueAsDate = new Date();
+            
+            // Load saved standalone drafts
+            const saved = localStorage.getItem('standalone_drafts_' + (currentUser?.id || ''));
+            if (saved) {
+                try { standaloneDrafts = JSON.parse(saved); } catch(e) { standaloneDrafts = []; }
+                renderStandaloneDrafts();
+            }
             
             // OCR for standalone receipt
             const saReceipt = document.getElementById('sa-receipt');
@@ -3419,7 +3441,7 @@
                             if (data.date && !document.getElementById('sa-date').value) document.getElementById('sa-date').value = data.date;
                             ocrStatus.textContent = '✅ Receipt scanned!';
                         } else {
-                            ocrStatus.textContent = '📷 Receipt uploaded (OCR unavailable)';
+                            ocrStatus.textContent = '📷 Receipt uploaded';
                         }
                     } catch(e) {
                         ocrStatus.textContent = '📷 Receipt uploaded';
@@ -3429,14 +3451,17 @@
             }
         });
         
-        async function submitStandaloneExpense(event) {
+        function saveStandaloneDrafts() {
+            localStorage.setItem('standalone_drafts_' + (currentUser?.id || ''), JSON.stringify(standaloneDrafts));
+        }
+        
+        function addStandaloneDraft(event) {
             event.preventDefault();
             const category = document.getElementById('sa-category').value;
             const date = document.getElementById('sa-date').value;
-            const amount = document.getElementById('sa-amount').value;
+            const amount = parseFloat(document.getElementById('sa-amount').value);
             const vendor = document.getElementById('sa-vendor').value;
             const description = document.getElementById('sa-description').value;
-            const receiptFile = document.getElementById('sa-receipt').files[0];
             
             if (!category || !date || !amount || !vendor) {
                 document.getElementById('standalone-error-text').textContent = 'Please fill in all required fields.';
@@ -3445,41 +3470,114 @@
                 return;
             }
             
-            const formData = new FormData();
-            formData.append('expense_type', 'other');
-            formData.append('category', category);
-            formData.append('meal_name', category);
-            formData.append('date', date);
-            formData.append('amount', amount);
-            formData.append('vendor', vendor);
-            formData.append('location', 'Office');
-            formData.append('description', description || '');
-            if (receiptFile) formData.append('receipt', receiptFile);
-            // No trip_id — this is standalone
+            standaloneDrafts.push({
+                id: Date.now(),
+                category, date, amount, vendor, description,
+                receipt: null // receipt will be uploaded on submit
+            });
+            saveStandaloneDrafts();
+            renderStandaloneDrafts();
             
-            try {
-                const resp = await fetch('/api/expenses', {
-                    method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + sessionId },
-                    body: formData
-                });
-                const result = await resp.json();
-                if (resp.ok && result.success) {
-                    document.getElementById('standalone-success-text').textContent = '✅ ' + category + ' expense ($' + parseFloat(amount).toFixed(2) + ') submitted for approval!';
-                    document.getElementById('standalone-success').style.display = 'block';
-                    document.getElementById('standalone-error').style.display = 'none';
-                    // Reset form
-                    document.getElementById('standalone-form').reset();
-                    document.getElementById('sa-date').valueAsDate = new Date();
-                    setTimeout(() => document.getElementById('standalone-success').style.display = 'none', 5000);
-                } else {
-                    document.getElementById('standalone-error-text').textContent = result.error || 'Failed to submit expense.';
-                    document.getElementById('standalone-error').style.display = 'block';
-                    setTimeout(() => document.getElementById('standalone-error').style.display = 'none', 5000);
+            // Reset form
+            document.getElementById('standalone-form').reset();
+            document.getElementById('sa-date').valueAsDate = new Date();
+            
+            document.getElementById('standalone-success-text').textContent = '➕ ' + category + ' ($' + amount.toFixed(2) + ') added to draft';
+            document.getElementById('standalone-success').style.display = 'block';
+            setTimeout(() => document.getElementById('standalone-success').style.display = 'none', 3000);
+        }
+        
+        function renderStandaloneDrafts() {
+            const section = document.getElementById('sa-draft-section');
+            const list = document.getElementById('sa-draft-list');
+            const countEl = document.getElementById('sa-draft-count');
+            const totalEl = document.getElementById('sa-draft-total');
+            
+            if (standaloneDrafts.length === 0) {
+                section.style.display = 'none';
+                return;
+            }
+            
+            section.style.display = 'block';
+            countEl.textContent = standaloneDrafts.length;
+            const total = standaloneDrafts.reduce((sum, d) => sum + d.amount, 0);
+            totalEl.textContent = '$' + total.toFixed(2);
+            
+            list.innerHTML = standaloneDrafts.map((d, i) => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #2196f3;">
+                    <div>
+                        <strong>${d.category}</strong> — $${d.amount.toFixed(2)}
+                        <br><small style="color: #6c757d;">${d.date} · ${d.vendor}${d.description ? ' · ' + d.description : ''}</small>
+                    </div>
+                    <button onclick="removeStandaloneDraft(${i})" style="background: #dc3545; color: white; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px;">✕</button>
+                </div>
+            `).join('');
+        }
+        
+        function removeStandaloneDraft(index) {
+            standaloneDrafts.splice(index, 1);
+            saveStandaloneDrafts();
+            renderStandaloneDrafts();
+        }
+        
+        function clearStandaloneDrafts() {
+            if (!confirm('Clear all draft expenses?')) return;
+            standaloneDrafts = [];
+            saveStandaloneDrafts();
+            renderStandaloneDrafts();
+        }
+        
+        async function submitAllStandaloneExpenses() {
+            if (standaloneDrafts.length === 0) return;
+            
+            document.getElementById('standalone-success-text').textContent = '📤 Submitting ' + standaloneDrafts.length + ' expenses...';
+            document.getElementById('standalone-success').style.display = 'block';
+            
+            let successCount = 0;
+            let errors = [];
+            
+            for (const draft of standaloneDrafts) {
+                try {
+                    const formData = new FormData();
+                    formData.append('expense_type', 'other');
+                    formData.append('category', draft.category);
+                    formData.append('meal_name', draft.category);
+                    formData.append('date', draft.date);
+                    formData.append('amount', draft.amount);
+                    formData.append('vendor', draft.vendor);
+                    formData.append('location', 'Office');
+                    formData.append('description', draft.description || '');
+                    
+                    const resp = await fetch('/api/expenses', {
+                        method: 'POST',
+                        headers: { 'Authorization': 'Bearer ' + sessionId },
+                        body: formData
+                    });
+                    const result = await resp.json();
+                    if (resp.ok && result.success) {
+                        successCount++;
+                    } else {
+                        errors.push(draft.category + ': ' + (result.error || 'Failed'));
+                    }
+                } catch(e) {
+                    errors.push(draft.category + ': Network error');
                 }
-            } catch(e) {
-                document.getElementById('standalone-error-text').textContent = 'Network error: ' + e.message;
+            }
+            
+            if (successCount > 0) {
+                standaloneDrafts = [];
+                saveStandaloneDrafts();
+                renderStandaloneDrafts();
+                document.getElementById('standalone-success-text').textContent = '✅ ' + successCount + ' expense(s) submitted for approval!';
+                document.getElementById('standalone-success').style.display = 'block';
+                document.getElementById('standalone-error').style.display = 'none';
+                setTimeout(() => document.getElementById('standalone-success').style.display = 'none', 5000);
+            }
+            
+            if (errors.length > 0) {
+                document.getElementById('standalone-error-text').textContent = 'Some failed: ' + errors.join(', ');
                 document.getElementById('standalone-error').style.display = 'block';
+                setTimeout(() => document.getElementById('standalone-error').style.display = 'none', 8000);
             }
         }
         
