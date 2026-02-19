@@ -1060,6 +1060,19 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
         }
     }
     
+    // Prevent duplicate per diem claims on same day for same trip
+    const perDiemTypesCheck = ['breakfast', 'lunch', 'dinner', 'incidentals'];
+    if (perDiemTypesCheck.includes(expense_type) && trip_id) {
+        const dupRow = await new Promise((resolve, reject) => {
+            db.get('SELECT id FROM expenses WHERE trip_id = ? AND expense_type = ? AND date = ?',
+                [trip_id, expense_type, date], (e, row) => e ? reject(e) : resolve(row));
+        }).catch(() => null);
+        if (dupRow) {
+            const pnames = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', incidentals: 'Incidentals' };
+            return res.status(400).json({ success: false, error: `${pnames[expense_type]} already claimed for ${date}. Only one per day allowed.` });
+        }
+    }
+
     // Get employee info from session
     db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err, employee) => {
         if (err || !employee) {
@@ -3704,7 +3717,7 @@ app.post('/api/travel-auth/:id/link-trip/:tripId', requireAuth, (req, res) => {
 // ============================================
 
 // 8. Add estimated expense to travel authorization
-app.post('/api/travel-auth/:id/expenses', requireAuth, (req, res) => {
+app.post('/api/travel-auth/:id/expenses', requireAuth, async (req, res) => {
     const atId = req.params.id;
     const { expense_type, date, location, amount, vendor, description, kilometers, vehicle_from, vehicle_to, hotel_checkin, hotel_checkout } = req.body;
 
@@ -3712,21 +3725,39 @@ app.post('/api/travel-auth/:id/expenses', requireAuth, (req, res) => {
         return res.status(400).json({ error: 'Missing required fields: expense_type, date, amount' });
     }
 
+    try {
     // Check ownership and draft/rejected status
-    db.get('SELECT * FROM travel_authorizations WHERE id = ? AND employee_id = ?', [atId, req.user.employeeId], (err, at) => {
-        if (err) return res.status(500).json({ error: 'Database error' });
-        if (!at) return res.status(404).json({ error: 'Travel authorization not found' });
-        if (at.status !== 'draft' && at.status !== 'rejected') {
-            return res.status(400).json({ error: 'Can only add expenses to draft or rejected authorizations' });
-        }
+    const at = await new Promise((resolve, reject) => {
+        db.get('SELECT * FROM travel_authorizations WHERE id = ? AND employee_id = ?', [atId, req.user.employeeId], (err, row) => err ? reject(err) : resolve(row));
+    });
+    if (!at) return res.status(404).json({ error: 'Travel authorization not found' });
+    if (at.status !== 'draft' && at.status !== 'rejected') {
+        return res.status(400).json({ error: 'Can only add expenses to draft or rejected authorizations' });
+    }
 
-        // Validate expense date is within authorization date range
-        if (date < at.start_date || date > at.end_date) {
-            return res.status(400).json({ error: `Expense date must be within the authorization dates (${at.start_date} to ${at.end_date})` });
-        }
+    // Validate expense date is within authorization date range
+    if (date < at.start_date || date > at.end_date) {
+        return res.status(400).json({ error: `Expense date must be within the authorization dates (${at.start_date} to ${at.end_date})` });
+    }
 
-        // Get employee name
-        db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err, emp) => {
+    // Prevent duplicate per diem claims on same day
+    const perDiemTypes = ['breakfast', 'lunch', 'dinner', 'incidentals'];
+    if (perDiemTypes.includes(expense_type)) {
+        const existing = await new Promise((resolve, reject) => {
+            db.get('SELECT id FROM expenses WHERE travel_auth_id = ? AND expense_type = ? AND date = ?',
+                [atId, expense_type, date], (err2, row) => err2 ? reject(err2) : resolve(row));
+        });
+        if (existing) {
+            const names = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', incidentals: 'Incidentals' };
+            return res.status(400).json({ error: `${names[expense_type]} already claimed for ${date}. Only one per day allowed.` });
+        }
+    }
+
+    // Get employee name
+    const emp = await new Promise((resolve, reject) => {
+        db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err2, row) => err2 ? reject(err2) : resolve(row));
+    });
+    {
             if (err) return res.status(500).json({ error: 'Database error' });
 
             // Build description with vehicle/hotel details if applicable
@@ -3756,8 +3787,11 @@ app.post('/api/travel-auth/:id/expenses', requireAuth, (req, res) => {
                     res.json({ success: true, id: this.lastID, message: 'Estimated expense added!' });
                 }
             );
-        });
-    });
+    }
+    } catch (err) {
+        console.error('❌ Error in travel auth expense:', err);
+        res.status(500).json({ error: 'Database error' });
+    }
 });
 
 // 9. Get expenses for a travel authorization
