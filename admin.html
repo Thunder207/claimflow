@@ -317,6 +317,10 @@ try {
                         <input type="text" id="new-employee-number" class="form-control" placeholder="EMP001" required>
                     </div>
                     <div class="form-group">
+                        <label for="new-employee-email" data-i18n="email">Email Address *</label>
+                        <input type="email" id="new-employee-email" class="form-control" placeholder="john.smith@company.com" required>
+                    </div>
+                    <div class="form-group">
                         <label for="new-employee-position" data-i18n="position">Position</label>
                         <input type="text" id="new-employee-position" class="form-control" placeholder="Financial Analyst">
                     </div>
@@ -1253,6 +1257,7 @@ try {
             // Clear form
             document.getElementById('new-employee-name').value = '';
             document.getElementById('new-employee-number').value = '';
+            document.getElementById('new-employee-email').value = '';
             document.getElementById('new-employee-position').value = '';
             document.getElementById('new-employee-department').value = '';
             document.getElementById('new-employee-supervisor').value = '';
@@ -1325,6 +1330,7 @@ try {
         async function addEmployee() {
             const name = document.getElementById('new-employee-name').value.trim();
             const employeeNumber = document.getElementById('new-employee-number').value.trim();
+            const email = document.getElementById('new-employee-email').value.trim();
             const position = document.getElementById('new-employee-position').value.trim();
             const department = document.getElementById('new-employee-department').value.trim();
             const supervisorId = document.getElementById('new-employee-supervisor').value;
@@ -1342,6 +1348,12 @@ try {
                 return;
             }
             
+            if (!email || !email.includes('@')) {
+                showMessage('danger', '❌ Valid email address is required');
+                document.getElementById('new-employee-email').focus();
+                return;
+            }
+            
             try {
                 const response = await fetch('/api/employees', {
                     method: 'POST',
@@ -1352,6 +1364,8 @@ try {
                     body: JSON.stringify({
                         name,
                         employee_number: employeeNumber,
+                        email,
+                        password: 'temp123', // Default password - user should change on first login
                         position: position || null,
                         department: department || null,
                         supervisor_id: supervisorId || null,
