@@ -335,9 +335,9 @@ try {
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="new-employee-gl-account">GL Account</label>
-                        <select id="new-employee-gl-account" class="form-control">
-                            <option value="">Select GL Account</option>
+                        <label for="new-employee-cost-center">Cost Center</label>
+                        <select id="new-employee-cost-center" class="form-control">
+                            <option value="">Select Cost Center</option>
                         </select>
                     </div>
                 </div>
@@ -375,9 +375,9 @@ try {
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="edit-employee-gl-account">GL Account</label>
-                        <select id="edit-employee-gl-account" class="form-control">
-                            <option value="">Select GL Account</option>
+                        <label for="edit-employee-cost-center">Cost Center</label>
+                        <select id="edit-employee-cost-center" class="form-control">
+                            <option value="">Select Cost Center</option>
                         </select>
                     </div>
                 </div>
@@ -1248,7 +1248,7 @@ try {
             document.getElementById('add-employee-form').style.display = 'block';
             document.getElementById('edit-employee-form').style.display = 'none';
             populateSupervisorDropdown('new-employee-supervisor');
-            populateGLAccountDropdown('new-employee-gl-account');
+            populateCostCenterDropdown('new-employee-cost-center');
             document.getElementById('new-employee-name').focus();
         }
 
@@ -1261,7 +1261,7 @@ try {
             document.getElementById('new-employee-position').value = '';
             document.getElementById('new-employee-department').value = '';
             document.getElementById('new-employee-supervisor').value = '';
-            document.getElementById('new-employee-gl-account').value = '';
+            document.getElementById('new-employee-cost-center').value = '';
         }
 
         async function editEmployee(employeeId) {
@@ -1284,8 +1284,8 @@ try {
             populateSupervisorDropdown('edit-employee-supervisor', employeeId);
             document.getElementById('edit-employee-supervisor').value = employee.supervisor_id || '';
             
-            await populateGLAccountDropdown('edit-employee-gl-account');
-            document.getElementById('edit-employee-gl-account').value = employee.gl_account_id || '';
+            await populateCostCenterDropdown('edit-employee-cost-center');
+            document.getElementById('edit-employee-cost-center').value = employee.cost_center_id || '';
             
             document.getElementById('edit-employee-name').focus();
         }
@@ -1307,23 +1307,22 @@ try {
             }
         }
 
-        async function populateGLAccountDropdown(selectId) {
+        async function populateCostCenterDropdown(selectId) {
             const select = document.getElementById(selectId);
-            select.innerHTML = '<option value="">Select GL Account</option>';
+            select.innerHTML = '<option value="">Select Cost Center</option>';
             
             try {
-                const response = await fetch('/api/sage/gl-accounts', {
+                const response = await fetch('/api/sage/cost-centers', {
                     headers: { 'Authorization': `Bearer ${sessionId}` }
                 });
                 const result = await response.json();
+                const centers = result.success ? result.data : (Array.isArray(result) ? result : []);
                 
-                if (result.success && result.data) {
-                    result.data.filter(gl => gl.is_active).forEach(gl => {
-                        select.innerHTML += `<option value="${gl.id}">${gl.gl_code} - ${gl.gl_name}</option>`;
-                    });
-                }
+                centers.filter(cc => cc.is_active).forEach(cc => {
+                    select.innerHTML += `<option value="${cc.id}">${cc.cost_center_code} - ${cc.cost_center_name} (${cc.department})</option>`;
+                });
             } catch (error) {
-                console.error('Error loading GL accounts:', error);
+                console.error('Error loading cost centers:', error);
             }
         }
 
@@ -1334,7 +1333,7 @@ try {
             const position = document.getElementById('new-employee-position').value.trim();
             const department = document.getElementById('new-employee-department').value.trim();
             const supervisorId = document.getElementById('new-employee-supervisor').value;
-            const glAccountId = document.getElementById('new-employee-gl-account').value;
+            const costCenterId = document.getElementById('new-employee-cost-center').value;
             
             if (!name) {
                 showMessage('danger', '❌ Employee name is required');
@@ -1369,7 +1368,7 @@ try {
                         position: position || null,
                         department: department || null,
                         supervisor_id: supervisorId || null,
-                        gl_account_id: glAccountId || null
+                        cost_center_id: costCenterId || null
                     })
                 });
                 
@@ -1395,7 +1394,7 @@ try {
             const position = document.getElementById('edit-employee-position').value.trim();
             const department = document.getElementById('edit-employee-department').value.trim();
             const supervisorId = document.getElementById('edit-employee-supervisor').value;
-            const glAccountId = document.getElementById('edit-employee-gl-account').value;
+            const costCenterId = document.getElementById('edit-employee-cost-center').value;
             
             if (!name) {
                 showMessage('danger', '❌ Employee name is required');
@@ -1422,7 +1421,7 @@ try {
                         position: position || null,
                         department: department || null,
                         supervisor_id: supervisorId || null,
-                        gl_account_id: glAccountId || null
+                        cost_center_id: costCenterId || null
                     })
                 });
                 

@@ -452,10 +452,10 @@ function insertDefaultData() {
             }
         });
 
-        // Ensure gl_account_id column exists on employees table
-        db.run(`ALTER TABLE employees ADD COLUMN gl_account_id INTEGER`, (err) => {
+        // Ensure cost_center_id column exists on employees table
+        db.run(`ALTER TABLE employees ADD COLUMN cost_center_id INTEGER`, (err) => {
             if (err && !err.message.includes('duplicate column')) {
-                console.error('❌ Error adding gl_account_id column:', err.message);
+                console.error('❌ Error adding cost_center_id column:', err.message);
             }
         });
     }
@@ -1907,7 +1907,7 @@ app.get('/api/employees', requireAuth, requireRole('admin', 'supervisor'), (req,
 
 // Add new employee (admin only)
 app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) => {
-    const { name, employee_number, email, password, position, department, supervisor_id, gl_account_id } = req.body;
+    const { name, employee_number, email, password, position, department, supervisor_id, cost_center_id } = req.body;
     
     // Validation
     if (!name || name.trim().length === 0) {
@@ -1946,7 +1946,7 @@ app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) =
     const password_hash = hashPassword(password || 'temp123');
     
     const query = `
-        INSERT INTO employees (name, employee_number, email, password_hash, position, department, supervisor_id, gl_account_id)
+        INSERT INTO employees (name, employee_number, email, password_hash, position, department, supervisor_id, cost_center_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
     
@@ -1958,7 +1958,7 @@ app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) =
         position ? position.trim() : null, 
         department ? department.trim() : null, 
         supervisor_id || null,
-        gl_account_id || null
+        cost_center_id || null
     ];
     
     db.run(query, params, function(err) {
@@ -1986,7 +1986,7 @@ app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) =
             { field: 'position', value: position ? position.trim() : null },
             { field: 'department', value: department ? department.trim() : null },
             { field: 'supervisor_id', value: supervisor_id || null },
-            { field: 'gl_account_id', value: gl_account_id || null }
+            { field: 'cost_center_id', value: cost_center_id || null }
         ];
         
         fieldsToLog.forEach(item => {
@@ -2009,7 +2009,7 @@ app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) =
 // Update employee (admin only)
 app.put('/api/employees/:id', requireAuth, requireRole('admin'), async (req, res) => {
     const { id } = req.params;
-    const { name, employee_number, position, department, supervisor_id, gl_account_id } = req.body;
+    const { name, employee_number, position, department, supervisor_id, cost_center_id } = req.body;
     
     // Validation
     if (!name || name.trim().length === 0) {
@@ -2083,7 +2083,7 @@ app.put('/api/employees/:id', requireAuth, requireRole('admin'), async (req, res
         
         const query = `
             UPDATE employees 
-            SET name = ?, employee_number = ?, position = ?, department = ?, supervisor_id = ?, gl_account_id = ?
+            SET name = ?, employee_number = ?, position = ?, department = ?, supervisor_id = ?, cost_center_id = ?
             WHERE id = ?
         `;
         
@@ -2093,7 +2093,7 @@ app.put('/api/employees/:id', requireAuth, requireRole('admin'), async (req, res
             position ? position.trim() : null, 
             department ? department.trim() : null, 
             supervisor_id || null,
-            gl_account_id || null,
+            cost_center_id || null,
             id
         ];
         
@@ -2128,7 +2128,7 @@ app.put('/api/employees/:id', requireAuth, requireRole('admin'), async (req, res
                 { field: 'position', oldValue: currentEmployee.position, newValue: position ? position.trim() : null },
                 { field: 'department', oldValue: currentEmployee.department, newValue: department ? department.trim() : null },
                 { field: 'supervisor_id', oldValue: currentEmployee.supervisor_id, newValue: supervisor_id || null },
-                { field: 'gl_account_id', oldValue: currentEmployee.gl_account_id, newValue: gl_account_id || null }
+                { field: 'cost_center_id', oldValue: currentEmployee.cost_center_id, newValue: cost_center_id || null }
             ];
             
             let changesDetected = false;
