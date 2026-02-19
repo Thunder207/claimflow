@@ -3517,13 +3517,29 @@ app.put('/api/travel-auth/:id/approve', requireAuth, requireRole('supervisor'), 
             }
             
             
+            // Auto-create trip from approved authorization
+            db.run(`INSERT INTO trips (employee_id, trip_name, destination, purpose, start_date, end_date, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'active')`,
+                [at.employee_id, at.name || at.destination, at.destination || '', at.purpose || '', at.start_date, at.end_date],
+                function(tripErr) {
+                    if (tripErr) {
+                        console.error('❌ Error auto-creating trip from auth:', tripErr);
+                    } else {
+                        const tripId = this.lastID;
+                        // Link the auth to the trip
+                        db.run('UPDATE travel_authorizations SET trip_id = ? WHERE id = ?', [tripId, atId]);
+                        console.log(`✅ Auto-created trip #${tripId} from approved auth #${atId}`);
+                    }
+                }
+            );
+
             // Notify employee
             createNotification(at.employee_id, 'at_approved', 
-                `Your Authorization to Travel for ${at.destination} has been approved.`);
+                `Your Authorization to Travel for ${at.name || at.destination} has been approved. A trip has been created automatically.`);
             
             res.json({ 
                 success: true, 
-                message: 'Travel Authorization approved successfully!' 
+                message: 'Travel Authorization approved and trip created!' 
             });
         });
     });
