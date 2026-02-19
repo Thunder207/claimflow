@@ -225,7 +225,7 @@ try {
                     aria-controls="chart-tab" tabindex="-1" data-i18n="org_chart">🏢 Organization Chart</button>
             <button class="nav-tab" onclick="showTab('sage300')" id="sage300-tab-btn" style="display: none;" role="tab" 
                     aria-selected="false" aria-controls="sage300-tab" tabindex="-1" data-i18n="sage_tab">💰 Sage 300</button>
-            <button class="nav-tab" onclick="showTab('njc-rates')" id="njc-rates-tab-btn" role="tab" 
+            <button class="nav-tab" onclick="showTab('njc-rates')" id="njc-rates-tab-btn" style="display: none;" role="tab" 
                     aria-selected="false" aria-controls="njc-rates-tab" tabindex="-1" data-i18n="njc_tab">📋 NJC Rates</button>
         </div>
 
@@ -712,6 +712,7 @@ try {
                 employeesBtn.innerHTML = '👥 Employee Directory';
                 chartBtn.innerHTML = '🏢 Organization Chart';
                 sage300Btn.style.display = 'inline-block';
+                document.getElementById('njc-rates-tab-btn').style.display = 'inline-block';
                 addEmployeeBtn.style.display = 'inline-block';
                 
                 document.getElementById('expenses-section-title').textContent = '📊 All System Expenses (Admin View)';
