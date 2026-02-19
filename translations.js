@@ -189,7 +189,169 @@ const TRANSLATIONS = {
     // Language toggle
     language: "Language",
     english: "EN",
-    french: "FR"
+    french: "FR",
+    
+    // ===== EMPLOYEE DASHBOARD - ADDITIONAL TRANSLATIONS =====
+    
+    // Header and navigation
+    my_expenses: "My Expenses",
+    notifications: "Notifications",
+    notification_bell: "Notifications",
+    no_notifications: "No notifications",
+    
+    // Tab navigation
+    expenses: "Expenses",
+    trips: "Trips",
+    history: "History",
+    
+    // Expenses section
+    add_expense: "Add Expense",
+    standalone_expenses_guide: "Standalone Expenses — for items not tied to a business trip.",
+    added_to_draft: "Added to draft!",
+    error_message: "Error",
+    expense_category: "Expense Category",
+    choose_category: "Choose category...",
+    transport: "Transport",
+    phone_telecom: "Phone/Telecom", 
+    office_supplies: "Office Supplies",
+    professional_development: "Professional Development",
+    parking: "Parking",
+    internet: "Internet",
+    other: "Other",
+    vendor_details: "Vendor/Details",
+    description_optional: "Description (Optional)",
+    receipt_photo: "Receipt Photo",
+    add_to_draft: "Add to Draft",
+    
+    // Draft expenses
+    draft_expenses: "Draft Expenses",
+    submit_all_approval: "Submit All for Approval",
+    clear_all: "Clear All",
+    expense_submitted_successfully: "Expense submitted successfully!",
+    something_went_wrong: "Something went wrong",
+    
+    // Trip selection and expenses
+    select_trip: "-- Select a trip --",
+    create_new_trip: "✈️ Create New Trip",
+    refresh: "🔄 Refresh",
+    what_expense_type: "What type of expense is this?",
+    choose_expense_type: "Choose your expense type...",
+    breakfast_rate: "Breakfast - $23.45",
+    lunch_rate: "Lunch - $29.75", 
+    dinner_rate: "Dinner - $47.05",
+    incidentals_rate: "Incidentals - $32.08",
+    vehicle_km: "Vehicle (per km) - $0.68",
+    hotel_receipt_required: "Hotel (Receipt Required) - No Limit",
+    other_expense_custom: "Other Expense (Custom Amount)",
+    
+    // Hotel fields
+    checkin_date: "Check-in Date",
+    checkout_date: "Check-out Date",
+    
+    // Location and details
+    city_province: "City, Province",
+    establishment_name: "Establishment Name",
+    additional_notes: "Additional notes",
+    upload_receipt: "Upload Receipt",
+    
+    // Action buttons
+    submit_expense: "Submit Expense",
+    create_trip: "Create Trip",
+    
+    // Trip creation modal
+    trip_creation: "Trip Creation",
+    close: "Close",
+    
+    // History section
+    submitted_expenses: "Submitted Expenses",
+    filter_placeholder: "Filter by expense type, status, vendor, or amount...",
+    no_submitted_expenses: "No submitted expenses yet.",
+    start_by_submitting: "Start by submitting some expenses above!",
+    
+    // Status badges
+    status_submitted: "Submitted",
+    status_approved: "Approved", 
+    status_rejected: "Rejected",
+    status_pending: "Pending",
+    
+    // ===== ADMIN DASHBOARD - ADDITIONAL TRANSLATIONS =====
+    
+    // Role descriptions
+    admin_role_desc: "Admin: All employees, all expenses, full management",
+    supervisor_role_desc: "Supervisor: Your team only, approval powers",
+    
+    // Section titles
+    all_expenses_admin_view: "All Expenses (Admin View)",
+    team_expenses_supervisor_view: "Team Expenses (Supervisor View)",
+    
+    // Search and filters
+    search_label: "Search:",
+    search_expenses_placeholder: "Filter by employee name, expense type, status, or vendor...",
+    loading_expenses: "Loading expenses...",
+    
+    // Employee management
+    managing_employees: "Managing Employees",
+    admin_help_text: "View and manage all employees in the system. Add new employees, edit details, and organize reporting structure.",
+    supervisor_help_text: "View your direct reports and their information. Contact admin to make changes.",
+    add_new_employee: "Add New Employee", 
+    full_name: "Full Name",
+    employee_number: "Employee Number",
+    position: "Position",
+    department: "Department",
+    reports_to: "Reports To",
+    no_supervisor: "No Supervisor",
+    
+    // Form actions
+    save_employee: "Save Employee",
+    cancel_action: "Cancel",
+    
+    // Loading states
+    loading_employees: "Loading employees...",
+    
+    // Organization chart
+    organization_chart: "Organization Chart",
+    
+    // NJC Rates section
+    njc_travel_rates: "NJC Travel Rates",
+    njc_desc: "Current National Joint Council per diem rates for travel expenses",
+    last_updated: "Last updated",
+    
+    // Sage 300 section  
+    sage300_integration: "Sage 300 Integration",
+    sage300_desc: "Integration with Sage 300 ERP system for financial reporting",
+    
+    // ===== FORM VALIDATION AND MESSAGES =====
+    
+    // Required field messages
+    field_required_asterisk: "*",
+    amount_dollar: "Amount ($)",
+    required_field: "*",
+    
+    // Placeholders
+    trip_name_placeholder: "e.g., Montreal Business Meeting", 
+    purpose_placeholder: "e.g., Client presentation and contract negotiation",
+    amount_placeholder_zero: "0.00",
+    city_province_placeholder: "City, Province",
+    restaurant_hotel_placeholder: "Restaurant/Hotel name",
+    additional_details_placeholder: "Additional details about the expense",
+    
+    // ===== COMMON UI ELEMENTS =====
+    
+    // Numbers and symbols
+    dollar_sign: "$",
+    percentage_sign: "%",
+    dash_placeholder: "-",
+    
+    // Time and dates
+    today: "Today",
+    yesterday: "Yesterday",
+    this_week: "This week",
+    this_month: "This month",
+    
+    // Additional missing keys
+    add_expense_to_trip: "Add Expense to Trip",
+    approved: "Approved",
+    brief_description_placeholder: "Brief description of the expense..."
   },
   
   fr: {
@@ -382,7 +544,169 @@ const TRANSLATIONS = {
     // Sélecteur de langue
     language: "Langue",
     english: "EN",
-    french: "FR"
+    french: "FR",
+    
+    // ===== TABLEAU DE BORD EMPLOYÉ - TRADUCTIONS SUPPLÉMENTAIRES =====
+    
+    // En-tête et navigation
+    my_expenses: "Mes dépenses",
+    notifications: "Notifications",
+    notification_bell: "Notifications",
+    no_notifications: "Aucune notification",
+    
+    // Navigation par onglets
+    expenses: "Dépenses",
+    trips: "Voyages", 
+    history: "Historique",
+    
+    // Section des dépenses
+    add_expense: "Ajouter une dépense",
+    standalone_expenses_guide: "Dépenses autonomes — pour les articles non liés à un voyage d'affaires.",
+    added_to_draft: "Ajouté au brouillon !",
+    error_message: "Erreur",
+    expense_category: "Catégorie de dépense",
+    choose_category: "Choisir une catégorie...",
+    transport: "Transport",
+    phone_telecom: "Téléphone/Télécom",
+    office_supplies: "Fournitures de bureau",
+    professional_development: "Perfectionnement professionnel", 
+    parking: "Stationnement",
+    internet: "Internet",
+    other: "Autre",
+    vendor_details: "Fournisseur/Détails",
+    description_optional: "Description (Facultative)",
+    receipt_photo: "Photo du reçu",
+    add_to_draft: "Ajouter au brouillon",
+    
+    // Brouillons de dépenses
+    draft_expenses: "Brouillons de dépenses",
+    submit_all_approval: "Soumettre tout pour approbation",
+    clear_all: "Effacer tout",
+    expense_submitted_successfully: "Dépense soumise avec succès !",
+    something_went_wrong: "Quelque chose a mal fonctionné",
+    
+    // Sélection de voyage et dépenses
+    select_trip: "-- Sélectionner un voyage --",
+    create_new_trip: "✈️ Créer un nouveau voyage",
+    refresh: "🔄 Actualiser",
+    what_expense_type: "Quel type de dépense est-ce ?",
+    choose_expense_type: "Choisissez votre type de dépense...",
+    breakfast_rate: "Petit-déjeuner - 23,45 $",
+    lunch_rate: "Déjeuner - 29,75 $",
+    dinner_rate: "Dîner - 47,05 $", 
+    incidentals_rate: "Faux frais - 32,08 $",
+    vehicle_km: "Véhicule (par km) - 0,68 $",
+    hotel_receipt_required: "Hôtel (Reçu requis) - Aucune limite",
+    other_expense_custom: "Autre dépense (Montant personnalisé)",
+    
+    // Champs d'hôtel
+    checkin_date: "Date d'arrivée",
+    checkout_date: "Date de départ",
+    
+    // Lieu et détails
+    city_province: "Ville, Province",
+    establishment_name: "Nom de l'établissement",
+    additional_notes: "Notes supplémentaires",
+    upload_receipt: "Télécharger le reçu",
+    
+    // Boutons d'action
+    submit_expense: "Soumettre la dépense",
+    create_trip: "Créer le voyage",
+    
+    // Modal de création de voyage
+    trip_creation: "Création de voyage",
+    close: "Fermer",
+    
+    // Section historique
+    submitted_expenses: "Dépenses soumises",
+    filter_placeholder: "Filtrer par type de dépense, statut, fournisseur ou montant...",
+    no_submitted_expenses: "Aucune dépense soumise pour le moment.",
+    start_by_submitting: "Commencez par soumettre quelques dépenses ci-dessus !",
+    
+    // Badges de statut
+    status_submitted: "Soumis",
+    status_approved: "Approuvé",
+    status_rejected: "Rejeté", 
+    status_pending: "En attente",
+    
+    // ===== TABLEAU DE BORD ADMIN - TRADUCTIONS SUPPLÉMENTAIRES =====
+    
+    // Descriptions des rôles
+    admin_role_desc: "Admin : Tous les employés, toutes les dépenses, gestion complète",
+    supervisor_role_desc: "Superviseur : Votre équipe seulement, pouvoirs d'approbation",
+    
+    // Titres de sections
+    all_expenses_admin_view: "Toutes les dépenses (Vue administrateur)",
+    team_expenses_supervisor_view: "Dépenses d'équipe (Vue superviseur)",
+    
+    // Recherche et filtres
+    search_label: "Recherche :",
+    search_expenses_placeholder: "Filtrer par nom d'employé, type de dépense, statut ou fournisseur...",
+    loading_expenses: "Chargement des dépenses...",
+    
+    // Gestion des employés
+    managing_employees: "Gestion des employés",
+    admin_help_text: "Voir et gérer tous les employés du système. Ajouter de nouveaux employés, modifier les détails et organiser la structure hiérarchique.",
+    supervisor_help_text: "Voir vos rapports directs et leurs informations. Contactez l'administrateur pour apporter des modifications.",
+    add_new_employee: "Ajouter un nouvel employé",
+    full_name: "Nom complet",
+    employee_number: "Numéro d'employé",
+    position: "Poste",
+    department: "Département",
+    reports_to: "Relève de",
+    no_supervisor: "Aucun superviseur",
+    
+    // Actions de formulaire
+    save_employee: "Enregistrer l'employé",
+    cancel_action: "Annuler",
+    
+    // États de chargement
+    loading_employees: "Chargement des employés...",
+    
+    // Organigramme
+    organization_chart: "Organigramme",
+    
+    // Section des taux CNM
+    njc_travel_rates: "Taux de voyage CNM",
+    njc_desc: "Taux per diem actuels du Conseil national mixte pour les dépenses de voyage",
+    last_updated: "Dernière mise à jour",
+    
+    // Section Sage 300
+    sage300_integration: "Intégration Sage 300",
+    sage300_desc: "Intégration avec le système ERP Sage 300 pour les rapports financiers",
+    
+    // ===== VALIDATION DE FORMULAIRE ET MESSAGES =====
+    
+    // Messages de champ obligatoire
+    field_required_asterisk: "*",
+    amount_dollar: "Montant ($)",
+    required_field: "*",
+    
+    // Espaces réservés
+    trip_name_placeholder: "p. ex., Réunion d'affaires à Montréal",
+    purpose_placeholder: "p. ex., Présentation client et négociation de contrat",
+    amount_placeholder_zero: "0,00",
+    city_province_placeholder: "Ville, Province", 
+    restaurant_hotel_placeholder: "Nom du restaurant/hôtel",
+    additional_details_placeholder: "Détails supplémentaires sur la dépense",
+    
+    // ===== ÉLÉMENTS D'INTERFACE COMMUNS =====
+    
+    // Nombres et symboles
+    dollar_sign: "$",
+    percentage_sign: "%", 
+    dash_placeholder: "-",
+    
+    // Temps et dates
+    today: "Aujourd'hui",
+    yesterday: "Hier",
+    this_week: "Cette semaine",
+    this_month: "Ce mois-ci",
+    
+    // Clés supplémentaires manquantes
+    add_expense_to_trip: "Ajouter une dépense au voyage",
+    approved: "Approuvé",
+    brief_description_placeholder: "Brève description de la dépense..."
   }
 };
 
@@ -451,6 +775,135 @@ function updateLanguageToggle() {
 function updateCustomTranslations() {
   // Handle dynamic content that can't use data-i18n
   // This will be called by individual pages as needed
+  
+  // Handle select options which can't use data-i18n directly
+  updateSelectOptions();
+  
+  // Update any dynamic content
+  updateDynamicContent();
+}
+
+function updateSelectOptions() {
+  // Update standalone expense categories
+  const saCategorySelect = document.getElementById('sa-category');
+  if (saCategorySelect) {
+    const options = saCategorySelect.querySelectorAll('option');
+    options.forEach(option => {
+      const value = option.value;
+      switch(value) {
+        case '':
+          option.textContent = t('choose_category');
+          break;
+        case 'Transport':
+          option.textContent = '🚗 ' + t('transport');
+          break;
+        case 'Phone/Telecom':
+          option.textContent = '📱 ' + t('phone_telecom');
+          break;
+        case 'Office Supplies':
+          option.textContent = '📝 ' + t('office_supplies');
+          break;
+        case 'Professional Development':
+          option.textContent = '🎓 ' + t('professional_development');
+          break;
+        case 'Parking':
+          option.textContent = '🅿️ ' + t('parking');
+          break;
+        case 'Internet':
+          option.textContent = '🌐 ' + t('internet');
+          break;
+        case 'Other':
+          option.textContent = '📋 ' + t('other');
+          break;
+      }
+    });
+  }
+  
+  // Update trip expense type options
+  const expenseTypeSelect = document.getElementById('expense-type');
+  if (expenseTypeSelect) {
+    const options = expenseTypeSelect.querySelectorAll('option');
+    options.forEach(option => {
+      const value = option.value;
+      switch(value) {
+        case '':
+          option.textContent = t('choose_expense_type');
+          break;
+        case 'breakfast':
+          option.textContent = '🥐 ' + t('breakfast_rate');
+          break;
+        case 'lunch':
+          option.textContent = '🥗 ' + t('lunch_rate');
+          break;
+        case 'dinner':
+          option.textContent = '🍽️ ' + t('dinner_rate');
+          break;
+        case 'incidentals':
+          option.textContent = '📱 ' + t('incidentals_rate');
+          break;
+        case 'vehicle_km':
+          option.textContent = '🚗 ' + t('vehicle_km');
+          break;
+        case 'hotel':
+          option.textContent = '🏨 ' + t('hotel_receipt_required');
+          break;
+        case 'other':
+          option.textContent = '📝 ' + t('other_expense_custom');
+          break;
+      }
+    });
+  }
+  
+  // Update trip selection dropdown
+  const tripSelect = document.getElementById('trip-select');
+  if (tripSelect) {
+    const firstOption = tripSelect.querySelector('option[value=""]');
+    if (firstOption) {
+      firstOption.textContent = t('select_trip');
+    }
+  }
+  
+  // Update admin role selector
+  const roleSelect = document.getElementById('role-selector');
+  if (roleSelect) {
+    const options = roleSelect.querySelectorAll('option');
+    options.forEach(option => {
+      const value = option.value;
+      switch(value) {
+        case '':
+          option.textContent = t('select_role');
+          break;
+        case 'admin':
+          option.textContent = '🔧 ' + t('system_administrator');
+          break;
+        case 'supervisor':
+          option.textContent = '👔 ' + t('supervisor_manager');
+          break;
+      }
+    });
+  }
+  
+  // Update supervisor selector
+  const supervisorSelect = document.getElementById('supervisor-selector');
+  if (supervisorSelect) {
+    const firstOption = supervisorSelect.querySelector('option[value=""]');
+    if (firstOption) {
+      firstOption.textContent = t('select_name');
+    }
+  }
+}
+
+function updateDynamicContent() {
+  // Update any content that needs special handling
+  
+  // Update role descriptions with proper formatting
+  const roleDesc = document.querySelector('[data-i18n="role_descriptions"]');
+  if (roleDesc) {
+    roleDesc.innerHTML = `
+      🔧 <strong>${t('admin_role_desc').split(':')[0]}:</strong> ${t('admin_role_desc').split(':')[1]}
+      • 👔 <strong>${t('supervisor_role_desc').split(':')[0]}:</strong> ${t('supervisor_role_desc').split(':')[1]}
+    `;
+  }
 }
 
 // Initialize language based on URL parameter or stored preference

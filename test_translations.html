@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Translation Test</title>
+    <script src="/translations.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; }
+        button { margin: 5px; padding: 8px 15px; }
+        .language-toggle { margin-bottom: 20px; }
+        .language-toggle button { background: #4a90e2; color: white; border: none; border-radius: 5px; }
+        .language-toggle button.active { background: #2c5aa0; }
+    </style>
+</head>
+<body>
+    <h1>ClaimFlow Bilingual Translation Test</h1>
+    
+    <div class="language-toggle">
+        <button id="lang-en" onclick="setLanguage('en')" data-i18n="english">EN</button>
+        <button id="lang-fr" onclick="setLanguage('fr')" data-i18n="french">FR</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Dashboard Elements</h2>
+        <p data-i18n="dashboard_title">Employee Dashboard</p>
+        <p data-i18n="welcome_employee">Welcome</p>
+        <p data-i18n="my_expenses">My Expenses</p>
+        <p data-i18n="total_amount">Total Amount</p>
+    </div>
+    
+    <div class="test-section">
+        <h2>Form Elements</h2>
+        <label data-i18n="expense_category">Expense Category</label><br>
+        <label data-i18n="date">Date</label><br>
+        <label data-i18n="amount_dollar">Amount ($)</label><br>
+        <label data-i18n="vendor_details">Vendor/Details</label><br>
+    </div>
+    
+    <div class="test-section">
+        <h2>Action Buttons</h2>
+        <button data-i18n="add_to_draft">Add to Draft</button>
+        <button data-i18n="submit_all_approval">Submit All for Approval</button>
+        <button data-i18n="clear_all">Clear All</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Select Options Test</h2>
+        <select id="test-category">
+            <option value="">Choose category...</option>
+            <option value="Transport">Transport</option>
+            <option value="Phone/Telecom">Phone/Telecom</option>
+            <option value="Office Supplies">Office Supplies</option>
+        </select>
+    </div>
+    
+    <div class="test-section">
+        <h2>Status Messages</h2>
+        <p data-i18n="loading">Loading...</p>
+        <p data-i18n="approved">Approved</p>
+        <p data-i18n="pending">Pending</p>
+        <p data-i18n="rejected">Rejected</p>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Testing ClaimFlow bilingual translations...');
+            console.log('Available languages:', Object.keys(TRANSLATIONS));
+            console.log('Current language:', localStorage.getItem('claimflow_lang') || 'en');
+            console.log('Total translation keys:', Object.keys(TRANSLATIONS.en).length);
+            
+            // Test select option updates
+            const testSelect = document.getElementById('test-category');
+            if (testSelect) {
+                const options = testSelect.querySelectorAll('option');
+                options.forEach(option => {
+                    const value = option.value;
+                    switch(value) {
+                        case '':
+                            option.textContent = t('choose_category');
+                            break;
+                        case 'Transport':
+                            option.textContent = '🚗 ' + t('transport');
+                            break;
+                        case 'Phone/Telecom':
+                            option.textContent = '📱 ' + t('phone_telecom');
+                            break;
+                        case 'Office Supplies':
+                            option.textContent = '📝 ' + t('office_supplies');
+                            break;
+                    }
+                });
+            }
+            
+            initializeLanguage();
+        });
+        
+        // Override updateCustomTranslations to test select options
+        function updateCustomTranslations() {
+            updateSelectOptions();
+        }
+        
+        function updateSelectOptions() {
+            const testSelect = document.getElementById('test-category');
+            if (testSelect) {
+                const options = testSelect.querySelectorAll('option');
+                options.forEach(option => {
+                    const value = option.value;
+                    switch(value) {
+                        case '':
+                            option.textContent = t('choose_category');
+                            break;
+                        case 'Transport':
+                            option.textContent = '🚗 ' + t('transport');
+                            break;
+                        case 'Phone/Telecom':
+                            option.textContent = '📱 ' + t('phone_telecom');
+                            break;
+                        case 'Office Supplies':
+                            option.textContent = '📝 ' + t('office_supplies');
+                            break;
+                    }
+                });
+            }
+        }
+    </script>
+</body>
+</html>

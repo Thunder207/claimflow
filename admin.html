@@ -260,10 +260,10 @@ try {
             <!-- Search/Filter Box -->
             <div style="margin-bottom: 20px; background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;">
                 <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                    <label for="expense-search" style="font-weight: 500; color: #495057;">🔍 Search:</label>
+                    <label for="expense-search" style="font-weight: 500; color: #495057;" data-i18n="search_label">🔍 Search:</label>
                     <input type="text" 
                            id="expense-search" 
-                           placeholder="Filter by employee name, expense type, status, or vendor..."
+                           placeholder="Filter by employee name, expense type, status, or vendor..." data-i18n="search_expenses_placeholder"
                            style="flex: 1; min-width: 300px; padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px;"
                            autocomplete="off"
                            aria-describedby="search-help"
@@ -283,7 +283,7 @@ try {
             <div id="expenses-container" aria-live="polite" aria-label="Expenses list">
                 <div class="loading">
                     <div class="spinner" role="status" aria-label="Loading expenses"></div>
-                    <p>Loading expenses...</p>
+                    <p data-i18n="loading_expenses">Loading expenses...</p>
                 </div>
             </div>
         </div>
@@ -292,40 +292,40 @@ try {
             <div class="section-header">
                 <span id="employees-section-title">👥 Employee Directory</span>
                 <div style="float: right;" id="employee-actions">
-                    <button class="btn btn-primary" onclick="showAddEmployeeForm()" id="add-employee-btn" style="display: none;" title="Add a new employee to the system">➕ Add New Employee</button>
+                    <button class="btn btn-primary" onclick="showAddEmployeeForm()" id="add-employee-btn" style="display: none;" title="Add a new employee to the system" data-i18n="add_new_employee">➕ Add New Employee</button>
                 </div>
             </div>
             <div style="background: #f8f9ff; padding: 12px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #667eea;" id="employee-help">
                 <div style="font-size: 14px; color: #2c3e50; margin-bottom: 6px;">
-                    <strong>💡 Managing Employees</strong>
+                    <strong data-i18n="managing_employees">💡 Managing Employees</strong>
                 </div>
                 <div style="font-size: 13px; color: #666; line-height: 1.4;">
-                    <span id="employee-help-text">View and manage employee information. Admins can add, edit, and organize reporting structure.</span>
+                    <span id="employee-help-text" data-i18n="admin_help_text">View and manage employee information. Admins can add, edit, and organize reporting structure.</span>
                 </div>
             </div>
             
             <!-- Add Employee Form (Hidden by default) -->
             <div id="add-employee-form" style="display: none; background: linear-gradient(135deg, #f8fcff 0%, #e8f4fd 100%); padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #007bff;">
-                <h4 style="margin-bottom: 15px; color: #2c3e50;">➕ Add New Employee</h4>
+                <h4 style="margin-bottom: 15px; color: #2c3e50;" data-i18n="add_new_employee">➕ Add New Employee</h4>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
                     <div class="form-group">
-                        <label for="new-employee-name">Full Name *</label>
+                        <label for="new-employee-name" data-i18n="full_name">Full Name *</label>
                         <input type="text" id="new-employee-name" class="form-control" placeholder="John Smith" required>
                     </div>
                     <div class="form-group">
-                        <label for="new-employee-number">Employee Number *</label>
+                        <label for="new-employee-number" data-i18n="employee_number">Employee Number *</label>
                         <input type="text" id="new-employee-number" class="form-control" placeholder="EMP001" required>
                     </div>
                     <div class="form-group">
-                        <label for="new-employee-position">Position</label>
+                        <label for="new-employee-position" data-i18n="position">Position</label>
                         <input type="text" id="new-employee-position" class="form-control" placeholder="Financial Analyst">
                     </div>
                     <div class="form-group">
-                        <label for="new-employee-department">Department</label>
+                        <label for="new-employee-department" data-i18n="department">Department</label>
                         <input type="text" id="new-employee-department" class="form-control" placeholder="Finance">
                     </div>
                     <div class="form-group">
-                        <label for="new-employee-supervisor">Reports To</label>
+                        <label for="new-employee-supervisor" data-i18n="reports_to">Reports To</label>
                         <select id="new-employee-supervisor" class="form-control">
                             <option value="">No supervisor (Top Level)</option>
                         </select>
@@ -386,7 +386,7 @@ try {
             <div id="employees-container">
                 <div class="loading">
                     <div class="spinner"></div>
-                    <p>Loading employees...</p>
+                    <p data-i18n="loading_employees">Loading employees...</p>
                 </div>
             </div>
         </div>
@@ -777,7 +777,7 @@ try {
 
         async function loadExpenses() {
             const container = document.getElementById('expenses-container');
-            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading expenses...</p></div>';
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p data-i18n="loading_expenses">Loading expenses...</p></div>';
             
             try {
                 const response = await fetch('/api/expenses', {
@@ -1021,7 +1021,7 @@ try {
 
         async function loadExpensesWithSearch() {
             const container = document.getElementById('expenses-container');
-            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading expenses...</p></div>';
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p data-i18n="loading_expenses">Loading expenses...</p></div>';
             
             try {
                 const response = await fetch('/api/expenses', {
@@ -1105,7 +1105,7 @@ try {
 
         async function loadEmployees() {
             const container = document.getElementById('employees-container');
-            container.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading employees...</p></div>';
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><p data-i18n="loading_employees">Loading employees...</p></div>';
             
             try {
                 const response = await fetch('/api/employees', {

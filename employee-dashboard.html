@@ -537,25 +537,25 @@
         <div class="stats">
             <div class="stat-card">
                 <div class="stat-value" id="total-expenses">-</div>
-                <div class="stat-label">My Expenses</div>
+                <div class="stat-label" data-i18n="my_expenses">My Expenses</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="total-amount">-</div>
-                <div class="stat-label">Total Amount</div>
+                <div class="stat-label" data-i18n="total_amount">Total Amount</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="approved-amount">-</div>
-                <div class="stat-label">Approved</div>
+                <div class="stat-label" data-i18n="approved">Approved</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="pending-count">-</div>
-                <div class="stat-label">Pending</div>
+                <div class="stat-label" data-i18n="pending">Pending</div>
             </div>
         </div>
         
         <div class="nav-tabs">
-            <button class="nav-tab active" onclick="showTab('expenses')" title="Submit standalone expenses">📋 Expenses</button>
-            <button class="nav-tab" onclick="showTab('submit')" title="Add expenses to business trips">🧳 Trips</button>
+            <button class="nav-tab active" onclick="showTab('expenses')" title="Submit standalone expenses" data-i18n="expenses">📋 Expenses</button>
+            <button class="nav-tab" onclick="showTab('submit')" title="Add expenses to business trips" data-i18n="trips">🧳 Trips</button>
             <button class="nav-tab" onclick="showTab('history')" title="Review submitted expenses" data-i18n="expense_history">📜 History</button>
         </div>
         
@@ -567,19 +567,19 @@
                 </div>
             </div>
             
-            <h3 style="margin-bottom: 20px; color: #2c3e50;">📋 Add Expense</h3>
+            <h3 style="margin-bottom: 20px; color: #2c3e50;" data-i18n="add_expense">📋 Add Expense</h3>
             
             <div class="success-message" id="standalone-success" style="display:none;">
-                ✅ <span id="standalone-success-text">Added to draft!</span>
+                ✅ <span id="standalone-success-text" data-i18n="added_to_draft">Added to draft!</span>
             </div>
             <div class="error-message" id="standalone-error" style="display:none;">
-                ❌ <span id="standalone-error-text">Error</span>
+                ❌ <span id="standalone-error-text" data-i18n="error_message">Error</span>
             </div>
             
             <form id="standalone-form" class="expense-form" onsubmit="addStandaloneDraft(event)">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
                     <div class="form-group">
-                        <label for="sa-category">Expense Category *</label>
+                        <label for="sa-category" data-i18n="expense_category">Expense Category *</label>
                         <select id="sa-category" required>
                             <option value="">Choose category...</option>
                             <option value="Transport">🚗 Transport</option>
@@ -593,40 +593,40 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="sa-date">Date *</label>
+                        <label for="sa-date" data-i18n="date">Date *</label>
                         <input type="date" id="sa-date" required>
                     </div>
                     <div class="form-group">
-                        <label for="sa-amount">Amount ($) *</label>
-                        <input type="number" id="sa-amount" step="0.01" min="0.01" placeholder="0.00" required>
+                        <label for="sa-amount" data-i18n="amount_dollar">Amount ($) *</label>
+                        <input type="number" id="sa-amount" step="0.01" min="0.01" placeholder="0.00" data-i18n="amount_placeholder_zero" required>
                     </div>
                     <div class="form-group">
-                        <label for="sa-vendor">Vendor/Details *</label>
+                        <label for="sa-vendor" data-i18n="vendor_details">Vendor/Details *</label>
                         <input type="text" id="sa-vendor" placeholder="e.g., Staples, Bell Canada" required>
                     </div>
                 </div>
                 <div class="form-group" style="margin-top: 15px;">
-                    <label for="sa-description">Description (Optional)</label>
-                    <textarea id="sa-description" rows="2" placeholder="Brief description of the expense..."></textarea>
+                    <label for="sa-description" data-i18n="description_optional">Description (Optional)</label>
+                    <textarea id="sa-description" rows="2" placeholder="Brief description of the expense..." data-i18n="brief_description_placeholder"></textarea>
                 </div>
                 <div class="form-group" style="margin-top: 15px;">
-                    <label>Receipt Photo</label>
+                    <label data-i18n="receipt_photo">Receipt Photo</label>
                     <input type="file" id="sa-receipt" accept="image/*" capture="environment">
                     <div id="sa-ocr-status" style="display:none; margin-top:8px; color:#2196f3; font-size:13px;">🔍 Scanning receipt...</div>
                 </div>
-                <button type="submit" class="btn" style="margin-top: 15px; padding: 12px 30px; font-size: 16px; background: #6c757d; color: white; border: none; border-radius: 8px; cursor: pointer;">➕ Add to Draft</button>
+                <button type="submit" class="btn" style="margin-top: 15px; padding: 12px 30px; font-size: 16px; background: #6c757d; color: white; border: none; border-radius: 8px; cursor: pointer;" data-i18n="add_to_draft">➕ Add to Draft</button>
             </form>
             
             <!-- Draft Expenses List -->
             <div id="sa-draft-section" style="margin-top: 30px; display: none;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <h3 style="color: #2c3e50; margin: 0;">📝 Draft Expenses (<span id="sa-draft-count">0</span>)</h3>
+                    <h3 style="color: #2c3e50; margin: 0;" data-i18n="draft_expenses">📝 Draft Expenses (<span id="sa-draft-count">0</span>)</h3>
                     <span id="sa-draft-total" style="font-size: 18px; font-weight: bold; color: #2196f3;">$0.00</span>
                 </div>
                 <div id="sa-draft-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
                 <div style="margin-top: 20px; display: flex; gap: 15px;">
-                    <button onclick="submitAllStandaloneExpenses()" class="btn btn-primary" style="padding: 14px 40px; font-size: 16px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer;">📤 Submit All for Approval</button>
-                    <button onclick="clearStandaloneDrafts()" class="btn" style="padding: 14px 20px; font-size: 14px; background: #dc3545; color: white; border: none; border-radius: 8px; cursor: pointer;">🗑️ Clear All</button>
+                    <button onclick="submitAllStandaloneExpenses()" class="btn btn-primary" style="padding: 14px 40px; font-size: 16px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer;" data-i18n="submit_all_approval">📤 Submit All for Approval</button>
+                    <button onclick="clearStandaloneDrafts()" class="btn" style="padding: 14px 20px; font-size: 14px; background: #dc3545; color: white; border: none; border-radius: 8px; cursor: pointer;" data-i18n="clear_all">🗑️ Clear All</button>
                 </div>
             </div>
         </div>
@@ -634,18 +634,18 @@
         <div id="submit-tab" class="tab-content">
             
             <div class="success-message" id="success-message">
-                ✅ <span id="success-text">Expense submitted successfully!</span>
+                ✅ <span id="success-text" data-i18n="expense_submitted_successfully">Expense submitted successfully!</span>
             </div>
             
             <div class="error-message" id="error-message">
-                ❌ <span id="error-text">Something went wrong</span>
+                ❌ <span id="error-text" data-i18n="something_went_wrong">Something went wrong</span>
             </div>
 
             <!-- TRIP SELECTOR — FIRST THING USER SEES -->
             <div style="margin-bottom: 20px;">
                 <h3 style="margin-bottom: 15px; color: #2c3e50;">🧳 Select Business Trip</h3>
                 <select id="trip-select" name="trip_id" style="margin-bottom: 10px; width: 100%; padding: 10px; font-size: 15px; border-radius: 8px; border: 2px solid #2196f3;" onchange="handleTripSelection()">
-                    <option value="">-- Select a trip --</option>
+                    <option value="" data-i18n="select_trip">-- Select a trip --</option>
                 </select>
                 <div id="trip-info" style="margin-top: 10px; padding: 10px; border-radius: 8px; display: none;"></div>
                 <div style="margin-top: 10px;">
@@ -662,12 +662,12 @@
             </div>
 
             <!-- EXPENSE FORM — BELOW TRIP SELECTOR -->
-            <h3 style="margin-bottom: 15px; color: #2c3e50;">📝 Add Expense to Trip</h3>
+            <h3 style="margin-bottom: 15px; color: #2c3e50;" data-i18n="add_expense_to_trip">📝 Add Expense to Trip</h3>
             
             <form id="expense-form" class="expense-form">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
                     <div class="form-group">
-                        <label for="expense-type">What type of expense is this? *</label>
+                        <label for="expense-type" data-i18n="what_expense_type">What type of expense is this? *</label>
                         <select id="expense-type" name="expense_type" required onchange="updatePerDiemRate()" title="Choose the category that best matches your expense" aria-describedby="expense-type-help">
                             <option value="">Choose your expense type...</option>
                             <optgroup label="🏛️ Government Per Diem (NJC Fixed Rates - One per day)">
@@ -698,11 +698,11 @@
                     <p style="color: #856404; margin-bottom: 15px; font-size: 13px;">Government policy requires check-in and check-out dates for all hotel claims.</p>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                         <div class="form-group" style="margin-bottom: 0;">
-                            <label for="hotel-checkin">Check-in Date *</label>
+                            <label for="hotel-checkin" data-i18n="checkin_date">Check-in Date *</label>
                             <input type="date" id="hotel-checkin" onchange="calculateHotelNights()" required>
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
-                            <label for="hotel-checkout">Check-out Date *</label>
+                            <label for="hotel-checkout" data-i18n="checkout_date">Check-out Date *</label>
                             <input type="date" id="hotel-checkout" onchange="calculateHotelNights()" required>
                         </div>
                     </div>
