@@ -2970,7 +2970,7 @@ app.post('/api/trips/:id/submit', requireAuth, (req, res) => {
             return res.status(404).json({ error: 'Trip not found' });
         }
         
-        if (trip.status !== 'draft') {
+        if (trip.status !== 'draft' && trip.status !== 'active') {
             return res.status(400).json({ error: 'Trip has already been submitted' });
         }
         
