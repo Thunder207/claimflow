@@ -659,6 +659,36 @@
             </div>
             
             <form id="expense-form" class="expense-form">
+                <!-- STEP 1: Select Trip First -->
+                <div class="form-group" style="margin-bottom: 20px;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                        <label for="trip-select" style="margin: 0; flex: 1; font-size: 16px; font-weight: bold;">🧳 Step 1: Select Business Trip *</label>
+                        <button type="button" id="trip-lock-btn" onclick="toggleTripLock()" style="background: #6c757d; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; display: none;">
+                            🔓 Unlocked
+                        </button>
+                    </div>
+                    <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin-bottom: 12px; font-size: 14px; color: #1565c0;">
+                        <strong>ℹ️ How it works:</strong> All trip expenses must be part of a business trip. Select or create a trip first, then add expenses below.
+                    </div>
+                    <select id="trip-select" name="trip_id" style="margin-bottom: 10px;" onchange="handleTripSelection()">
+                        <option value="">-- Select a trip (all expenses need a trip) --</option>
+                    </select>
+                    <div id="trip-info" style="margin-top: 10px; padding: 10px; border-radius: 8px; display: none;"></div>
+                    <div style="margin-top: 10px;">
+                        <button type="button" onclick="showNewTripModal()" class="btn" style="background: #28a745; padding: 8px 16px; font-size: 14px;" title="Create a new business trip to group expenses">
+                            ➕ Create New Trip
+                        </button>
+                        <button type="button" onclick="loadTrips()" class="btn" style="background: #17a2b8; padding: 8px 16px; font-size: 14px; margin-left: 10px;" title="Reload trip list from server">
+                            🔄 Refresh Trips
+                        </button>
+                        <button type="button" onclick="clearTripSelection()" class="btn" style="background: #6c757d; padding: 8px 16px; font-size: 14px; margin-left: 10px;" title="Clear current selection">
+                            🚫 Clear Selection
+                        </button>
+                    </div>
+                </div>
+
+                <!-- STEP 2: Add Expense Details -->
+                <h4 style="color: #2c3e50; margin: 20px 0 15px;">📝 Step 2: Add Expense Details</h4>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
                     <div class="form-group">
                         <label for="expense-type">What type of expense is this? *</label>
@@ -706,32 +736,7 @@
                     </div>
                 </div>
                 
-                <div class="form-group" style="margin: 20px 0;">
-                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                        <label for="trip-select" style="margin: 0; flex: 1;">🧳 Select Business Trip *</label>
-                        <button type="button" id="trip-lock-btn" onclick="toggleTripLock()" style="background: #6c757d; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; display: none;">
-                            🔓 Unlocked
-                        </button>
-                    </div>
-                    <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin-bottom: 12px; font-size: 14px; color: #1565c0;">
-                        <strong>ℹ️ How it works:</strong> All expenses must be part of a business trip (like Concur). Create a new trip or select an existing draft trip to add expenses.
-                    </div>
-                    <select id="trip-select" name="trip_id" style="margin-bottom: 10px;" onchange="handleTripSelection()">
-                        <option value="">-- Select a trip (all expenses need a trip) --</option>
-                    </select>
-                    <div id="trip-info" style="margin-top: 10px; padding: 10px; border-radius: 8px; display: none;"></div>
-                    <div style="margin-top: 10px;">
-                        <button type="button" onclick="showNewTripModal()" class="btn" style="background: #28a745; padding: 8px 16px; font-size: 14px;" title="Create a new business trip to group expenses">
-                            ➕ Create New Trip
-                        </button>
-                        <button type="button" onclick="loadTrips()" class="btn" style="background: #17a2b8; padding: 8px 16px; font-size: 14px; margin-left: 10px;" title="Reload trip list from server">
-                            🔄 Refresh Trips
-                        </button>
-                        <button type="button" onclick="clearTripSelection()" class="btn" style="background: #6c757d; padding: 8px 16px; font-size: 14px; margin-left: 10px;" title="Clear current selection">
-                            🚫 Clear Selection
-                        </button>
-                    </div>
-                </div>
+                <!-- Trip selector moved to top of form -->
                 
                 <div class="per-diem-info" id="per-diem-display" style="text-align: center; font-size: 15px;">
                     💰 Select expense type above to see official NJC government rates
