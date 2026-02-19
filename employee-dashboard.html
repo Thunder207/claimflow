@@ -2444,11 +2444,12 @@
                 if (response.ok) {
                     const expenses = await response.json();
                     
-                    // Check if this per diem type already exists for the selected date
+                    // Check if this per diem type already exists for the selected date (ignore estimates from travel auth)
                     const existingExpense = expenses.find(expense => 
                         expense.expense_type === selectedType && 
                         expense.date === selectedDate && 
-                        expense.status !== 'rejected'
+                        expense.status !== 'rejected' &&
+                        expense.status !== 'estimate'
                     );
                     
                     if (existingExpense) {

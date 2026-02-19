@@ -1002,7 +1002,7 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
     if (isPerDiem) {
         const hasDuplicate = await new Promise((resolve, reject) => {
             db.get(
-                `SELECT COUNT(*) as count FROM expenses WHERE employee_id = ? AND expense_type = ? AND date = ? AND status != 'rejected'`,
+                `SELECT COUNT(*) as count FROM expenses WHERE employee_id = ? AND expense_type = ? AND date = ? AND status NOT IN ('rejected', 'estimate')`,
                 [req.user.employeeId, expense_type, date],
                 (err, row) => err ? reject(err) : resolve(row.count > 0)
             );
