@@ -3757,37 +3757,31 @@ app.post('/api/travel-auth/:id/expenses', requireAuth, async (req, res) => {
     const emp = await new Promise((resolve, reject) => {
         db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err2, row) => err2 ? reject(err2) : resolve(row));
     });
-    {
-            if (err) return res.status(500).json({ error: 'Database error' });
 
-            // Build description with vehicle/hotel details if applicable
-            let finalDesc = description || '';
-            if (expense_type === 'vehicle_km' && kilometers) {
-                finalDesc = `${vehicle_from || ''} → ${vehicle_to || ''} (${kilometers} km)${finalDesc ? ' — ' + finalDesc : ''}`;
-            }
-            if (expense_type === 'hotel' && hotel_checkin && hotel_checkout) {
-                finalDesc = `Check-in: ${hotel_checkin}, Check-out: ${hotel_checkout}${finalDesc ? ' — ' + finalDesc : ''}`;
-            }
-
-            const mealNames = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', incidentals: 'Incidentals' };
-            const meal_name = mealNames[expense_type] || null;
-
-            db.run(`INSERT INTO expenses (employee_name, employee_id, travel_auth_id, expense_type, meal_name, date, location, amount, vendor, description, status, receipt_photo)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'estimate', NULL)`,
-                [emp.name, req.user.employeeId, atId, expense_type, meal_name, date, location || '', parseFloat(amount), vendor || '', finalDesc, ],
-                function(err) {
-                    if (err) {
-                        console.error('❌ Error adding auth expense:', err);
-                        return res.status(500).json({ error: 'Failed to add expense' });
-                    }
-
-                    // Update auth totals
-                    updateAuthTotals(atId);
-
-                    res.json({ success: true, id: this.lastID, message: 'Estimated expense added!' });
-                }
-            );
+    // Build description with vehicle/hotel details if applicable
+    let finalDesc = description || '';
+    if (expense_type === 'vehicle_km' && kilometers) {
+        finalDesc = `${vehicle_from || ''} → ${vehicle_to || ''} (${kilometers} km)${finalDesc ? ' — ' + finalDesc : ''}`;
     }
+    if (expense_type === 'hotel' && hotel_checkin && hotel_checkout) {
+        finalDesc = `Check-in: ${hotel_checkin}, Check-out: ${hotel_checkout}${finalDesc ? ' — ' + finalDesc : ''}`;
+    }
+
+    const mealNames = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', incidentals: 'Incidentals' };
+    const meal_name = mealNames[expense_type] || null;
+
+    await new Promise((resolve, reject) => {
+        db.run(`INSERT INTO expenses (employee_name, employee_id, travel_auth_id, expense_type, meal_name, date, location, amount, vendor, description, status, receipt_photo)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'estimate', NULL)`,
+            [emp.name, req.user.employeeId, atId, expense_type, meal_name, date, location || '', parseFloat(amount), vendor || '', finalDesc],
+            function(err) {
+                if (err) return reject(err);
+                updateAuthTotals(atId);
+                res.json({ success: true, id: this.lastID, message: 'Estimated expense added!' });
+                resolve();
+            }
+        );
+    });
     } catch (err) {
         console.error('❌ Error in travel auth expense:', err);
         res.status(500).json({ error: 'Database error' });
