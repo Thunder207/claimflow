@@ -1073,16 +1073,16 @@
                         </div>
                     </div>
                 </div>
-        </div>
-        
-        <div id="trips-tab" class="tab-content">
-            <h3 style="margin-bottom: 20px; color: #2c3e50;">🧳 My Trips</h3>
-            <div id="trips-container">
-                <div style="text-align: center; padding: 40px; color: #6c757d;">
-                    <div style="font-size: 48px; margin-bottom: 15px;">🧳</div>
-                    <p>Loading your trips...</p>
+                
+                <!-- My Trips Overview -->
+                <div style="margin-top: 30px; border-top: 2px solid #e9ecef; padding-top: 20px;">
+                    <h3 style="margin-bottom: 15px; color: #2c3e50;">🧳 My Trips</h3>
+                    <div id="trips-container">
+                        <div style="text-align: center; padding: 30px; color: #6c757d;">
+                            <p>Loading your trips...</p>
+                        </div>
+                    </div>
                 </div>
-            </div>
         </div>
 
         <div id="travel-auth-tab" class="tab-content">
@@ -1240,7 +1240,17 @@
         </div>
 
         <div id="history-tab" class="tab-content">
-            <h3 style="margin-bottom: 20px; color: #2c3e50;">📋 My Expense History</h3>
+            <h3 style="margin-bottom: 15px; color: #2c3e50;">📋 My Expense History</h3>
+            
+            <!-- Status Filter Bar -->
+            <div id="history-filters" style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;">
+                <button class="filter-btn active" onclick="filterExpenses('all')" style="padding: 8px 16px; border-radius: 20px; border: 2px solid #667eea; background: #667eea; color: white; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 44px; transition: all 0.2s;">All</button>
+                <button class="filter-btn" onclick="filterExpenses('pending')" style="padding: 8px 16px; border-radius: 20px; border: 2px solid #f0ad4e; background: white; color: #f0ad4e; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 44px; transition: all 0.2s;">⏳ Pending</button>
+                <button class="filter-btn" onclick="filterExpenses('approved')" style="padding: 8px 16px; border-radius: 20px; border: 2px solid #27ae60; background: white; color: #27ae60; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 44px; transition: all 0.2s;">✅ Approved</button>
+                <button class="filter-btn" onclick="filterExpenses('rejected')" style="padding: 8px 16px; border-radius: 20px; border: 2px solid #dc3545; background: white; color: #dc3545; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 44px; transition: all 0.2s;">❌ Rejected</button>
+                <button class="filter-btn" onclick="filterExpenses('returned')" style="padding: 8px 16px; border-radius: 20px; border: 2px solid #e67e22; background: white; color: #e67e22; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 44px; transition: all 0.2s;">↩️ Returned</button>
+            </div>
+            
             <div id="expenses-container">
                 <div style="text-align: center; padding: 40px; color: #6c757d;">
                     <div style="font-size: 48px; margin-bottom: 15px;">📊</div>
@@ -2163,6 +2173,14 @@
         
         // Tab management
         function showTab(tabName) {
+            // Map tab names to their content IDs
+            const tabMap = {
+                'expenses': 'expenses-tab',
+                'travel-auth': 'travel-auth-tab',
+                'submit': 'submit-tab',
+                'history': 'history-tab'
+            };
+            
             document.querySelectorAll('.tab-content').forEach(tab => {
                 tab.classList.remove('active');
             });
@@ -2170,13 +2188,23 @@
                 tab.classList.remove('active');
             });
             
-            document.getElementById(tabName + '-tab').classList.add('active');
-            if (event && event.target) event.target.classList.add('active');
+            const contentId = tabMap[tabName] || (tabName + '-tab');
+            const contentEl = document.getElementById(contentId);
+            if (contentEl) contentEl.classList.add('active');
+            
+            // Find and activate the correct nav button
+            const navButtons = document.querySelectorAll('.nav-tab');
+            navButtons.forEach(btn => {
+                const onclick = btn.getAttribute('onclick');
+                if (onclick && onclick.includes(`'${tabName}'`)) {
+                    btn.classList.add('active');
+                }
+            });
             
             if (tabName === 'history') {
                 loadMyExpenses();
             }
-            if (tabName === 'trips') {
+            if (tabName === 'submit') {
                 loadTrips();
             }
             if (tabName === 'travel-auth') {
@@ -3261,6 +3289,44 @@
             await loadMyExpenses();
         }
 
+        // Store all expenses for filtering
+        let allExpensesCache = [];
+        let currentFilter = 'all';
+        
+        function filterExpenses(status) {
+            currentFilter = status;
+            
+            // Update filter button styles
+            document.querySelectorAll('#history-filters .filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+                btn.style.background = 'white';
+                btn.style.color = btn.style.borderColor;
+            });
+            if (event && event.target) {
+                event.target.classList.add('active');
+                event.target.style.background = event.target.style.borderColor;
+                event.target.style.color = 'white';
+            }
+            
+            const filtered = status === 'all' 
+                ? allExpensesCache 
+                : allExpensesCache.filter(e => e.status === status);
+            
+            displayExpenses(filtered);
+            
+            // Show count
+            const container = document.getElementById('expenses-container');
+            if (filtered.length === 0 && allExpensesCache.length > 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: #6c757d;">
+                        <div style="font-size: 48px; margin-bottom: 15px;">🔍</div>
+                        <p>No ${status} expenses found.</p>
+                        <button onclick="filterExpenses('all')" class="btn" style="margin-top: 15px; background: #667eea; color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer;">Show All Expenses</button>
+                    </div>
+                `;
+            }
+        }
+        
         async function loadMyExpenses() {
             try {
                 const response = await apiCall('/api/my-expenses');
@@ -3278,8 +3344,16 @@
                     return_reason: sanitizeForDisplay(expense.return_reason || '')
                 }));
                 
+                // Cache for filtering
+                allExpensesCache = sanitizedExpenses;
+                
                 updateStats(sanitizedExpenses);
-                displayExpenses(sanitizedExpenses);
+                
+                // Apply current filter
+                const filtered = currentFilter === 'all' 
+                    ? sanitizedExpenses 
+                    : sanitizedExpenses.filter(e => e.status === currentFilter);
+                displayExpenses(filtered);
                 
             } catch (error) {
                 console.error('Error loading expenses:', error);
@@ -4631,14 +4705,14 @@
         // Attach submit/clear button handlers with proper error handling
         function attachTripButtons() {
             // Using event delegation - no need to reattach when buttons are recreated
-            console.log('Event delegation already set up - no need to reattach individual buttons');
+
         }
         
         function handleSubmitTrip(e) {
             e.preventDefault();
             e.stopPropagation();
             
-            console.log('Submit trip button clicked');
+
             
             submitTripForApproval().catch(function(err) {
                 console.error('❌ Submit trip failed:', err);
@@ -4650,7 +4724,7 @@
             e.preventDefault();
             e.stopPropagation();
             
-            console.log('Clear draft button clicked');
+
             clearTripDraft();
         }
         
@@ -4659,7 +4733,7 @@
             if (e.target && e.target.id === 'btn-submit-trip') {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('Submit trip button clicked via event delegation');
+
                 
                 submitTripForApproval().catch(function(err) {
                     console.error('❌ Submit trip failed:', err);
@@ -4670,7 +4744,7 @@
             if (e.target && e.target.id === 'btn-clear-draft') {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('Clear draft button clicked via event delegation');
+
                 clearTripDraft();
             }
         });

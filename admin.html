@@ -564,6 +564,8 @@ try {
                     aria-controls="employees-tab" tabindex="-1" data-i18n="employees_tab">👥 Employee Directory</button>
             <button class="nav-tab" onclick="showTab('chart')" id="chart-tab-btn" role="tab" aria-selected="false" 
                     aria-controls="chart-tab" tabindex="-1" data-i18n="org_chart">🏢 Organization Chart</button>
+            <button class="nav-tab" onclick="showTab('travel-auth')" id="travel-auth-tab-btn" role="tab" aria-selected="false" 
+                    aria-controls="travel-auth-tab" tabindex="-1">✈️ Travel Auth</button>
             <button class="nav-tab" onclick="showTab('sage300')" id="sage300-tab-btn" style="display: none;" role="tab" 
                     aria-selected="false" aria-controls="sage300-tab" tabindex="-1" data-i18n="sage_tab">💰 Sage 300</button>
             <button class="nav-tab" onclick="showTab('njc-rates')" id="njc-rates-tab-btn" style="display: none;" role="tab" 
@@ -814,6 +816,19 @@ try {
                 <div class="loading">
                     <div class="spinner"></div>
                     <p>Loading organization chart...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ✈️ TRAVEL AUTH TAB -->
+        <div id="travel-auth-tab" class="tab-content">
+            <div class="section-header">
+                <span>✈️ Travel Authorization Approvals</span>
+            </div>
+            <div id="travel-auth-container" style="margin-top: 15px;">
+                <div style="text-align: center; padding: 40px; color: #6c757d;">
+                    <div style="font-size: 48px; margin-bottom: 15px;">✈️</div>
+                    <p>Loading travel authorizations...</p>
                 </div>
             </div>
         </div>
@@ -1209,6 +1224,8 @@ try {
                 loadEmployees();
             } else if (tabName === 'chart') {
                 loadOrganizationChart();
+            } else if (tabName === 'travel-auth') {
+                loadTravelAuthApprovals();
             } else if (tabName === 'sage300') {
                 loadSage300Data();
             } else if (tabName === 'njc-rates') {
@@ -2401,6 +2418,146 @@ try {
             localStorage.removeItem('sessionId');
             localStorage.removeItem('user');
             window.location.href = '/login';
+        }
+
+        // ✈️ TRAVEL AUTHORIZATION APPROVAL FUNCTIONALITY
+        async function loadTravelAuthApprovals() {
+            const container = document.getElementById('travel-auth-container');
+            try {
+                const response = await fetch('/api/travel-auth', {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                
+                if (!response.ok) throw new Error('Failed to load');
+                const auths = await response.json();
+                
+                if (auths.length === 0) {
+                    container.innerHTML = `
+                        <div style="text-align: center; padding: 40px; color: #6c757d;">
+                            <div style="font-size: 48px; margin-bottom: 15px;">✈️</div>
+                            <p>No travel authorizations to review.</p>
+                        </div>`;
+                    return;
+                }
+                
+                // Sort: pending first, then by date
+                auths.sort((a, b) => {
+                    if (a.status === 'pending' && b.status !== 'pending') return -1;
+                    if (b.status === 'pending' && a.status !== 'pending') return 1;
+                    return new Date(b.created_at) - new Date(a.created_at);
+                });
+                
+                let html = '';
+                const pending = auths.filter(a => a.status === 'pending');
+                if (pending.length > 0) {
+                    html += `<div style="background: #fff3cd; padding: 12px 16px; border-radius: 8px; margin-bottom: 15px; font-weight: 600; color: #856404;">
+                        ⚠️ ${pending.length} authorization(s) awaiting your approval
+                    </div>`;
+                }
+                
+                html += auths.map(auth => {
+                    const statusMap = {
+                        'pending': { cls: 'status-pending', text: '⏳ Pending', color: '#f0ad4e' },
+                        'approved': { cls: 'status-approved', text: '✅ Approved', color: '#27ae60' },
+                        'rejected': { cls: 'status-rejected', text: '❌ Rejected', color: '#dc3545' },
+                        'draft': { cls: 'status-pending', text: '📝 Draft', color: '#6c757d' }
+                    };
+                    const s = statusMap[auth.status] || statusMap['pending'];
+                    
+                    // Parse details for cost breakdown
+                    let costBreakdown = '';
+                    if (auth.est_total > 0) {
+                        costBreakdown = `
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                                ${auth.est_transport > 0 ? `<div>🚗 Transport: <strong>$${parseFloat(auth.est_transport).toFixed(2)}</strong></div>` : ''}
+                                ${auth.est_lodging > 0 ? `<div>🏨 Lodging: <strong>$${parseFloat(auth.est_lodging).toFixed(2)}</strong></div>` : ''}
+                                ${auth.est_meals > 0 ? `<div>🍽️ Meals: <strong>$${parseFloat(auth.est_meals).toFixed(2)}</strong></div>` : ''}
+                                ${auth.est_other > 0 ? `<div>📋 Other: <strong>$${parseFloat(auth.est_other).toFixed(2)}</strong></div>` : ''}
+                                <div style="font-weight: bold; color: #2c3e50;">💰 Total: <strong>$${parseFloat(auth.est_total).toFixed(2)}</strong></div>
+                            </div>`;
+                    }
+                    
+                    const actions = auth.status === 'pending' ? `
+                        <div style="display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap;">
+                            <button onclick="approveTravelAuth(${auth.id})" class="btn btn-success" style="min-height: 44px; padding: 10px 20px; font-size: 14px;">✅ Approve</button>
+                            <button onclick="rejectTravelAuth(${auth.id})" class="btn btn-danger" style="min-height: 44px; padding: 10px 20px; font-size: 14px;">❌ Reject</button>
+                        </div>` : '';
+                    
+                    return `
+                        <div style="background: white; border: 2px solid ${auth.status === 'pending' ? '#f0ad4e' : '#e9ecef'}; border-radius: 12px; padding: 20px; margin-bottom: 15px; ${auth.status === 'pending' ? 'box-shadow: 0 2px 8px rgba(240,173,78,0.2);' : ''}">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
+                                <div>
+                                    <strong style="font-size: 16px; color: #2c3e50;">${auth.name || auth.destination || 'Travel Authorization'}</strong>
+                                    <div style="font-size: 13px; color: #666; margin-top: 4px;">
+                                        👤 ${auth.employee_name || 'Unknown'} • 📍 ${auth.destination || 'N/A'} • 📅 ${auth.start_date || ''} to ${auth.end_date || ''}
+                                    </div>
+                                    ${auth.purpose ? `<div style="font-size: 13px; color: #888; margin-top: 4px;">📋 ${auth.purpose}</div>` : ''}
+                                </div>
+                                <span class="${s.cls}" style="padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600;">${s.text}</span>
+                            </div>
+                            ${costBreakdown}
+                            ${auth.rejection_reason ? `<div style="margin-top: 10px; padding: 8px 12px; background: #f8d7da; border-radius: 6px; font-size: 13px; color: #721c24;">❌ Rejected: ${auth.rejection_reason}</div>` : ''}
+                            ${actions}
+                        </div>`;
+                }).join('');
+                
+                container.innerHTML = html;
+            } catch (error) {
+                console.error('❌ Error loading travel authorizations:', error);
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: #dc3545;">
+                        <p>❌ Failed to load travel authorizations.</p>
+                        <button onclick="loadTravelAuthApprovals()" class="btn" style="margin-top: 10px; background: #667eea; color: white;">🔄 Retry</button>
+                    </div>`;
+            }
+        }
+        
+        async function approveTravelAuth(id) {
+            try {
+                const response = await fetch(`/api/travel-auth/${id}/approve`, {
+                    method: 'PUT',
+                    headers: { 
+                        'Authorization': `Bearer ${sessionId}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    showMessage('success', '✅ Travel authorization approved!');
+                    loadTravelAuthApprovals();
+                } else {
+                    showMessage('error', data.error || 'Failed to approve');
+                }
+            } catch (error) {
+                showMessage('error', '❌ Network error. Please try again.');
+            }
+        }
+        
+        async function rejectTravelAuth(id) {
+            const reason = prompt('Please provide a reason for rejection:');
+            if (!reason || reason.trim() === '') return;
+            
+            try {
+                const response = await fetch(`/api/travel-auth/${id}/reject`, {
+                    method: 'PUT',
+                    headers: { 
+                        'Authorization': `Bearer ${sessionId}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ rejection_reason: reason.trim() })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    showMessage('success', '❌ Travel authorization rejected.');
+                    loadTravelAuthApprovals();
+                } else {
+                    showMessage('error', data.error || 'Failed to reject');
+                }
+            } catch (error) {
+                showMessage('error', '❌ Network error. Please try again.');
+            }
         }
 
         // 💰 SAGE 300 FUNCTIONALITY
