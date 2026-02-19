@@ -494,6 +494,13 @@ function insertDefaultData() {
                 console.error('❌ Error adding cost_center_id column:', err.message);
             }
         });
+
+        // Add details column for travel authorization per-day breakdown
+        db.run(`ALTER TABLE travel_authorizations ADD COLUMN details TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding details column:', err.message);
+            }
+        });
     }
     
     // Seed NJC rates with historical and current periods
@@ -3324,7 +3331,8 @@ app.post('/api/travel-auth', requireAuth, async (req, res) => {
         est_transport = 0,
         est_lodging = 0,
         est_meals = 0,
-        est_other = 0
+        est_other = 0,
+        details = null
     } = req.body;
     
     // Validation
@@ -3357,14 +3365,14 @@ app.post('/api/travel-auth', requireAuth, async (req, res) => {
             INSERT INTO travel_authorizations 
             (employee_id, destination, start_date, end_date, purpose, 
              est_transport, est_lodging, est_meals, est_other, est_total, 
-             approver_id, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+             approver_id, status, details)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
         `;
         
         const params = [
             req.user.employeeId, destination, start_date, end_date, purpose,
             est_transport, est_lodging, est_meals, est_other, est_total,
-            employee.supervisor_id
+            employee.supervisor_id, details
         ];
         
         db.run(query, params, function(err) {
@@ -3578,7 +3586,8 @@ app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
         est_transport = 0,
         est_lodging = 0,
         est_meals = 0,
-        est_other = 0
+        est_other = 0,
+        details = null
     } = req.body;
     
     // Check ownership and status
@@ -3617,6 +3626,7 @@ app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
                 est_meals = ?,
                 est_other = ?,
                 est_total = ?,
+                details = COALESCE(?, details),
                 status = 'pending',
                 rejection_reason = NULL,
                 updated_at = CURRENT_TIMESTAMP
@@ -3624,7 +3634,7 @@ app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
         `;
         
         const params = [destination, start_date, end_date, purpose, 
-                       est_transport, est_lodging, est_meals, est_other, est_total, atId];
+                       est_transport, est_lodging, est_meals, est_other, est_total, details, atId];
         
         db.run(updateQuery, params, function(err) {
             if (err) {
