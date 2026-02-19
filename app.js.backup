@@ -2189,6 +2189,8 @@ app.put('/api/employees/:id', requireAuth, requireRole('admin'), async (req, res
                 });
             }
             
+            console.log(`✅ Employee ${id} updated`);
+            
             // Log changes for audit trail - compare old vs new values
             const fieldsToCheck = [
                 { field: 'name', oldValue: currentEmployee.name, newValue: name.trim() },
@@ -2297,6 +2299,7 @@ app.delete('/api/employees/:id', requireAuth, requireRole('admin'), (req, res) =
                         });
                     }
                     
+                    console.log(`✅ Employee ${id} deleted`);
                     res.json({ 
                         success: true, 
                         message: 'Employee deleted successfully' 
@@ -2806,6 +2809,7 @@ app.get('/api/trips', requireAuth, (req, res) => {
             return res.status(500).json({ error: 'Failed to fetch trips' });
         }
         
+        console.log(`✅ Fetched ${rows.length} trips for employee ${req.user.employeeId}`);
         res.json(rows);
     });
 });
@@ -2865,6 +2869,7 @@ app.post('/api/trips', requireAuth, async (req, res) => {
             });
         }
         
+        console.log(`✅ Trip created with ID: ${this.lastID}`);
         res.json({ 
             success: true, 
             id: this.lastID, 
@@ -2911,6 +2916,7 @@ app.get('/api/trips/:id', requireAuth, (req, res) => {
             // Calculate total
             const total = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
             
+            console.log(`✅ Fetched trip ${tripId} with ${expenses.length} expenses`);
             res.json({
                 ...trip,
                 expenses: expenses,
@@ -2991,6 +2997,7 @@ app.post('/api/trips/:id/submit', requireAuth, (req, res) => {
                     db.run(`UPDATE travel_authorizations SET trip_id = ? WHERE id = ?`, [tripId, at.id]);
                 }
                 
+                console.log(`✅ Trip ${tripId} submitted for approval with approved AT ${at.id}`);
                 
                 // FEATURE 4: Notify supervisor
                 db.get('SELECT supervisor_id FROM employees WHERE id = ?', [req.user.employeeId], (err2, emp) => {
@@ -3030,6 +3037,7 @@ app.post('/api/upload-receipt', requireAuth, (req, res) => {
         
         fs.writeFileSync(filePath, buffer);
         
+        console.log(`✅ Receipt uploaded: ${fileName}`);
         res.json({ 
             success: true, 
             filename: fileName,
@@ -3057,14 +3065,19 @@ app.post('/api/ocr/scan', requireAuth, upload.single('receipt'), async (req, res
             });
         }
 
+        console.log(`🔍 Processing OCR for receipt: ${req.file.filename}`);
         
         // Run Tesseract OCR on the uploaded image
-        const { data: { text } } = await Tesseract.recognize(req.file.path, 'eng');
+        const { data: { text } } = await Tesseract.recognize(req.file.path, 'eng', {
+            logger: m => console.log(`OCR: ${m.status} - ${Math.round(m.progress * 100)}%`)
+        });
 
+        console.log('📝 Raw OCR Text:', text);
 
         // Smart parsing logic
         const parsedData = parseReceiptText(text);
         
+        console.log('✅ Parsed Receipt Data:', parsedData);
         
         res.json({
             success: true,
@@ -3250,6 +3263,7 @@ app.put('/api/expenses/:id', requireAuth, (req, res) => {
 
         db.run(query, [expense_type, meal_name, date, location, amount, vendor, description, id], function(err) {
             if (err) return res.status(500).json({ success: false, error: 'Failed to update expense' });
+            console.log(`✅ Expense ${id} updated`);
             res.json({ success: true, message: 'Expense updated successfully' });
         });
     });
@@ -3269,12 +3283,14 @@ db.run(`CREATE TABLE IF NOT EXISTS notifications (
     FOREIGN KEY (employee_id) REFERENCES employees (id)
 )`, (err) => {
     if (err) console.error('❌ Error creating notifications table:', err.message);
+    else console.log('✅ Notifications table ready');
 });
 
 function createNotification(employeeId, type, message) {
     db.run('INSERT INTO notifications (employee_id, type, message) VALUES (?, ?, ?)',
         [employeeId, type, message], (err) => {
             if (err) console.error('❌ Notification error:', err.message);
+            else console.log(`📧 Notification created for employee ${employeeId}: ${type}`);
         });
 }
 
@@ -3364,6 +3380,7 @@ app.post('/api/travel-auth', requireAuth, async (req, res) => {
                 });
             }
             
+            console.log(`✅ Travel Authorization created with ID: ${this.lastID}`);
             
             // Notify supervisor
             createNotification(employee.supervisor_id, 'at_pending', 
@@ -3419,6 +3436,7 @@ app.get('/api/travel-auth', requireAuth, (req, res) => {
             return res.status(500).json({ error: 'Failed to fetch travel authorizations' });
         }
         
+        console.log(`✅ Fetched ${rows.length} travel authorizations`);
         res.json(rows);
     });
 });
@@ -3487,6 +3505,7 @@ app.put('/api/travel-auth/:id/approve', requireAuth, requireRole('supervisor'), 
                 return res.status(500).json({ error: 'Failed to approve travel authorization' });
             }
             
+            console.log(`✅ Travel Authorization ${atId} approved`);
             
             // Notify employee
             createNotification(at.employee_id, 'at_approved', 
@@ -3538,6 +3557,7 @@ app.put('/api/travel-auth/:id/reject', requireAuth, requireRole('supervisor'), (
                 return res.status(500).json({ error: 'Failed to reject travel authorization' });
             }
             
+            console.log(`✅ Travel Authorization ${atId} rejected`);
             
             // Notify employee
             createNotification(at.employee_id, 'at_rejected', 
@@ -3618,6 +3638,7 @@ app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
                 return res.status(500).json({ error: 'Failed to update travel authorization' });
             }
             
+            console.log(`✅ Travel Authorization ${atId} updated and resubmitted`);
             
             // Notify supervisor of resubmission
             if (at.approver_id) {
@@ -3672,6 +3693,7 @@ app.post('/api/travel-auth/:id/link-trip/:tripId', requireAuth, (req, res) => {
                 return res.status(500).json({ error: 'Failed to link travel authorization to trip' });
             }
             
+            console.log(`✅ Travel Authorization ${atId} linked to trip ${tripId}`);
             res.json({ 
                 success: true, 
                 message: 'Travel Authorization linked to trip successfully!' 
@@ -4082,6 +4104,7 @@ app.post('/api/signup/:token', (req, res) => {
                             
                             db.run('COMMIT');
                             
+                            console.log(`✅ Employee ${tokenRow.employee_id} completed signup successfully`);
                             
                             res.json({
                                 success: true,
@@ -4157,6 +4180,7 @@ app.post('/api/employees/:id/resend-invite', requireAuth, requireRole('admin'), 
                                 const baseUrl = req.protocol + '://' + req.get('host');
                                 const signupUrl = `${baseUrl}/signup?token=${token}`;
                                 
+                                console.log(`✅ Resent signup invite for employee ${employeeId} (${employee.name})`);
                                 
                                 res.json({
                                     success: true,

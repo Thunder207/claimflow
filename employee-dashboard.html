@@ -2216,7 +2216,6 @@
                 }
                 
                 if (result.success) {
-                    console.log('OCR Results:', result);
                     
                     // Pre-fill form fields only if they are currently empty
                     const vendorField = document.getElementById('vendor');
@@ -3681,7 +3680,6 @@
         }
         
         async function submitTripForApproval() {
-            console.log('Submitting... ' + draftTripExpenses.length + ' expenses');
             if (draftTripExpenses.length === 0) {
                 showMessage('error', '❌ No expenses in trip to submit. Please add expenses first using the form above.');
                 return;
