@@ -883,17 +883,27 @@
                     <option value="" data-i18n="select_trip">-- Select a trip --</option>
                 </select>
                 <div id="trip-info" style="margin-top: 10px; padding: 10px; border-radius: 8px; display: none;"></div>
-                <div style="margin-top: 10px;">
-                    <button type="button" onclick="showNewTripModal()" class="btn" style="background: #28a745; padding: 8px 16px; font-size: 14px;">
-                        ➕ Create New Trip
-                    </button>
-                    <button type="button" onclick="loadTrips()" class="btn" style="background: #17a2b8; padding: 8px 16px; font-size: 14px; margin-left: 10px;">
-                        🔄 Refresh
-                    </button>
-                    <button type="button" id="trip-lock-btn" onclick="toggleTripLock()" style="background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 14px; margin-left: 10px; display: none;">
-                        🔓 Unlocked
-                    </button>
+                
+                <!-- Create trip from approved authorization -->
+                <div style="margin-top: 15px; background: linear-gradient(135deg, #e8f5e8 0%, #f0f8ff 100%); padding: 15px; border-radius: 10px; border-left: 4px solid #28a745;">
+                    <label style="font-weight: 600; color: #2c3e50; margin-bottom: 8px; display: block;">📋 Create Trip from Approved Authorization</label>
+                    <select id="auth-to-trip-select" style="width: 100%; padding: 10px; font-size: 15px; border-radius: 8px; border: 2px solid #28a745; margin-bottom: 10px;">
+                        <option value="">-- Select an approved authorization --</option>
+                    </select>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" onclick="createTripFromAuth()" class="btn" style="background: #28a745; padding: 8px 16px; font-size: 14px;">
+                            ✅ Create Trip
+                        </button>
+                        <button type="button" onclick="loadTrips()" class="btn" style="background: #17a2b8; padding: 8px 16px; font-size: 14px;">
+                            🔄 Refresh
+                        </button>
+                    </div>
+                    <small style="color: #6c757d; display: block; margin-top: 8px;">💡 You must have an approved Travel Authorization before creating a trip. Go to the Travel Auth tab to create one.</small>
                 </div>
+                
+                <button type="button" id="trip-lock-btn" onclick="toggleTripLock()" style="background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 14px; margin-top: 10px; display: none;">
+                    🔓 Unlocked
+                </button>
             </div>
 
             <!-- EXPENSE FORM — BELOW TRIP SELECTOR -->
@@ -1175,29 +1185,29 @@
             
             <form id="create-at-form" onsubmit="createTravelAuth(event)">
                 <div class="form-group">
-                    <label for="at-name">Authorization Name *</label>
-                    <input type="text" id="at-name" placeholder="e.g., Toronto Training Conference Feb 2026" required>
+                    <label for="at-name" data-i18n="trip_name">Trip Name *</label>
+                    <input type="text" id="at-name" placeholder="e.g., Montreal to Toronto Training" required>
                 </div>
                 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                     <div class="form-group">
-                        <label for="at-start-date">Start Date *</label>
+                        <label for="at-start-date" data-i18n="start_date">Start Date *</label>
                         <input type="date" id="at-start-date" required>
                     </div>
                     
                     <div class="form-group">
-                        <label for="at-end-date">End Date *</label>
+                        <label for="at-end-date" data-i18n="end_date">End Date *</label>
                         <input type="date" id="at-end-date" required>
                     </div>
                 </div>
                 
                 <div class="form-group">
-                    <label for="at-destination">Destination</label>
+                    <label for="at-destination" data-i18n="destination">Destination</label>
                     <input type="text" id="at-destination" placeholder="e.g., Toronto, ON">
                 </div>
                 
                 <div class="form-group">
-                    <label for="at-purpose">Purpose of Travel</label>
+                    <label for="at-purpose" data-i18n="purpose">Purpose</label>
                     <textarea id="at-purpose" placeholder="e.g., Annual training conference, business meetings" rows="3"></textarea>
                 </div>
                     
@@ -3585,7 +3595,7 @@
                     if (!hasOptions) {
                         const option = document.createElement('option');
                         option.value = '';
-                        option.textContent = '(No draft trips — create one above)';
+                        option.textContent = '(No draft trips — create one from an approved authorization above)';
                         option.disabled = true;
                         tripSelect.appendChild(option);
                     }
@@ -3593,9 +3603,114 @@
                     // Also render trip cards in the trips tab
                     displayTripCards(trips);
                 }
+                
+                // Also load approved authorizations for the "create trip from auth" dropdown
+                await loadApprovedAuthsForTrips();
+                
             } catch (error) {
                 console.error('❌ Error loading trips:', error);
                 showMessage('error', '❌ Failed to load trips. Please refresh the page.');
+            }
+        }
+        
+        // Load approved travel authorizations into trip creation dropdown
+        async function loadApprovedAuthsForTrips() {
+            try {
+                const response = await fetch('/api/travel-auth', {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                
+                if (response.ok) {
+                    const auths = await response.json();
+                    const approvedAuths = auths.filter(auth => auth.status === 'approved' && !auth.trip_id);
+                    
+                    const select = document.getElementById('auth-to-trip-select');
+                    if (!select) return;
+                    
+                    select.innerHTML = '<option value="">-- Select an approved authorization --</option>';
+                    
+                    approvedAuths.forEach(auth => {
+                        const option = document.createElement('option');
+                        option.value = auth.id;
+                        option.textContent = `✈️ ${auth.name || auth.destination} (${formatDate(auth.start_date)} → ${formatDate(auth.end_date)})${auth.destination ? ' • ' + auth.destination : ''}`;
+                        option.dataset.auth = JSON.stringify(auth);
+                        select.appendChild(option);
+                    });
+                    
+                    if (approvedAuths.length === 0) {
+                        const option = document.createElement('option');
+                        option.value = '';
+                        option.textContent = '(No approved authorizations available)';
+                        option.disabled = true;
+                        select.appendChild(option);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading approved authorizations:', error);
+            }
+        }
+        
+        // Create a trip from a selected approved authorization
+        async function createTripFromAuth() {
+            const select = document.getElementById('auth-to-trip-select');
+            const selectedOption = select.options[select.selectedIndex];
+            
+            if (!selectedOption.value) {
+                showMessage('error', '❌ Please select an approved authorization first.');
+                return;
+            }
+            
+            const auth = JSON.parse(selectedOption.dataset.auth);
+            
+            const tripData = {
+                trip_name: auth.name || auth.destination,
+                destination: auth.destination || '',
+                purpose: auth.purpose || '',
+                start_date: auth.start_date,
+                end_date: auth.end_date
+            };
+            
+            try {
+                showMessage('info', '🧳 Creating trip from authorization...');
+                
+                const response = await fetch('/api/trips', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionId}`
+                    },
+                    body: JSON.stringify(tripData)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Link the trip to the authorization
+                    try {
+                        await fetch(`/api/travel-auth/${auth.id}/link-trip/${result.tripId}`, {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${sessionId}` }
+                        });
+                    } catch (linkError) {
+                        console.error('Error linking trip to authorization:', linkError);
+                    }
+                    
+                    showMessage('success', `✅ Trip "${tripData.trip_name}" created from authorization!`);
+                    await loadTrips();
+                    
+                    // Auto-select the new trip
+                    const tripSelect = document.getElementById('trip-select');
+                    tripSelect.value = result.tripId;
+                    handleTripSelection();
+                } else {
+                    showMessage('error', `❌ Error: ${result.error || 'Failed to create trip'}`);
+                }
+            } catch (error) {
+                showMessage('error', `❌ Failed to create trip: ${error.message}`);
             }
         }
         
@@ -3608,11 +3723,11 @@
                     <div style="text-align: center; padding: 60px 20px; color: #6c757d; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); border-radius: 12px; border: 2px dashed #ffc107;">
                         <div style="font-size: 64px; margin-bottom: 20px;">🧳</div>
                         <h3 style="color: #2c3e50; margin-bottom: 12px;">No business trips yet</h3>
-                        <p style="margin-bottom: 25px; font-size: 16px;">Organize travel expenses by trip to make approval faster and easier.</p>
-                        <button class="btn btn-warning" onclick="showTab('submit')" style="padding: 12px 24px; font-size: 15px; background: linear-gradient(135deg, #ffc107 0%, #ff8f00 100%);">
-                            ✈️ Create Your First Trip
+                        <p style="margin-bottom: 25px; font-size: 16px;">To create a trip, you need an approved Travel Authorization first.</p>
+                        <button class="btn btn-warning" onclick="showTab('travel-auth')" style="padding: 12px 24px; font-size: 15px; background: linear-gradient(135deg, #ffc107 0%, #ff8f00 100%);">
+                            📋 Create Travel Authorization
                         </button>
-                        <p style="font-size: 14px; margin-top: 20px; color: #8e9aaf;">💡 Group related expenses together for better reporting</p>
+                        <p style="font-size: 14px; margin-top: 20px; color: #8e9aaf;">💡 Once approved by your manager, you can create a trip and add expenses</p>
                     </div>
                 `;
                 return;
