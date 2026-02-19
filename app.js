@@ -429,7 +429,13 @@ function insertDefaultData() {
         db.run(`UPDATE employees SET supervisor_id = (SELECT id FROM employees WHERE email = 'sarah.johnson@company.com') 
                 WHERE employee_number = 'EMP004' AND (supervisor_id IS NULL OR supervisor_id = 0)`, (err) => {
             if (err) console.error('❌ Error fixing Lisa supervisor:', err.message);
-
+        });
+        
+        // Add category column for standalone expenses
+        db.run(`ALTER TABLE expenses ADD COLUMN category TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding category column:', err.message);
+            }
         });
     }
     
@@ -818,7 +824,8 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
             amount,
             vendor,
             description,
-            trip_id
+            trip_id,
+            category
         } = req.body;
         
         // Sanitize all string inputs
@@ -932,8 +939,8 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
         });
     }
     
-    // Per diem rate validation
-    if (njcRates.isPerDiem(expense_type)) {
+    // Per diem rate validation (only for trip-based expenses)
+    if (trip_id && njcRates.isPerDiem(expense_type)) {
         try {
             const validation = await njcRates.validatePerDiemExpense(expense_type, amount, date);
             if (!validation.valid) {
@@ -980,8 +987,8 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
         
         // Simple insert for ALL expense types (per diem already validated above)
         const query = `
-            INSERT INTO expenses (employee_name, employee_id, trip_id, expense_type, meal_name, date, location, amount, vendor, description, receipt_photo)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO expenses (employee_name, employee_id, trip_id, expense_type, meal_name, date, location, amount, vendor, description, receipt_photo, category)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         
         // Append future-date flag to description for supervisor visibility
@@ -990,7 +997,7 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
             finalDescription = (finalDescription ? finalDescription + ' | ' : '') + '⚠️ FUTURE-DATED EXPENSE (submitted before expense date)';
         }
         
-        const params = [employee.name, req.user.employeeId, trip_id || null, expense_type, meal_name, date, location, amount, vendor, finalDescription, receiptPath];
+        const params = [employee.name, req.user.employeeId, trip_id || null, expense_type, meal_name, date, location, amount, vendor, finalDescription, receiptPath, category || null];
         
         db.run(query, params, function(err) {
             if (err) {
