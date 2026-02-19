@@ -1086,27 +1086,10 @@
         </div>
 
         <div id="travel-auth-tab" class="tab-content">
-            <h3 style="margin-bottom: 20px; color: #2c3e50;">📋 Authorization to Travel (AT)</h3>
-            
-            <div style="background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); padding: 15px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
-                <div style="font-size: 13px; color: #856404; line-height: 1.5;">
-                    <strong>⚠️ Governance Requirement:</strong> Before submitting trip expenses, you must have an approved Authorization to Travel (AT). 
-                    Create an AT with your estimated costs, get supervisor approval, then you can submit actual trip expenses.
-                </div>
-            </div>
-            
-            <div style="margin-bottom: 20px;">
-                <button type="button" onclick="showCreateATModal()" class="btn" style="background: #28a745; padding: 10px 20px;">
-                    ➕ Create New Authorization to Travel
-                </button>
-                <button type="button" onclick="loadTravelAuths()" class="btn" style="background: #17a2b8; padding: 10px 20px; margin-left: 10px;">
-                    🔄 Refresh
-                </button>
-            </div>
-            
+            <h3 style="margin-bottom: 20px; color: #2c3e50;">✈️ My Travel Authorizations</h3>
             <div id="travel-auth-container">
                 <div style="text-align: center; padding: 40px; color: #6c757d;">
-                    <div style="font-size: 48px; margin-bottom: 15px;">📋</div>
+                    <div style="font-size: 48px; margin-bottom: 15px;">✈️</div>
                     <p>Loading your travel authorizations...</p>
                 </div>
             </div>
@@ -2496,77 +2479,78 @@
         function renderTravelAuths(auths) {
             const container = document.getElementById('travel-auth-container');
             
+            // Always show Create button at top
+            let html = `
+                <div style="margin-bottom: 20px;">
+                    <button type="button" onclick="showCreateATModal()" class="btn" style="background: #28a745; padding: 10px 20px; font-size: 14px;">
+                        ➕ New Travel Authorization
+                    </button>
+                </div>
+            `;
+            
             if (!auths || auths.length === 0) {
-                container.innerHTML = `
-                    <div style="text-align: center; padding: 60px 20px; color: #6c757d; background: linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%); border-radius: 12px; border: 2px dashed #4caf50;">
-                        <div style="font-size: 64px; margin-bottom: 20px;">📋</div>
-                        <h3 style="color: #2c3e50; margin-bottom: 12px;">Need to travel for business?</h3>
-                        <p style="margin-bottom: 25px; font-size: 16px;">Get pre-approval for your business travel with an Authorization to Travel.</p>
-                        <button class="btn btn-success" onclick="document.getElementById('at-form').scrollIntoView({ behavior: 'smooth' })" style="padding: 12px 24px; font-size: 15px;">
-                            ✈️ Create Authorization to Travel
-                        </button>
-                        <p style="font-size: 14px; margin-top: 20px; color: #8e9aaf;">💡 Required before submitting travel expenses</p>
+                html += `
+                    <div style="text-align: center; padding: 60px 20px; color: #6c757d; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); border-radius: 12px; border: 2px dashed #ffc107;">
+                        <div style="font-size: 64px; margin-bottom: 20px;">✈️</div>
+                        <h3 style="color: #2c3e50; margin-bottom: 12px;">No travel authorizations yet</h3>
+                        <p style="margin-bottom: 15px; font-size: 16px;">Create a travel authorization to get approval for your business trip.</p>
+                        <p style="font-size: 14px; color: #8e9aaf;">💡 Once approved, you can create a trip and add expenses under the Trips tab</p>
                     </div>
                 `;
+                container.innerHTML = html;
                 return;
             }
             
-            let html = '<div style="display: grid; gap: 15px;">';
+            html += '<div style="display: grid; gap: 15px;">';
             
             auths.forEach(at => {
-                const statusIcon = {
-                    'pending': '⏳',
-                    'approved': '✅',
-                    'rejected': '❌',
-                    'draft': '📝'
-                }[at.status] || '❓';
+                const status = at.status || 'draft';
+                const statusBadge = getStatusBadgeHTML(status);
                 
                 const statusColor = {
                     'pending': '#ffc107',
                     'approved': '#28a745',
                     'rejected': '#dc3545',
                     'draft': '#6c757d'
-                }[at.status] || '#6c757d';
+                }[status] || '#6c757d';
                 
-                const canEdit = at.status === 'rejected' || at.status === 'draft';
+                const canEdit = status === 'rejected' || status === 'draft';
                 
                 html += `
-                    <div style="background: white; padding: 20px; border-radius: 12px; border-left: 4px solid ${statusColor}; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
-                            <div>
-                                <h4 style="margin: 0 0 5px; color: #2c3e50;">${sanitizeForDisplay(at.name || at.destination)}</h4>
-                                <div style="font-size: 14px; color: #6c757d;">
-                                    ${formatDate(at.start_date)} to ${formatDate(at.end_date)}${at.destination ? ` • ${at.destination}` : ''}${at.purpose ? ` • ${at.purpose}` : ''}
+                    <div class="trip-card ${status}" style="border-left: 4px solid ${statusColor};">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
+                            <div style="flex: 1;">
+                                <div style="font-size: 18px; font-weight: bold; color: #2c3e50; margin-bottom: 6px;">
+                                    ✈️ ${sanitizeForDisplay(at.name || at.destination)}
                                 </div>
+                                <div style="color: #666; font-size: 14px; line-height: 1.6;">
+                                    📅 ${at.start_date} → ${at.end_date}
+                                    ${at.destination ? `<br>📍 ${at.destination}` : ''}
+                                    ${at.approver_name ? `<br>👤 Approver: ${at.approver_name}` : ''}
+                                </div>
+                                ${at.purpose ? `<div style="font-size: 12px; color: #888; margin-top: 6px;">📋 ${at.purpose}</div>` : ''}
+                                ${at.status === 'rejected' && at.rejection_reason ? `
+                                    <div style="font-size: 12px; color: #721c24; margin-top: 6px; padding: 6px 10px; background: #f8d7da; border-radius: 6px;">
+                                        ❌ <strong>Rejected:</strong> ${sanitizeForDisplay(at.rejection_reason)}
+                                    </div>
+                                ` : ''}
                             </div>
                             <div style="text-align: right;">
-                                <span style="background: ${statusColor}; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">
-                                    ${statusIcon} ${at.status.toUpperCase()}
-                                </span>
-                            </div>
-                        </div>
-                        
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 15px; border-top: 1px solid #eee;">
-                            <div>
-                                ${at.approver_name ? `<small style="color: #6c757d;">Approver: ${at.approver_name}</small>` : ''}
-                            </div>
-                            <div>
+                                ${statusBadge}
                                 ${canEdit ? `
-                                    <button onclick="editTravelAuth(${at.id})" class="btn" style="background: #ffc107; color: #212529; padding: 6px 12px; margin-right: 5px; font-size: 12px;">
-                                        ✏️ Edit
-                                    </button>
+                                    <div style="margin-top: 8px;">
+                                        <button onclick="editTravelAuth(${at.id})" class="btn" style="background: #ffc107; color: #212529; padding: 6px 12px; font-size: 12px;">
+                                            ✏️ Edit
+                                        </button>
+                                    </div>
                                 ` : ''}
                                 ${at.trip_id ? `
-                                    <span style="color: #28a745; font-size: 12px; font-weight: bold;">🧳 Linked to Trip</span>
+                                    <div style="margin-top: 8px;">
+                                        <span style="color: #28a745; font-size: 12px; font-weight: bold;">🧳 Linked to Trip</span>
+                                    </div>
                                 ` : ''}
                             </div>
                         </div>
-                        
-                        ${at.status === 'rejected' && at.rejection_reason ? `
-                            <div style="background: #f8d7da; color: #721c24; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 14px;">
-                                <strong>Rejection Reason:</strong> ${sanitizeForDisplay(at.rejection_reason)}
-                            </div>
-                        ` : ''}
                     </div>
                 `;
             });
