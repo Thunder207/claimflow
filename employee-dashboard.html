@@ -269,6 +269,15 @@
             font-weight: 500;
         }
         
+        .stat-sublabel {
+            font-size: 11px;
+            color: #666;
+            margin-top: 4px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
         .form-group {
             margin-bottom: 20px;
         }
@@ -535,21 +544,25 @@
         </div>
         
         <div class="stats">
-            <div class="stat-card">
+            <div class="stat-card" style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-left: 4px solid #2196f3;">
                 <div class="stat-value" id="total-expenses">-</div>
-                <div class="stat-label" data-i18n="my_expenses">My Expenses</div>
+                <div class="stat-label" data-i18n="my_expenses">📊 Total Expenses</div>
+                <div class="stat-sublabel" id="expenses-this-month" style="font-size: 11px; color: #666; margin-top: 4px;">This month</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" style="background: linear-gradient(135deg, #f3e5f5 0%, #ce93d8 100%); border-left: 4px solid #9c27b0;">
                 <div class="stat-value" id="total-amount">-</div>
-                <div class="stat-label" data-i18n="total_amount">Total Amount</div>
+                <div class="stat-label" data-i18n="total_amount">💰 Total Submitted</div>
+                <div class="stat-sublabel" id="amount-this-month" style="font-size: 11px; color: #666; margin-top: 4px;">All time</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" style="background: linear-gradient(135deg, #e8f5e8 0%, #a5d6a7 100%); border-left: 4px solid #4caf50;">
                 <div class="stat-value" id="approved-amount">-</div>
-                <div class="stat-label" data-i18n="approved">Approved</div>
+                <div class="stat-label" data-i18n="approved">✅ Approved</div>
+                <div class="stat-sublabel" id="approved-this-month" style="font-size: 11px; color: #666; margin-top: 4px;">Ready for payment</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" style="background: linear-gradient(135deg, #fff8e1 0%, #ffcc02 100%); border-left: 4px solid #ff9800;">
                 <div class="stat-value" id="pending-count">-</div>
-                <div class="stat-label" data-i18n="pending">Pending</div>
+                <div class="stat-label" data-i18n="pending">⏳ Pending Review</div>
+                <div class="stat-sublabel" id="pending-oldest" style="font-size: 11px; color: #666; margin-top: 4px;">Awaiting approval</div>
             </div>
         </div>
         
@@ -1384,10 +1397,11 @@
             
             if (draftIndividualExpenses.length === 0) {
                 draftList.innerHTML = `
-                    <p style="text-align: center; color: #6c757d; padding: 20px;">
-                        No individual expenses added yet.<br>
-                        <small>Click "Add Individual Expense" to start building your expense batch.</small>
-                    </p>
+                    <div style="text-align: center; padding: 30px; color: #6c757d; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; border: 1px dashed #0ea5e9;">
+                        <div style="font-size: 32px; margin-bottom: 10px;">📝</div>
+                        <p style="margin-bottom: 15px; font-size: 15px;"><strong>Ready to add your expenses?</strong></p>
+                        <p style="font-size: 13px; color: #8e9aaf;">Fill out the form above to add expenses to your draft.</p>
+                    </div>
                 `;
                 submitSection.style.display = 'none';
                 return;
@@ -1449,10 +1463,15 @@
         
         function removeIndividualDraftExpense(index) {
             const removed = draftIndividualExpenses[index];
+            
+            if (!confirm(`🗑️ Remove "${removed.meal_name}" from your draft?\n\n💰 Amount: $${removed.amount.toFixed(2)}\n📅 Date: ${removed.date}\n\nThis action cannot be undone.`)) {
+                return;
+            }
+            
             draftIndividualExpenses.splice(index, 1);
             saveDrafts();
             updateDraftIndividualList();
-            showMessage('info', `🗑️ ${removed.meal_name} removed from individual draft`);
+            showMessage('success', `✅ ${removed.meal_name} removed from individual draft`);
         }
         
         async function submitIndividualExpensesForApproval() {
@@ -2321,10 +2340,14 @@
             
             if (!auths || auths.length === 0) {
                 container.innerHTML = `
-                    <div style="text-align: center; padding: 40px; color: #6c757d;">
-                        <div style="font-size: 48px; margin-bottom: 15px;">📋</div>
-                        <h3>No Travel Authorizations Yet</h3>
-                        <p>Create your first Authorization to Travel to get started.</p>
+                    <div style="text-align: center; padding: 60px 20px; color: #6c757d; background: linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%); border-radius: 12px; border: 2px dashed #4caf50;">
+                        <div style="font-size: 64px; margin-bottom: 20px;">📋</div>
+                        <h3 style="color: #2c3e50; margin-bottom: 12px;">Need to travel for business?</h3>
+                        <p style="margin-bottom: 25px; font-size: 16px;">Get pre-approval for your business travel with an Authorization to Travel.</p>
+                        <button class="btn btn-success" onclick="document.getElementById('at-form').scrollIntoView({ behavior: 'smooth' })" style="padding: 12px 24px; font-size: 15px;">
+                            ✈️ Create Authorization to Travel
+                        </button>
+                        <p style="font-size: 14px; margin-top: 20px; color: #8e9aaf;">💡 Required before submitting travel expenses</p>
                     </div>
                 `;
                 return;
@@ -3201,10 +3224,19 @@
             
             if (expenses.length === 0) {
                 container.innerHTML = `
-                    <div style="text-align: center; padding: 40px; color: #6c757d;">
-                        <div style="font-size: 48px; margin-bottom: 15px;">📋</div>
-                        <h3>No Expenses Yet</h3>
-                        <p>Submit your first expense using the "Submit Expense" tab above.</p>
+                    <div style="text-align: center; padding: 60px 20px; color: #6c757d; background: linear-gradient(135deg, #f8f9ff 0%, #e8ecf8 100%); border-radius: 12px; border: 2px dashed #d0d7de;">
+                        <div style="font-size: 64px; margin-bottom: 20px;">📋</div>
+                        <h3 style="color: #2c3e50; margin-bottom: 12px;">Ready to submit your first expense?</h3>
+                        <p style="margin-bottom: 25px; font-size: 16px;">Track your business expenses easily and get reimbursed faster.</p>
+                        <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                            <button class="btn btn-primary" onclick="showTab('expenses')" style="padding: 12px 24px; font-size: 15px;">
+                                📋 Add Expense
+                            </button>
+                            <button class="btn btn-light" onclick="showTab('submit')" style="padding: 12px 24px; font-size: 15px; color: #4a90e2; border: 2px solid #4a90e2;">
+                                🧳 Create Trip
+                            </button>
+                        </div>
+                        <p style="font-size: 14px; margin-top: 20px; color: #8e9aaf;">💡 Tip: Upload receipts for automatic amount detection</p>
                     </div>
                 `;
                 return;
@@ -3478,10 +3510,14 @@
             
             if (!trips || trips.length === 0) {
                 container.innerHTML = `
-                    <div style="text-align: center; padding: 40px; color: #6c757d;">
-                        <div style="font-size: 48px; margin-bottom: 15px;">🧳</div>
-                        <h3>No Trips Yet</h3>
-                        <p>Create your first trip from the "Submit Expense" tab.</p>
+                    <div style="text-align: center; padding: 60px 20px; color: #6c757d; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); border-radius: 12px; border: 2px dashed #ffc107;">
+                        <div style="font-size: 64px; margin-bottom: 20px;">🧳</div>
+                        <h3 style="color: #2c3e50; margin-bottom: 12px;">No business trips yet</h3>
+                        <p style="margin-bottom: 25px; font-size: 16px;">Organize travel expenses by trip to make approval faster and easier.</p>
+                        <button class="btn btn-warning" onclick="showTab('submit')" style="padding: 12px 24px; font-size: 15px; background: linear-gradient(135deg, #ffc107 0%, #ff8f00 100%);">
+                            ✈️ Create Your First Trip
+                        </button>
+                        <p style="font-size: 14px; margin-top: 20px; color: #8e9aaf;">💡 Group related expenses together for better reporting</p>
                     </div>
                 `;
                 return;
@@ -3599,10 +3635,11 @@
             
             if (draftTripExpenses.length === 0) {
                 draftList.innerHTML = `
-                    <p style="text-align: center; color: #6c757d; padding: 20px;">
-                        No expenses added to trip yet.<br>
-                        <small>Select a trip and click "Add to Trip" to start building your expense report.</small>
-                    </p>
+                    <div style="text-align: center; padding: 30px; color: #6c757d; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); border-radius: 8px; border: 1px dashed #ffc107;">
+                        <div style="font-size: 32px; margin-bottom: 10px;">🧳</div>
+                        <p style="margin-bottom: 15px; font-size: 15px;"><strong>Start building your trip expenses</strong></p>
+                        <p style="font-size: 13px; color: #8e9aaf;">Select a trip above, then fill out the expense form to get started.</p>
+                    </div>
                 `;
                 submitSection.style.display = 'none';
                 return;
@@ -3672,11 +3709,16 @@
         
         function removeDraftExpense(index) {
             const removed = draftTripExpenses[index];
+            
+            if (!confirm(`🗑️ Remove "${removed.meal_name}" from trip?\n\n💰 Amount: $${removed.amount.toFixed(2)}\n📅 Date: ${removed.date}\n🧳 Trip: ${removed.trip_name}\n\nThis action cannot be undone.`)) {
+                return;
+            }
+            
             draftTripExpenses.splice(index, 1);
             saveDrafts();
             updateDraftExpensesList();
             if (removed.trip_id) updateTripDropdownText(removed.trip_id);
-            showMessage('info', `🗑️ ${removed.meal_name} removed from trip`);
+            showMessage('success', `✅ ${removed.meal_name} removed from trip`);
         }
         
         async function submitTripForApproval() {

@@ -279,6 +279,29 @@ try {
                     Search across employee names, expense types (meal types), approval status, vendors, and amounts
                 </div>
             </div>
+
+            <!-- Bulk Actions Bar (Supervisors Only) -->
+            <div id="bulk-actions-bar" style="display: none; margin-bottom: 20px; background: linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%); padding: 15px; border-radius: 8px; border: 2px solid #4caf50;">
+                <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                    <div style="font-weight: 600; color: #2e7d32;">
+                        <input type="checkbox" id="select-all-expenses" onchange="toggleAllExpenseSelection()" style="margin-right: 8px;">
+                        <label for="select-all-expenses" style="cursor: pointer;">Select All Pending</label>
+                    </div>
+                    <div style="color: #2e7d32; font-size: 14px;">
+                        <span id="selected-count">0</span> expenses selected
+                    </div>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button id="bulk-approve-btn" onclick="bulkApproveExpenses()" 
+                                style="padding: 8px 16px; background: #4caf50; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; display: none;">
+                            ✅ Bulk Approve (<span id="approve-count">0</span>)
+                        </button>
+                        <button id="bulk-reject-btn" onclick="bulkRejectExpenses()" 
+                                style="padding: 8px 16px; background: #f44336; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; display: none;">
+                            ❌ Bulk Reject (<span id="reject-count">0</span>)
+                        </button>
+                    </div>
+                </div>
+            </div>
             
             <div id="expenses-container" aria-live="polite" aria-label="Expenses list">
                 <div class="loading">
@@ -892,8 +915,20 @@ try {
                                      expense.status === 'returned' ? '↩️ Returned for Correction' : '⏳ Pending';
                     
                     let actionButtons = '';
+                    let bulkCheckbox = '';
+                    
                     if (expense.status === 'pending') {
                         if (currentUserRole === 'supervisor') {
+                            // Add checkbox for bulk selection
+                            bulkCheckbox = `
+                                <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                                    <input type="checkbox" class="expense-checkbox" data-expense-id="${expense.id}" 
+                                           onchange="updateBulkActionButtons()" 
+                                           style="margin-right: 8px; transform: scale(1.2);">
+                                    <label style="font-size: 12px; color: #666; cursor: pointer;">Select for bulk action</label>
+                                </div>
+                            `;
+                            
                             actionButtons = `
                                 <button class="btn btn-success" onclick="approveExpense(${expense.id})">✅ Approve</button>
                                 <button class="btn btn-warning" onclick="returnExpense(${expense.id})" style="background: #fd7e14; color: white;">↩️ Return for Correction</button>
@@ -940,6 +975,7 @@ try {
                                             ❌ <strong>${expense.approved_by}:</strong> ${expense.rejection_reason}
                                         </div>
                                     ` : ''}
+                                    ${bulkCheckbox}
                                     ${actionButtons ? `<div style="margin-top: 15px;">${actionButtons}</div>` : ''}
                                 </div>
                                 ${expense.receipt_photo ? `
@@ -1111,6 +1147,19 @@ try {
                 await updateDashboardStats(allLoadedExpenses);
                 displayFilteredExpenses(allLoadedExpenses);
                 
+                // Show bulk actions bar for supervisors with pending expenses
+                if (currentUserRole === 'supervisor') {
+                    setTimeout(() => {
+                        const pendingExpenses = document.querySelectorAll('.expense-checkbox');
+                        const bulkActionsBar = document.getElementById('bulk-actions-bar');
+                        if (pendingExpenses.length > 0) {
+                            bulkActionsBar.style.display = 'block';
+                        } else {
+                            bulkActionsBar.style.display = 'none';
+                        }
+                    }, 100);
+                }
+                
                 // Setup search event listeners (only once)
                 setupSearchListeners();
                 
@@ -1145,6 +1194,171 @@ try {
                 clearButton.setAttribute('data-listeners-attached', 'true');
 
             }
+        }
+
+        function toggleAllExpenseSelection() {
+            const selectAll = document.getElementById('select-all-expenses');
+            const checkboxes = document.querySelectorAll('.expense-checkbox');
+            
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = selectAll.checked;
+            });
+            
+            updateBulkActionButtons();
+        }
+
+        function updateBulkActionButtons() {
+            const checkedBoxes = document.querySelectorAll('.expense-checkbox:checked');
+            const selectedCount = checkedBoxes.length;
+            
+            document.getElementById('selected-count').textContent = selectedCount;
+            document.getElementById('approve-count').textContent = selectedCount;
+            document.getElementById('reject-count').textContent = selectedCount;
+            
+            const bulkApproveBtn = document.getElementById('bulk-approve-btn');
+            const bulkRejectBtn = document.getElementById('bulk-reject-btn');
+            
+            if (selectedCount > 0) {
+                bulkApproveBtn.style.display = 'inline-block';
+                bulkRejectBtn.style.display = 'inline-block';
+            } else {
+                bulkApproveBtn.style.display = 'none';
+                bulkRejectBtn.style.display = 'none';
+            }
+            
+            // Update "Select All" checkbox state
+            const totalCheckboxes = document.querySelectorAll('.expense-checkbox');
+            const selectAllCheckbox = document.getElementById('select-all-expenses');
+            
+            if (selectedCount === 0) {
+                selectAllCheckbox.indeterminate = false;
+                selectAllCheckbox.checked = false;
+            } else if (selectedCount === totalCheckboxes.length) {
+                selectAllCheckbox.indeterminate = false;
+                selectAllCheckbox.checked = true;
+            } else {
+                selectAllCheckbox.indeterminate = true;
+            }
+        }
+
+        async function bulkApproveExpenses() {
+            const checkedBoxes = document.querySelectorAll('.expense-checkbox:checked');
+            const expenseIds = Array.from(checkedBoxes).map(cb => cb.dataset.expenseId);
+            
+            if (expenseIds.length === 0) {
+                showMessage('warning', '⚠️ Please select expenses to approve');
+                return;
+            }
+            
+            const confirmMsg = `🚀 Bulk Approve ${expenseIds.length} Expenses?\n\nThis will:\n✅ Mark all selected expenses as approved\n💰 Make them available for payment processing\n📧 Notify all employees\n\nThis action cannot be undone.`;
+            
+            if (!confirm(confirmMsg)) {
+                return;
+            }
+            
+            let successCount = 0;
+            let errorCount = 0;
+            
+            showMessage('info', `⏳ Processing ${expenseIds.length} expenses...`);
+            
+            for (const expenseId of expenseIds) {
+                try {
+                    const response = await fetch(`/api/expenses/${expenseId}/approve`, {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${sessionId}`
+                        },
+                        body: JSON.stringify({ 
+                            comment: 'Bulk approved for payment processing',
+                            approver: currentSupervisorName
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    if (result.success) {
+                        successCount++;
+                    } else {
+                        errorCount++;
+                    }
+                } catch (error) {
+                    errorCount++;
+                    console.error(`Error approving expense ${expenseId}:`, error);
+                }
+            }
+            
+            if (successCount > 0) {
+                showMessage('success', `✅ Successfully approved ${successCount} expenses!`);
+            }
+            if (errorCount > 0) {
+                showMessage('warning', `⚠️ ${errorCount} expenses failed to approve. Please try individually.`);
+            }
+            
+            // Refresh the list and reset selections
+            await loadExpensesWithSearch();
+        }
+
+        async function bulkRejectExpenses() {
+            const checkedBoxes = document.querySelectorAll('.expense-checkbox:checked');
+            const expenseIds = Array.from(checkedBoxes).map(cb => cb.dataset.expenseId);
+            
+            if (expenseIds.length === 0) {
+                showMessage('warning', '⚠️ Please select expenses to reject');
+                return;
+            }
+            
+            const reason = prompt(`📝 Bulk Rejection Reason (Required)\n\nYou are rejecting ${expenseIds.length} expenses.\nPlease provide a clear reason that applies to all selected expenses:\n\nEmployee(s) will see this message:`);
+            
+            if (!reason || !reason.trim()) {
+                showMessage('danger', '⚠️ Rejection reason is required for audit compliance.');
+                return;
+            }
+            
+            if (reason.trim().length < 10) {
+                showMessage('danger', '⚠️ Please provide a more detailed reason (at least 10 characters).');
+                return;
+            }
+            
+            let successCount = 0;
+            let errorCount = 0;
+            
+            showMessage('info', `⏳ Processing ${expenseIds.length} rejections...`);
+            
+            for (const expenseId of expenseIds) {
+                try {
+                    const response = await fetch(`/api/expenses/${expenseId}/reject`, {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${sessionId}`
+                        },
+                        body: JSON.stringify({ 
+                            reason: reason.trim(),
+                            approver: currentSupervisorName
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    if (result.success) {
+                        successCount++;
+                    } else {
+                        errorCount++;
+                    }
+                } catch (error) {
+                    errorCount++;
+                    console.error(`Error rejecting expense ${expenseId}:`, error);
+                }
+            }
+            
+            if (successCount > 0) {
+                showMessage('success', `❌ Successfully rejected ${successCount} expenses`);
+            }
+            if (errorCount > 0) {
+                showMessage('warning', `⚠️ ${errorCount} expenses failed to reject. Please try individually.`);
+            }
+            
+            // Refresh the list and reset selections
+            await loadExpensesWithSearch();
         }
 
         async function updateDashboardStats(expenses) {
