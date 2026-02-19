@@ -556,6 +556,7 @@
         <div class="nav-tabs">
             <button class="nav-tab active" onclick="showTab('expenses')" title="Submit standalone expenses" data-i18n="expenses">📋 Expenses</button>
             <button class="nav-tab" onclick="showTab('submit')" title="Add expenses to business trips" data-i18n="trips">🧳 Trips</button>
+            <button class="nav-tab" onclick="showTab('travel-auth')" title="Authorization to Travel management">📋 Travel Auth</button>
             <button class="nav-tab" onclick="showTab('history')" title="Review submitted expenses" data-i18n="expense_history">📜 History</button>
         </div>
         
@@ -840,6 +841,33 @@
             </div>
         </div>
 
+        <div id="travel-auth-tab" class="tab-content">
+            <h3 style="margin-bottom: 20px; color: #2c3e50;">📋 Authorization to Travel (AT)</h3>
+            
+            <div style="background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); padding: 15px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
+                <div style="font-size: 13px; color: #856404; line-height: 1.5;">
+                    <strong>⚠️ Governance Requirement:</strong> Before submitting trip expenses, you must have an approved Authorization to Travel (AT). 
+                    Create an AT with your estimated costs, get supervisor approval, then you can submit actual trip expenses.
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <button type="button" onclick="showCreateATModal()" class="btn" style="background: #28a745; padding: 10px 20px;">
+                    ➕ Create New Authorization to Travel
+                </button>
+                <button type="button" onclick="loadTravelAuths()" class="btn" style="background: #17a2b8; padding: 10px 20px; margin-left: 10px;">
+                    🔄 Refresh
+                </button>
+            </div>
+            
+            <div id="travel-auth-container">
+                <div style="text-align: center; padding: 40px; color: #6c757d;">
+                    <div style="font-size: 48px; margin-bottom: 15px;">📋</div>
+                    <p>Loading your travel authorizations...</p>
+                </div>
+            </div>
+        </div>
+
         <div id="history-tab" class="tab-content">
             <h3 style="margin-bottom: 20px; color: #2c3e50;">📋 My Expense History</h3>
             <div id="expenses-container">
@@ -897,6 +925,82 @@
     </div>
 
     <!-- Receipt preview handled by existing viewReceipt() function -->
+
+    <!-- 📋 Create AT Modal -->
+    <div id="create-at-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+        <div style="background: white; padding: 30px; border-radius: 12px; max-width: 700px; width: 90%; max-height: 90%; overflow-y: auto;">
+            <h3 style="margin-bottom: 20px; color: #2c3e50;">📋 Create Authorization to Travel</h3>
+            
+            <form id="create-at-form" onsubmit="createTravelAuth(event)">
+                <div class="form-group">
+                    <label for="at-destination">Destination *</label>
+                    <input type="text" id="at-destination" placeholder="e.g., Toronto, ON" required>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div class="form-group">
+                        <label for="at-start-date">Start Date *</label>
+                        <input type="date" id="at-start-date" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="at-end-date">End Date *</label>
+                        <input type="date" id="at-end-date" required>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="at-purpose">Purpose of Travel *</label>
+                    <textarea id="at-purpose" placeholder="e.g., Attend quarterly training conference" required style="min-height: 60px; resize: vertical;"></textarea>
+                </div>
+                
+                <h4 style="margin: 20px 0 15px; color: #2c3e50;">Estimated Costs</h4>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div class="form-group">
+                        <label for="at-est-transport">Transport (CAD)</label>
+                        <input type="number" id="at-est-transport" placeholder="0.00" min="0" step="0.01" onchange="calculateATTotal()">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="at-est-lodging">Lodging (CAD)</label>
+                        <input type="number" id="at-est-lodging" placeholder="0.00" min="0" step="0.01" onchange="calculateATTotal()">
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div class="form-group">
+                        <label for="at-est-meals">Meals (CAD)</label>
+                        <input type="number" id="at-est-meals" placeholder="0.00" min="0" step="0.01" onchange="calculateATTotal()">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="at-est-other">Other Expenses (CAD)</label>
+                        <input type="number" id="at-est-other" placeholder="0.00" min="0" step="0.01" onchange="calculateATTotal()">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="at-est-total" style="font-weight: bold;">Total Estimated Cost (CAD)</label>
+                    <input type="number" id="at-est-total" placeholder="0.00" min="0" step="0.01" readonly style="background: #f8f9fa; font-weight: bold;">
+                </div>
+                
+                <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 20px 0; font-size: 14px; color: #0d47a1;">
+                    <strong>Note:</strong> This authorization will be sent to your supervisor for approval. 
+                    Once approved, you can submit actual trip expenses. Estimates should be reasonable and based on expected costs.
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; margin-top: 30px;">
+                    <button type="button" onclick="hideCreateATModal()" class="btn" style="background: #6c757d;">
+                        ❌ Cancel
+                    </button>
+                    <button type="submit" class="btn" style="background: #28a745;">
+                        ✅ Submit for Approval
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <script>
         /* 
@@ -1721,6 +1825,9 @@
             if (tabName === 'trips') {
                 loadTrips();
             }
+            if (tabName === 'travel-auth') {
+                loadTravelAuths();
+            }
         }
         
         // Get expense type display name
@@ -2127,6 +2234,293 @@
             checkPerDiemLimits(); // Check per diem limits
         });
         
+        // ═══════════════════════════════════════════════════════════════════════════════
+        // TRAVEL AUTHORIZATION (AT) MANAGEMENT FUNCTIONS
+        // ═══════════════════════════════════════════════════════════════════════════════
+        
+        // Load travel authorizations
+        async function loadTravelAuths() {
+            try {
+                const response = await fetch('/api/travel-auth', {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                
+                if (response.status === 401) {
+                    showMessage('error', '🔒 Session expired. Please log in again.');
+                    redirectToLogin();
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    showMessage('error', `❌ Error: ${data.error || 'Failed to load travel authorizations'}`);
+                    return;
+                }
+                
+                renderTravelAuths(data);
+                
+            } catch (error) {
+                console.error('❌ Error loading travel authorizations:', error);
+                showMessage('error', `❌ Failed to load travel authorizations: ${error.message}`);
+            }
+        }
+        
+        // Render travel authorizations
+        function renderTravelAuths(auths) {
+            const container = document.getElementById('travel-auth-container');
+            
+            if (!auths || auths.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: #6c757d;">
+                        <div style="font-size: 48px; margin-bottom: 15px;">📋</div>
+                        <h3>No Travel Authorizations Yet</h3>
+                        <p>Create your first Authorization to Travel to get started.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '<div style="display: grid; gap: 15px;">';
+            
+            auths.forEach(at => {
+                const statusIcon = {
+                    'pending': '⏳',
+                    'approved': '✅',
+                    'rejected': '❌',
+                    'draft': '📝'
+                }[at.status] || '❓';
+                
+                const statusColor = {
+                    'pending': '#ffc107',
+                    'approved': '#28a745',
+                    'rejected': '#dc3545',
+                    'draft': '#6c757d'
+                }[at.status] || '#6c757d';
+                
+                const canEdit = at.status === 'rejected' || at.status === 'draft';
+                
+                html += `
+                    <div style="background: white; padding: 20px; border-radius: 12px; border-left: 4px solid ${statusColor}; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+                            <div>
+                                <h4 style="margin: 0 0 5px; color: #2c3e50;">${sanitizeForDisplay(at.destination)}</h4>
+                                <div style="font-size: 14px; color: #6c757d;">
+                                    ${formatDate(at.start_date)} to ${formatDate(at.end_date)} • ${at.purpose}
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <span style="background: ${statusColor}; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">
+                                    ${statusIcon} ${at.status.toUpperCase()}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 15px; font-size: 14px;">
+                            <div><strong>Transport:</strong> $${parseFloat(at.est_transport || 0).toFixed(2)}</div>
+                            <div><strong>Lodging:</strong> $${parseFloat(at.est_lodging || 0).toFixed(2)}</div>
+                            <div><strong>Meals:</strong> $${parseFloat(at.est_meals || 0).toFixed(2)}</div>
+                            <div><strong>Other:</strong> $${parseFloat(at.est_other || 0).toFixed(2)}</div>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 15px; border-top: 1px solid #eee;">
+                            <div>
+                                <strong>Total: $${parseFloat(at.est_total || 0).toFixed(2)}</strong>
+                                ${at.approver_name ? `<br><small style="color: #6c757d;">Approver: ${at.approver_name}</small>` : ''}
+                            </div>
+                            <div>
+                                ${canEdit ? `
+                                    <button onclick="editTravelAuth(${at.id})" class="btn" style="background: #ffc107; color: #212529; padding: 6px 12px; margin-right: 5px; font-size: 12px;">
+                                        ✏️ Edit
+                                    </button>
+                                ` : ''}
+                                ${at.trip_id ? `
+                                    <span style="color: #28a745; font-size: 12px; font-weight: bold;">🧳 Linked to Trip</span>
+                                ` : ''}
+                            </div>
+                        </div>
+                        
+                        ${at.status === 'rejected' && at.rejection_reason ? `
+                            <div style="background: #f8d7da; color: #721c24; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 14px;">
+                                <strong>Rejection Reason:</strong> ${sanitizeForDisplay(at.rejection_reason)}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+        
+        // Show create AT modal
+        function showCreateATModal() {
+            document.getElementById('create-at-modal').style.display = 'flex';
+            // Clear form
+            document.getElementById('create-at-form').reset();
+            document.getElementById('at-est-total').value = '0.00';
+        }
+        
+        // Hide create AT modal
+        function hideCreateATModal() {
+            document.getElementById('create-at-modal').style.display = 'none';
+        }
+        
+        // Calculate AT total
+        function calculateATTotal() {
+            const transport = parseFloat(document.getElementById('at-est-transport').value || 0);
+            const lodging = parseFloat(document.getElementById('at-est-lodging').value || 0);
+            const meals = parseFloat(document.getElementById('at-est-meals').value || 0);
+            const other = parseFloat(document.getElementById('at-est-other').value || 0);
+            
+            const total = transport + lodging + meals + other;
+            document.getElementById('at-est-total').value = total.toFixed(2);
+        }
+        
+        // Create travel authorization
+        async function createTravelAuth(event) {
+            event.preventDefault();
+            
+            const formData = {
+                destination: sanitizeInput(document.getElementById('at-destination').value),
+                start_date: document.getElementById('at-start-date').value,
+                end_date: document.getElementById('at-end-date').value,
+                purpose: sanitizeInput(document.getElementById('at-purpose').value),
+                est_transport: parseFloat(document.getElementById('at-est-transport').value || 0),
+                est_lodging: parseFloat(document.getElementById('at-est-lodging').value || 0),
+                est_meals: parseFloat(document.getElementById('at-est-meals').value || 0),
+                est_other: parseFloat(document.getElementById('at-est-other').value || 0)
+            };
+            
+            // Validation
+            if (!formData.destination || !formData.start_date || !formData.end_date || !formData.purpose) {
+                showMessage('error', '❌ Please fill in all required fields.');
+                return;
+            }
+            
+            if (new Date(formData.start_date) > new Date(formData.end_date)) {
+                showMessage('error', '❌ End date must be after start date.');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/travel-auth', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionId}`
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage('success', `✅ ${result.message}`);
+                    hideCreateATModal();
+                    await loadTravelAuths();
+                } else {
+                    showMessage('error', `❌ Error: ${result.error || 'Failed to create authorization'}`);
+                }
+                
+            } catch (error) {
+                console.error('❌ Error creating travel authorization:', error);
+                showMessage('error', `❌ Failed to create authorization: ${error.message}`);
+            }
+        }
+        
+        // Edit travel authorization (for rejected/draft ATs)
+        async function editTravelAuth(atId) {
+            try {
+                const response = await fetch(`/api/travel-auth/${atId}`, {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                
+                if (!response.ok) {
+                    showMessage('error', '❌ Failed to load travel authorization details.');
+                    return;
+                }
+                
+                const at = await response.json();
+                
+                // Populate form with existing data
+                document.getElementById('at-destination').value = at.destination || '';
+                document.getElementById('at-start-date').value = at.start_date || '';
+                document.getElementById('at-end-date').value = at.end_date || '';
+                document.getElementById('at-purpose').value = at.purpose || '';
+                document.getElementById('at-est-transport').value = at.est_transport || 0;
+                document.getElementById('at-est-lodging').value = at.est_lodging || 0;
+                document.getElementById('at-est-meals').value = at.est_meals || 0;
+                document.getElementById('at-est-other').value = at.est_other || 0;
+                calculateATTotal();
+                
+                // Change form submission to update instead of create
+                const form = document.getElementById('create-at-form');
+                form.onsubmit = (event) => updateTravelAuth(event, atId);
+                
+                // Update modal title and button text
+                document.querySelector('#create-at-modal h3').textContent = '✏️ Edit Authorization to Travel';
+                document.querySelector('#create-at-form button[type="submit"]').innerHTML = '✅ Update Authorization';
+                
+                showCreateATModal();
+                
+            } catch (error) {
+                console.error('❌ Error loading travel authorization:', error);
+                showMessage('error', `❌ Failed to load authorization: ${error.message}`);
+            }
+        }
+        
+        // Update travel authorization
+        async function updateTravelAuth(event, atId) {
+            event.preventDefault();
+            
+            const formData = {
+                destination: sanitizeInput(document.getElementById('at-destination').value),
+                start_date: document.getElementById('at-start-date').value,
+                end_date: document.getElementById('at-end-date').value,
+                purpose: sanitizeInput(document.getElementById('at-purpose').value),
+                est_transport: parseFloat(document.getElementById('at-est-transport').value || 0),
+                est_lodging: parseFloat(document.getElementById('at-est-lodging').value || 0),
+                est_meals: parseFloat(document.getElementById('at-est-meals').value || 0),
+                est_other: parseFloat(document.getElementById('at-est-other').value || 0)
+            };
+            
+            try {
+                const response = await fetch(`/api/travel-auth/${atId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionId}`
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage('success', `✅ ${result.message}`);
+                    hideCreateATModal();
+                    // Reset form back to create mode
+                    resetATFormToCreate();
+                    await loadTravelAuths();
+                } else {
+                    showMessage('error', `❌ Error: ${result.error || 'Failed to update authorization'}`);
+                }
+                
+            } catch (error) {
+                console.error('❌ Error updating travel authorization:', error);
+                showMessage('error', `❌ Failed to update authorization: ${error.message}`);
+            }
+        }
+        
+        // Reset AT form back to create mode
+        function resetATFormToCreate() {
+            const form = document.getElementById('create-at-form');
+            form.onsubmit = createTravelAuth;
+            document.querySelector('#create-at-modal h3').textContent = '📋 Create Authorization to Travel';
+            document.querySelector('#create-at-form button[type="submit"]').innerHTML = '✅ Submit for Approval';
+        }
+
         // ═══════════════════════════════════════════════════════════════════════════════
         // SECTION 5: HOTEL DATE RANGE & PER DIEM LOGIC
         // ═══════════════════════════════════════════════════════════════════════════════
@@ -2936,7 +3330,26 @@
                         });
                         
                         const tripResult = await tripResponse.json();
+                        
+                        if (!tripResponse.ok) {
+                            if (tripResult.code === 'MISSING_AT') {
+                                // Special handling for missing AT error
+                                showMessage('error', `❌ ${tripResult.error}`, 8000);
+                                // Show link to travel auth tab
+                                setTimeout(() => {
+                                    if (confirm('Would you like to go to the Travel Authorization tab to create an AT?')) {
+                                        showTab('travel-auth');
+                                    }
+                                }, 1000);
+                                return;
+                            } else {
+                                throw new Error(tripResult.error || 'Failed to submit trip');
+                            }
+                        }
+                        
                     } catch (tripErr) {
+                        showMessage('error', `❌ Trip submission failed: ${tripErr.message}`);
+                        return;
                     }
                     
                     if (successCount === draftTripExpenses.length) {

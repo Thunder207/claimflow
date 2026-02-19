@@ -399,6 +399,31 @@ function initializeDatabase() {
             used INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (employee_id) REFERENCES employees (id)
+        )`,
+        
+        // Travel authorizations table for AT governance system
+        `CREATE TABLE IF NOT EXISTS travel_authorizations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            trip_id INTEGER,
+            destination TEXT NOT NULL,
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            purpose TEXT NOT NULL,
+            est_transport REAL DEFAULT 0,
+            est_lodging REAL DEFAULT 0,
+            est_meals REAL DEFAULT 0,
+            est_other REAL DEFAULT 0,
+            est_total REAL DEFAULT 0,
+            approver_id INTEGER,
+            status TEXT DEFAULT 'pending',
+            rejection_reason TEXT,
+            approved_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees (id),
+            FOREIGN KEY (trip_id) REFERENCES trips (id),
+            FOREIGN KEY (approver_id) REFERENCES employees (id)
         )`
     ];
     
@@ -2929,32 +2954,60 @@ app.post('/api/trips/:id/submit', requireAuth, (req, res) => {
             return res.status(400).json({ error: 'Cannot submit trip with no expenses' });
         }
         
-        // Update trip status
-        const updateQuery = `
-            UPDATE trips 
-            SET status = 'submitted', submitted_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+        // CRITICAL: Check for approved Travel Authorization before allowing submission
+        const checkATQuery = `
+            SELECT id, status, destination 
+            FROM travel_authorizations 
+            WHERE (trip_id = ? OR (employee_id = ? AND start_date <= ? AND end_date >= ?)) 
+            AND status = 'approved'
+            LIMIT 1
         `;
         
-        db.run(updateQuery, [tripId], function(err) {
+        db.get(checkATQuery, [tripId, req.user.employeeId, trip.start_date, trip.end_date], (err, at) => {
             if (err) {
-                console.error('❌ Error submitting trip:', err);
-                return res.status(500).json({ error: 'Failed to submit trip' });
+                console.error('❌ Error checking travel authorization:', err);
+                return res.status(500).json({ error: 'Failed to verify travel authorization' });
             }
             
-            console.log(`✅ Trip ${tripId} submitted for approval`);
+            if (!at) {
+                return res.status(400).json({ 
+                    error: 'An approved Authorization to Travel (AT) is required before submitting trip expenses. Please create and get approval for an AT first.',
+                    code: 'MISSING_AT'
+                });
+            }
             
-            // FEATURE 4: Notify supervisor
-            db.get('SELECT supervisor_id FROM employees WHERE id = ?', [req.user.employeeId], (err2, emp) => {
-                if (!err2 && emp && emp.supervisor_id) {
-                    createNotification(emp.supervisor_id, 'trip_submitted', 
-                        `Trip "${trip.trip_name || tripId}" has been submitted for your approval.`);
+            // Update trip status and link to AT if not already linked
+            const updateQuery = `
+                UPDATE trips 
+                SET status = 'submitted', submitted_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `;
+            
+            db.run(updateQuery, [tripId], function(err) {
+                if (err) {
+                    console.error('❌ Error submitting trip:', err);
+                    return res.status(500).json({ error: 'Failed to submit trip' });
                 }
-            });
-            
-            res.json({ 
-                success: true, 
-                message: 'Trip submitted for approval!' 
+                
+                // Link AT to trip if not already linked
+                if (!at.trip_id) {
+                    db.run(`UPDATE travel_authorizations SET trip_id = ? WHERE id = ?`, [tripId, at.id]);
+                }
+                
+                console.log(`✅ Trip ${tripId} submitted for approval with approved AT ${at.id}`);
+                
+                // FEATURE 4: Notify supervisor
+                db.get('SELECT supervisor_id FROM employees WHERE id = ?', [req.user.employeeId], (err2, emp) => {
+                    if (!err2 && emp && emp.supervisor_id) {
+                        createNotification(emp.supervisor_id, 'trip_submitted', 
+                            `Trip "${trip.trip_name || tripId}" has been submitted for your approval.`);
+                    }
+                });
+                
+                res.json({ 
+                    success: true, 
+                    message: 'Trip submitted for approval!' 
+                });
             });
         });
     });
@@ -3255,6 +3308,395 @@ app.put('/api/notifications/:id/read', requireAuth, (req, res) => {
             if (err) return res.status(500).json({ success: false, error: 'Failed' });
             res.json({ success: true });
         });
+});
+
+// ============================================
+// TRAVEL AUTHORIZATION (AT) SYSTEM
+// ============================================
+
+// 1. Create Travel Authorization
+app.post('/api/travel-auth', requireAuth, async (req, res) => {
+    const {
+        destination,
+        start_date,
+        end_date,
+        purpose,
+        est_transport = 0,
+        est_lodging = 0,
+        est_meals = 0,
+        est_other = 0
+    } = req.body;
+    
+    // Validation
+    if (!destination || !start_date || !end_date || !purpose) {
+        return res.status(400).json({
+            success: false,
+            error: 'Missing required fields: destination, start_date, end_date, purpose'
+        });
+    }
+    
+    // Calculate total
+    const est_total = parseFloat(est_transport) + parseFloat(est_lodging) + 
+                     parseFloat(est_meals) + parseFloat(est_other);
+    
+    // Get supervisor (approver)
+    db.get('SELECT supervisor_id FROM employees WHERE id = ?', [req.user.employeeId], (err, employee) => {
+        if (err) {
+            console.error('❌ Error fetching supervisor:', err);
+            return res.status(500).json({ success: false, error: 'Failed to get approver' });
+        }
+        
+        if (!employee || !employee.supervisor_id) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'No supervisor assigned. Contact admin to assign a supervisor.' 
+            });
+        }
+        
+        const query = `
+            INSERT INTO travel_authorizations 
+            (employee_id, destination, start_date, end_date, purpose, 
+             est_transport, est_lodging, est_meals, est_other, est_total, 
+             approver_id, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+        `;
+        
+        const params = [
+            req.user.employeeId, destination, start_date, end_date, purpose,
+            est_transport, est_lodging, est_meals, est_other, est_total,
+            employee.supervisor_id
+        ];
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('❌ Error creating travel authorization:', err);
+                return res.status(500).json({ 
+                    success: false, 
+                    error: 'Failed to create travel authorization' 
+                });
+            }
+            
+            console.log(`✅ Travel Authorization created with ID: ${this.lastID}`);
+            
+            // Notify supervisor
+            createNotification(employee.supervisor_id, 'at_pending', 
+                `New Authorization to Travel request for ${destination} awaits your approval.`);
+            
+            res.json({ 
+                success: true, 
+                id: this.lastID, 
+                message: 'Travel Authorization submitted for approval!' 
+            });
+        });
+    });
+});
+
+// 2. Get Travel Authorizations (employee sees own, supervisor sees team's, admin sees all)
+app.get('/api/travel-auth', requireAuth, (req, res) => {
+    let query, params;
+    
+    if (req.user.role === 'admin') {
+        query = `
+            SELECT ta.*, e.name as employee_name, s.name as approver_name
+            FROM travel_authorizations ta
+            JOIN employees e ON ta.employee_id = e.id
+            LEFT JOIN employees s ON ta.approver_id = s.id
+            ORDER BY ta.created_at DESC
+        `;
+        params = [];
+    } else if (req.user.role === 'supervisor') {
+        query = `
+            SELECT ta.*, e.name as employee_name, s.name as approver_name
+            FROM travel_authorizations ta
+            JOIN employees e ON ta.employee_id = e.id
+            LEFT JOIN employees s ON ta.approver_id = s.id
+            WHERE ta.employee_id = ? OR ta.approver_id = ?
+            ORDER BY ta.created_at DESC
+        `;
+        params = [req.user.employeeId, req.user.employeeId];
+    } else {
+        query = `
+            SELECT ta.*, e.name as employee_name, s.name as approver_name
+            FROM travel_authorizations ta
+            JOIN employees e ON ta.employee_id = e.id
+            LEFT JOIN employees s ON ta.approver_id = s.id
+            WHERE ta.employee_id = ?
+            ORDER BY ta.created_at DESC
+        `;
+        params = [req.user.employeeId];
+    }
+    
+    db.all(query, params, (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching travel authorizations:', err);
+            return res.status(500).json({ error: 'Failed to fetch travel authorizations' });
+        }
+        
+        console.log(`✅ Fetched ${rows.length} travel authorizations`);
+        res.json(rows);
+    });
+});
+
+// 3. Get single Travel Authorization
+app.get('/api/travel-auth/:id', requireAuth, (req, res) => {
+    const query = `
+        SELECT ta.*, e.name as employee_name, s.name as approver_name
+        FROM travel_authorizations ta
+        JOIN employees e ON ta.employee_id = e.id
+        LEFT JOIN employees s ON ta.approver_id = s.id
+        WHERE ta.id = ?
+    `;
+    
+    db.get(query, [req.params.id], (err, row) => {
+        if (err) {
+            console.error('❌ Error fetching travel authorization:', err);
+            return res.status(500).json({ error: 'Failed to fetch travel authorization' });
+        }
+        
+        if (!row) {
+            return res.status(404).json({ error: 'Travel authorization not found' });
+        }
+        
+        // Check permissions
+        if (req.user.role !== 'admin' && 
+            row.employee_id !== req.user.employeeId && 
+            row.approver_id !== req.user.employeeId) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
+        res.json(row);
+    });
+});
+
+// 4. Approve Travel Authorization
+app.put('/api/travel-auth/:id/approve', requireAuth, requireRole('supervisor'), (req, res) => {
+    const atId = req.params.id;
+    
+    // Check if user is the approver
+    db.get('SELECT * FROM travel_authorizations WHERE id = ? AND approver_id = ?', 
+        [atId, req.user.employeeId], (err, at) => {
+        if (err) {
+            console.error('❌ Error checking AT approval rights:', err);
+            return res.status(500).json({ error: 'Database error' });
+        }
+        
+        if (!at) {
+            return res.status(404).json({ error: 'Travel authorization not found or you are not the approver' });
+        }
+        
+        if (at.status !== 'pending') {
+            return res.status(400).json({ error: 'Travel authorization is not pending' });
+        }
+        
+        // Approve the AT
+        const updateQuery = `
+            UPDATE travel_authorizations 
+            SET status = 'approved', approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `;
+        
+        db.run(updateQuery, [atId], function(err) {
+            if (err) {
+                console.error('❌ Error approving travel authorization:', err);
+                return res.status(500).json({ error: 'Failed to approve travel authorization' });
+            }
+            
+            console.log(`✅ Travel Authorization ${atId} approved`);
+            
+            // Notify employee
+            createNotification(at.employee_id, 'at_approved', 
+                `Your Authorization to Travel for ${at.destination} has been approved.`);
+            
+            res.json({ 
+                success: true, 
+                message: 'Travel Authorization approved successfully!' 
+            });
+        });
+    });
+});
+
+// 5. Reject Travel Authorization
+app.put('/api/travel-auth/:id/reject', requireAuth, requireRole('supervisor'), (req, res) => {
+    const atId = req.params.id;
+    const { rejection_reason } = req.body;
+    
+    if (!rejection_reason || rejection_reason.trim() === '') {
+        return res.status(400).json({ error: 'Rejection reason is required' });
+    }
+    
+    // Check if user is the approver
+    db.get('SELECT * FROM travel_authorizations WHERE id = ? AND approver_id = ?', 
+        [atId, req.user.employeeId], (err, at) => {
+        if (err) {
+            console.error('❌ Error checking AT rejection rights:', err);
+            return res.status(500).json({ error: 'Database error' });
+        }
+        
+        if (!at) {
+            return res.status(404).json({ error: 'Travel authorization not found or you are not the approver' });
+        }
+        
+        if (at.status !== 'pending') {
+            return res.status(400).json({ error: 'Travel authorization is not pending' });
+        }
+        
+        // Reject the AT
+        const updateQuery = `
+            UPDATE travel_authorizations 
+            SET status = 'rejected', rejection_reason = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `;
+        
+        db.run(updateQuery, [rejection_reason, atId], function(err) {
+            if (err) {
+                console.error('❌ Error rejecting travel authorization:', err);
+                return res.status(500).json({ error: 'Failed to reject travel authorization' });
+            }
+            
+            console.log(`✅ Travel Authorization ${atId} rejected`);
+            
+            // Notify employee
+            createNotification(at.employee_id, 'at_rejected', 
+                `Your Authorization to Travel for ${at.destination} was rejected: ${rejection_reason}`);
+            
+            res.json({ 
+                success: true, 
+                message: 'Travel Authorization rejected.' 
+            });
+        });
+    });
+});
+
+// 6. Update Travel Authorization (for draft/rejected ATs)
+app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
+    const atId = req.params.id;
+    const {
+        destination,
+        start_date,
+        end_date,
+        purpose,
+        est_transport = 0,
+        est_lodging = 0,
+        est_meals = 0,
+        est_other = 0
+    } = req.body;
+    
+    // Check ownership and status
+    db.get('SELECT * FROM travel_authorizations WHERE id = ? AND employee_id = ?', 
+        [atId, req.user.employeeId], (err, at) => {
+        if (err) {
+            console.error('❌ Error checking AT ownership:', err);
+            return res.status(500).json({ error: 'Database error' });
+        }
+        
+        if (!at) {
+            return res.status(404).json({ error: 'Travel authorization not found' });
+        }
+        
+        if (at.status === 'approved') {
+            return res.status(400).json({ error: 'Cannot edit approved travel authorization' });
+        }
+        
+        if (at.status === 'pending') {
+            return res.status(400).json({ error: 'Cannot edit pending travel authorization. Wait for approval or contact your supervisor.' });
+        }
+        
+        // Calculate total
+        const est_total = parseFloat(est_transport) + parseFloat(est_lodging) + 
+                         parseFloat(est_meals) + parseFloat(est_other);
+        
+        // Update the AT and reset status to pending
+        const updateQuery = `
+            UPDATE travel_authorizations 
+            SET destination = COALESCE(?, destination),
+                start_date = COALESCE(?, start_date),
+                end_date = COALESCE(?, end_date),
+                purpose = COALESCE(?, purpose),
+                est_transport = ?,
+                est_lodging = ?,
+                est_meals = ?,
+                est_other = ?,
+                est_total = ?,
+                status = 'pending',
+                rejection_reason = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `;
+        
+        const params = [destination, start_date, end_date, purpose, 
+                       est_transport, est_lodging, est_meals, est_other, est_total, atId];
+        
+        db.run(updateQuery, params, function(err) {
+            if (err) {
+                console.error('❌ Error updating travel authorization:', err);
+                return res.status(500).json({ error: 'Failed to update travel authorization' });
+            }
+            
+            console.log(`✅ Travel Authorization ${atId} updated and resubmitted`);
+            
+            // Notify supervisor of resubmission
+            if (at.approver_id) {
+                createNotification(at.approver_id, 'at_updated', 
+                    `Travel Authorization for ${destination || at.destination} has been revised and resubmitted.`);
+            }
+            
+            res.json({ 
+                success: true, 
+                message: 'Travel Authorization updated and resubmitted for approval!' 
+            });
+        });
+    });
+});
+
+// 7. Link Travel Authorization to Trip
+app.post('/api/travel-auth/:id/link-trip/:tripId', requireAuth, (req, res) => {
+    const atId = req.params.id;
+    const tripId = req.params.tripId;
+    
+    // Check ownership of both AT and trip
+    Promise.all([
+        new Promise((resolve, reject) => {
+            db.get('SELECT * FROM travel_authorizations WHERE id = ? AND employee_id = ? AND status = "approved"', 
+                [atId, req.user.employeeId], (err, at) => {
+                if (err) reject(err);
+                else resolve(at);
+            });
+        }),
+        new Promise((resolve, reject) => {
+            db.get('SELECT * FROM trips WHERE id = ? AND employee_id = ?', 
+                [tripId, req.user.employeeId], (err, trip) => {
+                if (err) reject(err);
+                else resolve(trip);
+            });
+        })
+    ]).then(([at, trip]) => {
+        if (!at) {
+            return res.status(404).json({ error: 'Approved travel authorization not found' });
+        }
+        if (!trip) {
+            return res.status(404).json({ error: 'Trip not found' });
+        }
+        if (at.trip_id) {
+            return res.status(400).json({ error: 'Travel authorization is already linked to a trip' });
+        }
+        
+        // Link AT to trip
+        db.run('UPDATE travel_authorizations SET trip_id = ? WHERE id = ?', [tripId, atId], function(err) {
+            if (err) {
+                console.error('❌ Error linking AT to trip:', err);
+                return res.status(500).json({ error: 'Failed to link travel authorization to trip' });
+            }
+            
+            console.log(`✅ Travel Authorization ${atId} linked to trip ${tripId}`);
+            res.json({ 
+                success: true, 
+                message: 'Travel Authorization linked to trip successfully!' 
+            });
+        });
+    }).catch(err => {
+        console.error('❌ Error checking AT/trip ownership:', err);
+        res.status(500).json({ error: 'Database error' });
+    });
 });
 
 // ============================================
