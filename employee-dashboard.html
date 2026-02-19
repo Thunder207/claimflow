@@ -884,22 +884,7 @@
                 </select>
                 <div id="trip-info" style="margin-top: 10px; padding: 10px; border-radius: 8px; display: none;"></div>
                 
-                <!-- Create trip from approved authorization -->
-                <div style="margin-top: 15px; background: linear-gradient(135deg, #e8f5e8 0%, #f0f8ff 100%); padding: 15px; border-radius: 10px; border-left: 4px solid #28a745;">
-                    <label style="font-weight: 600; color: #2c3e50; margin-bottom: 8px; display: block;">📋 Create Trip from Approved Authorization</label>
-                    <select id="auth-to-trip-select" style="width: 100%; padding: 10px; font-size: 15px; border-radius: 8px; border: 2px solid #28a745; margin-bottom: 10px;">
-                        <option value="">-- Select an approved authorization --</option>
-                    </select>
-                    <div style="display: flex; gap: 10px;">
-                        <button type="button" onclick="createTripFromAuth()" class="btn" style="background: #28a745; padding: 8px 16px; font-size: 14px;">
-                            ✅ Create Trip
-                        </button>
-                        <button type="button" onclick="loadTrips()" class="btn" style="background: #17a2b8; padding: 8px 16px; font-size: 14px;">
-                            🔄 Refresh
-                        </button>
-                    </div>
-                    <small style="color: #6c757d; display: block; margin-top: 8px;">💡 You must have an approved Travel Authorization before creating a trip. Go to the Travel Auth tab to create one.</small>
-                </div>
+                <!-- Trips are auto-created when travel authorizations are approved -->
                 
                 <button type="button" id="trip-lock-btn" onclick="toggleTripLock()" style="background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 14px; margin-top: 10px; display: none;">
                     🔓 Unlocked
