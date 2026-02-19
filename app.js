@@ -3720,6 +3720,11 @@ app.post('/api/travel-auth/:id/expenses', requireAuth, (req, res) => {
             return res.status(400).json({ error: 'Can only add expenses to draft or rejected authorizations' });
         }
 
+        // Validate expense date is within authorization date range
+        if (date < at.start_date || date > at.end_date) {
+            return res.status(400).json({ error: `Expense date must be within the authorization dates (${at.start_date} to ${at.end_date})` });
+        }
+
         // Get employee name
         db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err, emp) => {
             if (err) return res.status(500).json({ error: 'Database error' });

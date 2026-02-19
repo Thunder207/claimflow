@@ -2672,7 +2672,7 @@
                     const statusEmoji = { draft: '📝', pending: '⏳', approved: '✅', rejected: '❌' }[status] || '📋';
                     const total = parseFloat(at.expenses_total || at.est_total || 0).toFixed(2);
                     const count = at.expense_count || 0;
-                    options += `<option value="${at.id}" data-status="${status}">${statusEmoji} ${sanitizeForDisplay(at.name || at.destination)} (${at.start_date} → ${at.end_date}) — ${count} expenses, $${total}</option>`;
+                    options += `<option value="${at.id}" data-status="${status}" data-start-date="${at.start_date}" data-end-date="${at.end_date}">${statusEmoji} ${sanitizeForDisplay(at.name || at.destination)} (${at.start_date} → ${at.end_date}) — ${count} expenses, $${total}</option>`;
                 });
             }
             select.innerHTML = options;
@@ -2771,6 +2771,16 @@
             
             // Show expense section
             expenseSection.style.display = 'block';
+            
+            // Restrict date picker to authorization date range
+            const startDate = option?.dataset?.startDate;
+            const endDate = option?.dataset?.endDate;
+            const dateField = document.getElementById('ta-expense-date');
+            if (startDate && endDate) {
+                dateField.min = startDate;
+                dateField.max = endDate;
+                dateField.value = startDate; // default to first day
+            }
             
             // Show/hide form based on editability
             document.getElementById('ta-expense-form').style.display = canAddExpenses ? 'block' : 'none';
@@ -2926,6 +2936,13 @@
             
             if (!type || !date || !amount || parseFloat(amount) <= 0) {
                 showTAMessage('error', 'Please fill in all required fields');
+                return;
+            }
+            
+            // Validate date is within authorization range
+            const dateField = document.getElementById('ta-expense-date');
+            if (dateField.min && dateField.max && (date < dateField.min || date > dateField.max)) {
+                showTAMessage('error', `Expense date must be within ${dateField.min} to ${dateField.max}`);
                 return;
             }
             
