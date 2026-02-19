@@ -2067,7 +2067,7 @@ app.put('/api/employees/:id', requireAuth, requireRole('admin'), async (req, res
     db.get('SELECT * FROM employees WHERE id = ?', [id], (err, currentEmployee) => {
         if (err) {
             console.error('❌ Error fetching employee for comparison:', err);
-            return res.status(500).json({ success: false, error: 'Failed to fetch current employee data' });
+            return res.status(500).json({ success: false, error: 'Failed to fetch current employee data: ' + (err.message || err) });
         }
         
         if (!currentEmployee) {
@@ -2093,7 +2093,7 @@ app.put('/api/employees/:id', requireAuth, requireRole('admin'), async (req, res
         db.run(query, params, function(err) {
             if (err) {
                 console.error('❌ Error updating employee:', err);
-                if (err.message.includes('UNIQUE constraint failed')) {
+                if (err.message && err.message.includes('UNIQUE constraint failed')) {
                     return res.status(409).json({ 
                         success: false, 
                         error: 'Employee number already exists' 
@@ -2101,7 +2101,7 @@ app.put('/api/employees/:id', requireAuth, requireRole('admin'), async (req, res
                 }
                 return res.status(500).json({ 
                     success: false, 
-                    error: 'Failed to update employee' 
+                    error: 'Failed to update employee: ' + (err.message || err)
                 });
             }
             
