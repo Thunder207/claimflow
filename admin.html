@@ -1264,7 +1264,7 @@ try {
             document.getElementById('new-employee-gl-account').value = '';
         }
 
-        function editEmployee(employeeId) {
+        async function editEmployee(employeeId) {
             const employee = window.allEmployees.find(emp => emp.id === employeeId);
             if (!employee) {
                 showMessage('danger', '❌ Employee not found');
@@ -1284,7 +1284,7 @@ try {
             populateSupervisorDropdown('edit-employee-supervisor', employeeId);
             document.getElementById('edit-employee-supervisor').value = employee.supervisor_id || '';
             
-            populateGLAccountDropdown('edit-employee-gl-account');
+            await populateGLAccountDropdown('edit-employee-gl-account');
             document.getElementById('edit-employee-gl-account').value = employee.gl_account_id || '';
             
             document.getElementById('edit-employee-name').focus();
