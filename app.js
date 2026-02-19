@@ -451,6 +451,13 @@ function insertDefaultData() {
                 console.error('❌ Error adding category column:', err.message);
             }
         });
+
+        // Ensure gl_account_id column exists on employees table
+        db.run(`ALTER TABLE employees ADD COLUMN gl_account_id INTEGER`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding gl_account_id column:', err.message);
+            }
+        });
     }
     
     // Seed NJC rates with historical and current periods
