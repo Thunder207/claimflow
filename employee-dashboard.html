@@ -632,23 +632,6 @@
         </div>
 
         <div id="submit-tab" class="tab-content">
-            <div id="quick-start-guide" style="background: linear-gradient(135deg, #e8f5e8 0%, #d4edda 100%); padding: 15px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #28a745;">
-                <h4 style="margin: 0 0 8px 0; color: #155724; cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="toggleQuickStartGuide()">
-                    <span>🚀 Quick Start Guide</span>
-                    <span id="guide-toggle" style="font-size: 12px;">📖 Hide</span>
-                </h4>
-                <div id="guide-content">
-                <div style="font-size: 13px; color: #155724; line-height: 1.5;">
-                    <strong>New user?</strong> Here's how to submit expenses:
-                    <br><strong>1.</strong> Create a trip (like "Montreal Conference Jan 2026")
-                    <br><strong>2.</strong> Add expenses to that trip one by one
-                    <br><strong>3.</strong> Submit the entire trip when done
-                    <br><strong>4.</strong> Your supervisor will review and approve
-                </div>
-                <div style="font-size: 12px; color: #155724; margin-top: 8px; opacity: 0.9;">💡 Government rates are automatically applied for meals • Receipts required for hotels</div>
-                </div>
-            </div>
-            <h3 style="margin-bottom: 20px; color: #2c3e50;">📝 Add Expense to Trip</h3>
             
             <div class="success-message" id="success-message">
                 ✅ <span id="success-text">Expense submitted successfully!</span>
@@ -657,38 +640,31 @@
             <div class="error-message" id="error-message">
                 ❌ <span id="error-text">Something went wrong</span>
             </div>
+
+            <!-- TRIP SELECTOR — FIRST THING USER SEES -->
+            <div style="margin-bottom: 20px;">
+                <h3 style="margin-bottom: 15px; color: #2c3e50;">🧳 Select Business Trip</h3>
+                <select id="trip-select" name="trip_id" style="margin-bottom: 10px; width: 100%; padding: 10px; font-size: 15px; border-radius: 8px; border: 2px solid #2196f3;" onchange="handleTripSelection()">
+                    <option value="">-- Select a trip --</option>
+                </select>
+                <div id="trip-info" style="margin-top: 10px; padding: 10px; border-radius: 8px; display: none;"></div>
+                <div style="margin-top: 10px;">
+                    <button type="button" onclick="showNewTripModal()" class="btn" style="background: #28a745; padding: 8px 16px; font-size: 14px;">
+                        ➕ Create New Trip
+                    </button>
+                    <button type="button" onclick="loadTrips()" class="btn" style="background: #17a2b8; padding: 8px 16px; font-size: 14px; margin-left: 10px;">
+                        🔄 Refresh
+                    </button>
+                    <button type="button" id="trip-lock-btn" onclick="toggleTripLock()" style="background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 14px; margin-left: 10px; display: none;">
+                        🔓 Unlocked
+                    </button>
+                </div>
+            </div>
+
+            <!-- EXPENSE FORM — BELOW TRIP SELECTOR -->
+            <h3 style="margin-bottom: 15px; color: #2c3e50;">📝 Add Expense to Trip</h3>
             
             <form id="expense-form" class="expense-form">
-                <!-- STEP 1: Select Trip First -->
-                <div class="form-group" style="margin-bottom: 20px;">
-                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                        <label for="trip-select" style="margin: 0; flex: 1; font-size: 16px; font-weight: bold;">🧳 Step 1: Select Business Trip *</label>
-                        <button type="button" id="trip-lock-btn" onclick="toggleTripLock()" style="background: #6c757d; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; display: none;">
-                            🔓 Unlocked
-                        </button>
-                    </div>
-                    <div style="background: #e3f2fd; padding: 12px; border-radius: 8px; margin-bottom: 12px; font-size: 14px; color: #1565c0;">
-                        <strong>ℹ️ How it works:</strong> All trip expenses must be part of a business trip. Select or create a trip first, then add expenses below.
-                    </div>
-                    <select id="trip-select" name="trip_id" style="margin-bottom: 10px;" onchange="handleTripSelection()">
-                        <option value="">-- Select a trip (all expenses need a trip) --</option>
-                    </select>
-                    <div id="trip-info" style="margin-top: 10px; padding: 10px; border-radius: 8px; display: none;"></div>
-                    <div style="margin-top: 10px;">
-                        <button type="button" onclick="showNewTripModal()" class="btn" style="background: #28a745; padding: 8px 16px; font-size: 14px;" title="Create a new business trip to group expenses">
-                            ➕ Create New Trip
-                        </button>
-                        <button type="button" onclick="loadTrips()" class="btn" style="background: #17a2b8; padding: 8px 16px; font-size: 14px; margin-left: 10px;" title="Reload trip list from server">
-                            🔄 Refresh Trips
-                        </button>
-                        <button type="button" onclick="clearTripSelection()" class="btn" style="background: #6c757d; padding: 8px 16px; font-size: 14px; margin-left: 10px;" title="Clear current selection">
-                            🚫 Clear Selection
-                        </button>
-                    </div>
-                </div>
-
-                <!-- STEP 2: Add Expense Details -->
-                <h4 style="color: #2c3e50; margin: 20px 0 15px;">📝 Step 2: Add Expense Details</h4>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
                     <div class="form-group">
                         <label for="expense-type">What type of expense is this? *</label>
