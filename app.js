@@ -3304,10 +3304,11 @@ app.put('/api/notifications/:id/read', requireAuth, (req, res) => {
 // 1. Create Travel Authorization
 app.post('/api/travel-auth', requireAuth, async (req, res) => {
     const {
-        destination,
+        name,
+        destination = '',
         start_date,
         end_date,
-        purpose,
+        purpose = '',
         est_transport = 0,
         est_lodging = 0,
         est_meals = 0,
@@ -3316,10 +3317,10 @@ app.post('/api/travel-auth', requireAuth, async (req, res) => {
     } = req.body;
     
     // Validation
-    if (!destination || !start_date || !end_date || !purpose) {
+    if (!name || !start_date || !end_date) {
         return res.status(400).json({
             success: false,
-            error: 'Missing required fields: destination, start_date, end_date, purpose'
+            error: 'Missing required fields: name, start_date, end_date'
         });
     }
     
@@ -3350,7 +3351,7 @@ app.post('/api/travel-auth', requireAuth, async (req, res) => {
         `;
         
         const params = [
-            req.user.employeeId, destination, start_date, end_date, purpose,
+            req.user.employeeId, name || destination, start_date, end_date, purpose,
             est_transport, est_lodging, est_meals, est_other, est_total,
             employee.supervisor_id, details
         ];
@@ -3367,7 +3368,7 @@ app.post('/api/travel-auth', requireAuth, async (req, res) => {
             
             // Notify supervisor
             createNotification(employee.supervisor_id, 'at_pending', 
-                `New Authorization to Travel request for ${destination} awaits your approval.`);
+                `New Authorization to Travel request "${name}" awaits your approval.`);
             
             res.json({ 
                 success: true, 
@@ -3555,10 +3556,11 @@ app.put('/api/travel-auth/:id/reject', requireAuth, requireRole('supervisor'), (
 app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
     const atId = req.params.id;
     const {
-        destination,
+        name,
+        destination = '',
         start_date,
         end_date,
-        purpose,
+        purpose = '',
         est_transport = 0,
         est_lodging = 0,
         est_meals = 0,
@@ -3609,7 +3611,7 @@ app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
             WHERE id = ?
         `;
         
-        const params = [destination, start_date, end_date, purpose, 
+        const params = [name || destination, start_date, end_date, purpose, 
                        est_transport, est_lodging, est_meals, est_other, est_total, details, atId];
         
         db.run(updateQuery, params, function(err) {
@@ -3622,7 +3624,7 @@ app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
             // Notify supervisor of resubmission
             if (at.approver_id) {
                 createNotification(at.approver_id, 'at_updated', 
-                    `Travel Authorization for ${destination || at.destination} has been revised and resubmitted.`);
+                    `Travel Authorization "${name || destination || at.destination}" has been revised and resubmitted.`);
             }
             
             res.json({ 

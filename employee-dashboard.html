@@ -1162,13 +1162,13 @@
 
     <!-- 📋 Create AT Modal -->
     <div id="create-at-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
-        <div style="background: white; padding: 30px; border-radius: 12px; max-width: 700px; width: 90%; max-height: 90%; overflow-y: auto;">
+        <div style="background: white; padding: 30px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 90%; overflow-y: auto;">
             <h3 style="margin-bottom: 20px; color: #2c3e50;">📋 Create Authorization to Travel</h3>
             
             <form id="create-at-form" onsubmit="createTravelAuth(event)">
                 <div class="form-group">
-                    <label for="at-destination">Destination *</label>
-                    <input type="text" id="at-destination" placeholder="e.g., Toronto, ON" required>
+                    <label for="at-name">Authorization Name *</label>
+                    <input type="text" id="at-name" placeholder="e.g., Toronto Training Conference Feb 2026" required>
                 </div>
                 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
@@ -1184,102 +1184,21 @@
                 </div>
                 
                 <div class="form-group">
-                    <label for="at-purpose">Purpose of Travel *</label>
-                    <textarea id="at-purpose" placeholder="e.g., Attend quarterly training conference" required style="min-height: 60px; resize: vertical;"></textarea>
+                    <label for="at-destination">Destination</label>
+                    <input type="text" id="at-destination" placeholder="e.g., Toronto, ON">
                 </div>
                 
-                <h4 style="margin: 20px 0 15px; color: #2c3e50;">Estimated Costs (Based on NJC Rates)</h4>
-                
-                <!-- Loading state for NJC rates -->
-                <div id="at-loading-rates" style="text-align: center; padding: 20px; color: #6c757d; display: none;">
-                    <div style="font-size: 24px; margin-bottom: 10px;">⏳</div>
-                    <p>Loading current NJC rates...</p>
+                <div class="form-group">
+                    <label for="at-purpose">Purpose of Travel</label>
+                    <textarea id="at-purpose" placeholder="e.g., Annual training conference, business meetings" rows="3"></textarea>
                 </div>
-
-                <!-- Trip days breakdown -->
-                <div id="at-trip-breakdown" style="display: none;">
                     
-                    <!-- Meals Section -->
-                    <div class="form-section" style="background: linear-gradient(135deg, #e8f5e8 0%, #f0f8ff 100%); padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #28a745;">
-                        <h5 style="margin: 0 0 15px 0; color: #2c3e50; display: flex; align-items: center;">
-                            🍽️ Meals (NJC Rates)
-                            <span id="meals-total-badge" style="background: #28a745; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; margin-left: auto; font-weight: bold;">$0.00</span>
-                        </h5>
-                        <div id="at-meals-breakdown"></div>
-                    </div>
-
-                    <!-- Incidentals Section -->
-                    <div class="form-section" style="background: linear-gradient(135deg, #fff7e6 0%, #f0f8ff 100%); padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
-                        <h5 style="margin: 0 0 15px 0; color: #2c3e50; display: flex; align-items: center;">
-                            💼 Incidentals (NJC Rate)
-                            <span id="incidentals-total-badge" style="background: #ffc107; color: #212529; padding: 4px 8px; border-radius: 12px; font-size: 12px; margin-left: auto; font-weight: bold;">$0.00</span>
-                        </h5>
-                        <div id="at-incidentals-breakdown"></div>
-                    </div>
-
-                    <!-- Vehicle/Transport Section -->
-                    <div class="form-section" style="background: linear-gradient(135deg, #e3f2fd 0%, #f0f8ff 100%); padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #2196f3;">
-                        <h5 style="margin: 0 0 15px 0; color: #2c3e50; display: flex; align-items: center;">
-                            🚗 Vehicle Allowance (NJC Rate)
-                            <span id="vehicle-total-badge" style="background: #2196f3; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; margin-left: auto; font-weight: bold;">$0.00</span>
-                        </h5>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; align-items: end;">
-                            <div class="form-group" style="margin: 0;">
-                                <label for="at-vehicle-km">Estimated Kilometers</label>
-                                <input type="number" id="at-vehicle-km" placeholder="0" min="0" step="1" onchange="calculateATVehicle()">
-                            </div>
-                            <div class="form-group" style="margin: 0;">
-                                <label>Rate per km</label>
-                                <input type="text" id="at-vehicle-rate" readonly style="background: #f8f9fa; font-weight: bold;" value="Loading...">
-                            </div>
-                            <div class="form-group" style="margin: 0;">
-                                <label>Total</label>
-                                <input type="text" id="at-vehicle-total" readonly style="background: #f8f9fa; font-weight: bold;" value="$0.00">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Hotel/Accommodation Section -->
-                    <div class="form-section" style="background: linear-gradient(135deg, #fce4ec 0%, #f0f8ff 100%); padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #e91e63;">
-                        <h5 style="margin: 0 0 15px 0; color: #2c3e50; display: flex; align-items: center;">
-                            🏨 Hotel/Accommodation (Manual Entry)
-                            <span id="hotel-total-badge" style="background: #e91e63; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; margin-left: auto; font-weight: bold;">$0.00</span>
-                        </h5>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; align-items: end;">
-                            <div class="form-group" style="margin: 0;">
-                                <label for="at-hotel-rate">Nightly Rate (CAD)</label>
-                                <input type="number" id="at-hotel-rate" placeholder="0.00" min="0" step="0.01" onchange="calculateATHotel()">
-                            </div>
-                            <div class="form-group" style="margin: 0;">
-                                <label>Number of Nights</label>
-                                <input type="text" id="at-hotel-nights" readonly style="background: #f8f9fa; font-weight: bold;" value="0">
-                            </div>
-                            <div class="form-group" style="margin: 0;">
-                                <label>Total</label>
-                                <input type="text" id="at-hotel-total" readonly style="background: #f8f9fa; font-weight: bold;" value="$0.00">
-                            </div>
-                        </div>
-                    </div>
-                    
-                </div>
-
-                <!-- Total Summary -->
-                <div class="form-group" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); padding: 20px; border-radius: 10px; border: 2px solid #28a745;">
-                    <label for="at-est-total" style="font-weight: bold; font-size: 16px; color: #2c3e50;">Total Estimated Cost (CAD)</label>
-                    <input type="number" id="at-est-total" placeholder="0.00" min="0" step="0.01" readonly style="background: #ffffff; font-weight: bold; font-size: 18px; color: #28a745; border: 1px solid #28a745;">
-                </div>
-                
-                <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 20px 0; font-size: 14px; color: #0d47a1;">
-                    <strong>Note:</strong> This authorization will be sent to your supervisor for approval. 
-                    Once approved, you can submit actual trip expenses. Estimates should be reasonable and based on expected costs.
-                </div>
-                
-                <div style="display: flex; justify-content: space-between; margin-top: 30px;">
+                <div style="margin-top: 30px; display: flex; gap: 15px; justify-content: flex-end;">
                     <button type="button" onclick="hideCreateATModal()" class="btn" style="background: #6c757d;">
                         ❌ Cancel
                     </button>
                     <button type="submit" class="btn" style="background: #28a745;">
-                        ✅ Submit for Approval
+                        ✅ Create Authorization
                     </button>
                 </div>
             </form>
@@ -2651,14 +2570,11 @@
             document.getElementById('create-at-modal').style.display = 'flex';
             // Clear form
             document.getElementById('create-at-form').reset();
-            document.getElementById('at-est-total').value = '0.00';
             
-            // Load NJC rates and setup form
-            await loadNJCRatesForAT();
-            
-            // Set up date change listeners
-            document.getElementById('at-start-date').addEventListener('change', updateATDateRange);
-            document.getElementById('at-end-date').addEventListener('change', updateATDateRange);
+            // Set default dates
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('at-start-date').value = today;
+            document.getElementById('at-end-date').value = today;
         }
         
         // Hide create AT modal
@@ -2879,12 +2795,14 @@
         async function createTravelAuth(event) {
             event.preventDefault();
             
+            const name = document.getElementById('at-name').value;
             const startDate = document.getElementById('at-start-date').value;
             const endDate = document.getElementById('at-end-date').value;
+            const destination = document.getElementById('at-destination').value;
+            const purpose = document.getElementById('at-purpose').value;
             
             // Validation
-            if (!document.getElementById('at-destination').value || !startDate || !endDate || 
-                !document.getElementById('at-purpose').value) {
+            if (!name || !startDate || !endDate) {
                 showMessage('error', '❌ Please fill in all required fields.');
                 return;
             }
@@ -2894,85 +2812,17 @@
                 return;
             }
             
-            if (!currentNJCRates) {
-                showMessage('error', '❌ NJC rates not loaded. Please refresh and try again.');
-                return;
-            }
-            
-            // Collect detailed breakdown
-            const mealsBreakdown = [];
-            const incidentalsBreakdown = [];
-            
-            // Collect meals data
-            const mealCheckboxes = document.querySelectorAll('[id^="meals-"][id*="-"]');
-            mealCheckboxes.forEach(checkbox => {
-                if (checkbox.checked) {
-                    const parts = checkbox.id.split('-');
-                    const dayIndex = parts[1];
-                    const mealType = parts[2];
-                    const amount = currentNJCRates[mealType].amount;
-                    
-                    mealsBreakdown.push({
-                        day: parseInt(dayIndex),
-                        meal_type: mealType,
-                        amount: amount,
-                        date: getDateForDayIndex(startDate, dayIndex)
-                    });
-                }
-            });
-            
-            // Collect incidentals data
-            const incidentalsCheckboxes = document.querySelectorAll('[id^="incidentals-"]');
-            incidentalsCheckboxes.forEach(checkbox => {
-                if (checkbox.checked) {
-                    const dayIndex = parseInt(checkbox.id.split('-')[1]);
-                    incidentalsBreakdown.push({
-                        day: dayIndex,
-                        amount: currentNJCRates.incidentals.amount,
-                        date: getDateForDayIndex(startDate, dayIndex)
-                    });
-                }
-            });
-            
-            // Calculate totals
-            const mealsTotal = calculateATMealsTotal();
-            const incidentalsTotal = calculateATIncidentalsTotal();
-            const vehicleTotal = calculateATVehicle();
-            const hotelTotal = calculateATHotel();
-            
-            const vehicleKm = parseFloat(document.getElementById('at-vehicle-km').value || 0);
-            const vehicleRate = currentNJCRates.vehicle_km ? currentNJCRates.vehicle_km.amount : currentNJCRates.vehicle.amount;
-            const hotelRate = parseFloat(document.getElementById('at-hotel-rate').value || 0);
-            const hotelNights = parseInt(document.getElementById('at-hotel-nights').value || 0);
-            
-            // Prepare detailed breakdown for storage
-            const details = {
-                meals: mealsBreakdown,
-                incidentals: incidentalsBreakdown,
-                vehicle: {
-                    km: vehicleKm,
-                    rate: vehicleRate,
-                    total: vehicleTotal
-                },
-                hotel: {
-                    nightly_rate: hotelRate,
-                    nights: hotelNights,
-                    total: hotelTotal
-                },
-                njc_rates_used: currentNJCRates,
-                created_at: new Date().toISOString()
-            };
-            
             const formData = {
-                destination: sanitizeInput(document.getElementById('at-destination').value),
+                name: sanitizeInput(name),
+                destination: sanitizeInput(destination || ''),
                 start_date: startDate,
                 end_date: endDate,
-                purpose: sanitizeInput(document.getElementById('at-purpose').value),
-                est_transport: vehicleTotal,
-                est_lodging: hotelTotal,
-                est_meals: mealsTotal,
-                est_other: incidentalsTotal,
-                details: JSON.stringify(details)
+                purpose: sanitizeInput(purpose || ''),
+                est_transport: 0,
+                est_lodging: 0,
+                est_meals: 0,
+                est_other: 0,
+                details: JSON.stringify({})
             };
             
             try {
@@ -2988,7 +2838,7 @@
                 const result = await response.json();
                 
                 if (result.success) {
-                    showMessage('success', `✅ ${result.message}`);
+                    showMessage('success', `✅ Authorization "${name}" created successfully!`);
                     hideCreateATModal();
                     await loadTravelAuths();
                 } else {
@@ -3022,7 +2872,8 @@
                 
                 const at = await response.json();
                 
-                // Populate basic form fields
+                // Populate form fields
+                document.getElementById('at-name').value = at.name || at.destination || '';
                 document.getElementById('at-destination').value = at.destination || '';
                 document.getElementById('at-start-date').value = at.start_date || '';
                 document.getElementById('at-end-date').value = at.end_date || '';
@@ -3036,29 +2887,8 @@
                 document.querySelector('#create-at-modal h3').textContent = '✏️ Edit Authorization to Travel';
                 document.querySelector('#create-at-form button[type="submit"]').innerHTML = '✅ Update Authorization';
                 
-                // Show modal and load NJC rates
+                // Show modal
                 document.getElementById('create-at-modal').style.display = 'flex';
-                await loadNJCRatesForAT();
-                
-                // After NJC rates are loaded, populate the breakdown from stored details
-                if (at.details) {
-                    try {
-                        const details = JSON.parse(at.details);
-                        await populateATFormFromDetails(details);
-                    } catch (e) {
-                        console.error('❌ Error parsing stored details:', e);
-                        // Fallback to basic form population
-                        document.getElementById('at-vehicle-km').value = Math.round((at.est_transport || 0) / 0.68);
-                        document.getElementById('at-hotel-rate').value = at.est_lodging || 0;
-                    }
-                } else {
-                    // Legacy AT without detailed breakdown - populate basic fields
-                    document.getElementById('at-vehicle-km').value = Math.round((at.est_transport || 0) / 0.68);
-                    document.getElementById('at-hotel-rate').value = at.est_lodging || 0;
-                }
-                
-                // Recalculate totals
-                calculateATGrandTotal();
                 
             } catch (error) {
                 console.error('❌ Error loading travel authorization:', error);
@@ -3110,12 +2940,14 @@
         async function updateTravelAuth(event, atId) {
             event.preventDefault();
             
+            const name = document.getElementById('at-name').value;
             const startDate = document.getElementById('at-start-date').value;
             const endDate = document.getElementById('at-end-date').value;
+            const destination = document.getElementById('at-destination').value;
+            const purpose = document.getElementById('at-purpose').value;
             
             // Validation
-            if (!document.getElementById('at-destination').value || !startDate || !endDate || 
-                !document.getElementById('at-purpose').value) {
+            if (!name || !startDate || !endDate) {
                 showMessage('error', '❌ Please fill in all required fields.');
                 return;
             }
@@ -3125,85 +2957,17 @@
                 return;
             }
             
-            if (!currentNJCRates) {
-                showMessage('error', '❌ NJC rates not loaded. Please refresh and try again.');
-                return;
-            }
-            
-            // Collect detailed breakdown (same as create)
-            const mealsBreakdown = [];
-            const incidentalsBreakdown = [];
-            
-            // Collect meals data
-            const mealCheckboxes = document.querySelectorAll('[id^="meals-"][id*="-"]');
-            mealCheckboxes.forEach(checkbox => {
-                if (checkbox.checked) {
-                    const parts = checkbox.id.split('-');
-                    const dayIndex = parts[1];
-                    const mealType = parts[2];
-                    const amount = currentNJCRates[mealType].amount;
-                    
-                    mealsBreakdown.push({
-                        day: parseInt(dayIndex),
-                        meal_type: mealType,
-                        amount: amount,
-                        date: getDateForDayIndex(startDate, dayIndex)
-                    });
-                }
-            });
-            
-            // Collect incidentals data
-            const incidentalsCheckboxes = document.querySelectorAll('[id^="incidentals-"]');
-            incidentalsCheckboxes.forEach(checkbox => {
-                if (checkbox.checked) {
-                    const dayIndex = parseInt(checkbox.id.split('-')[1]);
-                    incidentalsBreakdown.push({
-                        day: dayIndex,
-                        amount: currentNJCRates.incidentals.amount,
-                        date: getDateForDayIndex(startDate, dayIndex)
-                    });
-                }
-            });
-            
-            // Calculate totals
-            const mealsTotal = calculateATMealsTotal();
-            const incidentalsTotal = calculateATIncidentalsTotal();
-            const vehicleTotal = calculateATVehicle();
-            const hotelTotal = calculateATHotel();
-            
-            const vehicleKm = parseFloat(document.getElementById('at-vehicle-km').value || 0);
-            const vehicleRate = currentNJCRates.vehicle_km ? currentNJCRates.vehicle_km.amount : currentNJCRates.vehicle.amount;
-            const hotelRate = parseFloat(document.getElementById('at-hotel-rate').value || 0);
-            const hotelNights = parseInt(document.getElementById('at-hotel-nights').value || 0);
-            
-            // Prepare detailed breakdown for storage
-            const details = {
-                meals: mealsBreakdown,
-                incidentals: incidentalsBreakdown,
-                vehicle: {
-                    km: vehicleKm,
-                    rate: vehicleRate,
-                    total: vehicleTotal
-                },
-                hotel: {
-                    nightly_rate: hotelRate,
-                    nights: hotelNights,
-                    total: hotelTotal
-                },
-                njc_rates_used: currentNJCRates,
-                updated_at: new Date().toISOString()
-            };
-            
             const formData = {
-                destination: sanitizeInput(document.getElementById('at-destination').value),
+                name: sanitizeInput(name),
+                destination: sanitizeInput(destination || ''),
                 start_date: startDate,
                 end_date: endDate,
-                purpose: sanitizeInput(document.getElementById('at-purpose').value),
-                est_transport: vehicleTotal,
-                est_lodging: hotelTotal,
-                est_meals: mealsTotal,
-                est_other: incidentalsTotal,
-                details: JSON.stringify(details)
+                purpose: sanitizeInput(purpose || ''),
+                est_transport: 0,
+                est_lodging: 0,
+                est_meals: 0,
+                est_other: 0,
+                details: JSON.stringify({})
             };
             
             try {
@@ -3219,7 +2983,7 @@
                 const result = await response.json();
                 
                 if (result.success) {
-                    showMessage('success', `✅ ${result.message}`);
+                    showMessage('success', `✅ Authorization "${name}" updated successfully!`);
                     hideCreateATModal();
                     // Reset form back to create mode
                     resetATFormToCreate();
@@ -3239,7 +3003,7 @@
             const form = document.getElementById('create-at-form');
             form.onsubmit = createTravelAuth;
             document.querySelector('#create-at-modal h3').textContent = '📋 Create Authorization to Travel';
-            document.querySelector('#create-at-form button[type="submit"]').innerHTML = '✅ Submit for Approval';
+            document.querySelector('#create-at-form button[type="submit"]').innerHTML = '✅ Create Authorization';
         }
 
         // ═══════════════════════════════════════════════════════════════════════════════
