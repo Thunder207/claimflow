@@ -736,6 +736,98 @@
         }
         
         #file-input { display: none; }
+        
+        /* Day Planner Styles */
+        .dp-day-card {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid #dee2e6;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        .dp-day-label {
+            font-weight: 700;
+            color: #2c3e50;
+            font-size: 15px;
+            margin-bottom: 10px;
+        }
+        .dp-tiles {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+        .dp-tile {
+            width: 88px;
+            padding: 8px 4px;
+            border-radius: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 12px;
+            font-weight: 600;
+            user-select: none;
+            border: 2px solid transparent;
+        }
+        .dp-tile.on {
+            background: #d4edda;
+            border-color: #28a745;
+            color: #155724;
+        }
+        .dp-tile.off {
+            background: #e9ecef;
+            border-color: #dee2e6;
+            color: #6c757d;
+        }
+        .dp-tile:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+        }
+        .dp-tile.readonly {
+            cursor: default;
+            opacity: 0.8;
+        }
+        .dp-tile.readonly:hover {
+            transform: none;
+            box-shadow: none;
+        }
+        .dp-tile-icon { font-size: 18px; display: block; margin-bottom: 2px; }
+        .dp-tile-amount { font-size: 11px; display: block; }
+        .dp-tile-status { font-size: 14px; display: block; margin-top: 2px; }
+        .dp-hotel-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: 8px;
+        }
+        .dp-hotel-rate-input {
+            width: 80px !important;
+            padding: 6px 8px !important;
+            font-size: 13px !important;
+            border-radius: 6px !important;
+            border: 2px solid #ffc107 !important;
+            min-height: auto !important;
+        }
+        .dp-other-item {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+        .dp-other-item input {
+            padding: 8px 10px;
+            font-size: 13px;
+            min-height: auto;
+            border-radius: 6px;
+        }
+        @media (max-width: 768px) {
+            .dp-tile { width: 76px; font-size: 11px; }
+            .dp-tiles { gap: 6px; }
+        }
+        @media (max-width: 480px) {
+            .dp-tile { width: 68px; padding: 6px 2px; }
+        }
     </style>
 </head>
 <body>
@@ -1098,118 +1190,55 @@
             </div>
 
             <!-- Expense Form (mirrors trip expense form, no receipt) -->
+            <!-- Day Planner Section (replaces old expense form) -->
             <div id="ta-expense-section" style="display: none;">
-                <h4 style="margin-bottom: 15px; color: #2c3e50;">📝 Add Estimated Expense</h4>
                 
-                <form id="ta-expense-form" class="expense-form" onsubmit="addAuthExpense(event)">
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
-                        <div class="form-group">
-                            <label for="ta-expense-type">What type of expense? *</label>
-                            <select id="ta-expense-type" required onchange="updateTAPerDiemRate()">
-                                <option value="">Choose expense type...</option>
-                                <optgroup label="🏛️ Government Per Diem (NJC Fixed Rates)">
-                                    <option value="breakfast">🥐 Breakfast - $23.45</option>
-                                    <option value="lunch">🥗 Lunch - $29.75</option>
-                                    <option value="dinner">🍽️ Dinner - $47.05</option>
-                                    <option value="incidentals">📱 Incidentals - $32.08</option>
-                                </optgroup>
-                                <optgroup label="🚗 Travel & Accommodation">
-                                    <option value="vehicle_km">🚗 Vehicle (per km) - $0.68</option>
-                                    <option value="hotel">🏨 Hotel (Estimated Nightly Rate)</option>
-                                </optgroup>
-                                <optgroup label="📝 Other">
-                                    <option value="other">📝 Other Expense (Custom Amount)</option>
-                                </optgroup>
-                            </select>
+                <!-- Day Planner Header -->
+                <div id="dp-header" style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #17a2b8;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <div>
+                            <h4 style="color: #0d47a1; margin: 0 0 4px 0;" id="dp-trip-name">✈️ Trip Name</h4>
+                            <div style="color: #1565c0; font-size: 13px;" id="dp-trip-dates">📅 Dates · 📍 Destination</div>
                         </div>
-                        <div class="form-group">
-                            <label for="ta-expense-date">Date *</label>
-                            <input type="date" id="ta-expense-date" required>
+                        <div style="text-align: right;">
+                            <div style="font-size: 13px; color: #666; font-weight: 600;">Estimated Total</div>
+                            <div id="dp-running-total" style="font-size: 28px; font-weight: bold; color: #17a2b8;">$0.00</div>
                         </div>
                     </div>
+                </div>
 
-                    <div class="per-diem-info" id="ta-per-diem-display" style="text-align: center; font-size: 15px;">
-                        💰 Select expense type above to see official NJC government rates
-                        <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">These are ESTIMATES — no receipt required</div>
-                    </div>
+                <!-- Day Cards Container -->
+                <div id="dp-day-cards" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;"></div>
 
-                    <!-- Vehicle KM fields -->
-                    <div id="ta-vehicle-km-group" style="display: none;">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                            <div class="form-group">
-                                <label for="ta-vehicle-from">From *</label>
-                                <input type="text" id="ta-vehicle-from" placeholder="e.g., 123 Main St, Ottawa, ON">
-                            </div>
-                            <div class="form-group">
-                                <label for="ta-vehicle-to">To *</label>
-                                <input type="text" id="ta-vehicle-to" placeholder="e.g., 456 Queen St, Toronto, ON">
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="ta-kilometers">Kilometers *</label>
-                            <input type="number" id="ta-kilometers" step="0.1" min="0.1" max="10000" placeholder="e.g., 450" oninput="calculateTAVehicleAmount()">
-                            <small style="color: #666; font-size: 12px;">NJC rate: $0.68/km</small>
-                        </div>
+                <!-- Vehicle Section -->
+                <div id="dp-vehicle-section" style="background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #ffc107;">
+                    <h4 style="color: #856404; margin: 0 0 12px 0;">🚗 Vehicle / Mileage</h4>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <label style="margin: 0; white-space: nowrap; color: #856404; font-weight: 600;">Kilometers:</label>
+                        <input type="number" id="dp-vehicle-km" step="0.1" min="0" max="99999" placeholder="0" style="width: 120px; padding: 10px; border-radius: 8px; border: 2px solid #ffc107; font-size: 15px;" oninput="dpRecalcTotal()">
+                        <span style="color: #856404; font-size: 14px;">× $0.68/km = <strong id="dp-vehicle-total">$0.00</strong></span>
                     </div>
+                </div>
 
-                    <!-- Hotel fields -->
-                    <div id="ta-hotel-group" style="display: none; padding: 15px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 12px; margin: 10px 0;">
-                        <h5 style="color: #856404; margin-bottom: 10px;">🏨 Hotel Estimate</h5>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
-                            <div class="form-group">
-                                <label for="ta-hotel-checkin">Check-in *</label>
-                                <input type="date" id="ta-hotel-checkin" onchange="calculateTAHotelAmount()">
-                            </div>
-                            <div class="form-group">
-                                <label for="ta-hotel-checkout">Check-out *</label>
-                                <input type="date" id="ta-hotel-checkout" onchange="calculateTAHotelAmount()">
-                            </div>
-                            <div class="form-group">
-                                <label for="ta-hotel-rate">Nightly Rate ($) *</label>
-                                <input type="number" id="ta-hotel-rate" step="0.01" min="0.01" placeholder="150.00" oninput="calculateTAHotelAmount()">
-                            </div>
-                        </div>
-                        <div id="ta-hotel-calc" style="display:none; background: #fff; padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; color: #856404;"></div>
+                <!-- Other Expenses Section -->
+                <div id="dp-other-section" style="background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #dee2e6;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h4 style="color: #495057; margin: 0;">📝 Other Expenses</h4>
+                        <button type="button" onclick="dpAddOtherExpense()" class="btn" style="background: #6c757d; color: white; padding: 6px 14px; font-size: 13px; min-height: 34px;">➕ Add Other</button>
                     </div>
+                    <div id="dp-other-list"></div>
+                </div>
 
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
-                        <div class="form-group">
-                            <label for="ta-location">Location *</label>
-                            <input type="text" id="ta-location" placeholder="e.g., Ottawa, ON" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="ta-amount" id="ta-amount-label">Estimated Amount ($) *</label>
-                            <input type="number" id="ta-amount" step="0.01" min="0.01" placeholder="0.00" required>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="ta-vendor">Vendor/Details</label>
-                        <input type="text" id="ta-vendor" placeholder="e.g., Expected hotel, airline, etc.">
-                    </div>
-                    <div class="form-group">
-                        <label for="ta-description">Notes (Optional)</label>
-                        <textarea id="ta-description" rows="2" placeholder="Any additional details about this estimated expense..."></textarea>
-                    </div>
-                    <button type="submit" class="btn" style="margin-top: 10px; padding: 14px 30px; font-size: 15px; background: #17a2b8; color: white; border: none; border-radius: 8px;">
-                        ➕ Add Estimated Expense
-                    </button>
-                </form>
-
-                <!-- Expense List -->
-                <div id="ta-expenses-section" style="margin-top: 25px; padding: 20px; background: #f8f9fa; border-radius: 12px; border-left: 4px solid #17a2b8;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <h4 style="color: #17a2b8; margin: 0;">💰 Estimated Expenses (<span id="ta-expense-count">0</span>)</h4>
-                        <span id="ta-expense-total" style="font-size: 18px; font-weight: bold; color: #17a2b8;">$0.00</span>
-                    </div>
-                    <div id="ta-expenses-list">
-                        <p style="text-align: center; color: #6c757d; padding: 15px;">No estimated expenses yet. Add some above!</p>
-                    </div>
-                    <div id="ta-submit-section" style="margin-top: 20px; text-align: center; display: none;">
-                        <button type="button" onclick="submitAuthForApproval()" class="btn" style="padding: 14px 40px; font-size: 16px; background: #28a745; color: white; border: none; border-radius: 8px;">
+                <!-- Running Total + Submit -->
+                <div style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 20px; border-radius: 12px; text-align: center; border: 2px solid #28a745;">
+                    <div style="font-size: 14px; color: #2e7d32; font-weight: 600; margin-bottom: 4px;">💰 Estimated Trip Total</div>
+                    <div id="dp-grand-total" style="font-size: 32px; font-weight: bold; color: #28a745; margin-bottom: 16px;">$0.00</div>
+                    <div id="dp-submit-section">
+                        <button type="button" onclick="dpSubmitForApproval()" class="btn" style="padding: 14px 40px; font-size: 16px; background: #28a745; color: white; border: none; border-radius: 8px;">
                             📤 Submit for Approval
                         </button>
                         <div style="margin-top: 8px; font-size: 13px; color: #666;">
-                            💡 This will send the authorization with all estimated expenses to your supervisor
+                            💡 This will save all expenses and send the authorization to your supervisor
                         </div>
                     </div>
                 </div>
@@ -2607,6 +2636,9 @@
         
         let selectedAuthId = null;
         let authExpenses = [];
+        
+        // Day Planner state
+        let dpState = { days: [], otherExpenses: [], vehicleKm: 0, canEdit: false, startDate: null, endDate: null, destination: '' };
 
         // Show message in travel auth tab
         function showTAMessage(type, text) {
@@ -2623,22 +2655,10 @@
                 const response = await fetch('/api/travel-auth', {
                     headers: { 'Authorization': `Bearer ${sessionId}` }
                 });
-                
-                if (response.status === 401) {
-                    showMessage('error', '🔒 Session expired. Please log in again.');
-                    redirectToLogin();
-                    return;
-                }
-                
+                if (response.status === 401) { showMessage('error', '🔒 Session expired.'); redirectToLogin(); return; }
                 const data = await response.json();
-                
-                if (!response.ok) {
-                    showMessage('error', `❌ Error: ${data.error || 'Failed to load travel authorizations'}`);
-                    return;
-                }
-                
+                if (!response.ok) { showMessage('error', `❌ Error: ${data.error || 'Failed to load'}`); return; }
                 renderTravelAuths(data);
-                
             } catch (error) {
                 console.error('❌ Error loading travel authorizations:', error);
                 showMessage('error', `❌ Failed to load travel authorizations: ${error.message}`);
@@ -2650,7 +2670,6 @@
             const container = document.getElementById('travel-auth-container');
             const select = document.getElementById('ta-auth-select');
             
-            // Populate dropdown
             let options = '<option value="">-- Select a travel authorization --</option>';
             if (auths && auths.length > 0) {
                 auths.forEach(at => {
@@ -2658,30 +2677,18 @@
                     const statusEmoji = { draft: '📝', pending: '⏳', approved: '✅', rejected: '❌' }[status] || '📋';
                     const total = parseFloat(at.expenses_total || at.est_total || 0).toFixed(2);
                     const count = at.expense_count || 0;
-                    options += `<option value="${at.id}" data-status="${status}" data-start-date="${at.start_date}" data-end-date="${at.end_date}">${statusEmoji} ${sanitizeForDisplay(at.name || at.destination)} (${at.start_date} → ${at.end_date}) — ${count} expenses, $${total}</option>`;
+                    options += `<option value="${at.id}" data-status="${status}" data-start-date="${at.start_date}" data-end-date="${at.end_date}" data-name="${sanitizeForDisplay(at.name || at.destination || '')}" data-destination="${sanitizeForDisplay(at.destination || '')}">${statusEmoji} ${sanitizeForDisplay(at.name || at.destination)} (${at.start_date} → ${at.end_date}) — ${count} expenses, $${total}</option>`;
                 });
             }
             select.innerHTML = options;
+            if (selectedAuthId) select.value = selectedAuthId;
             
-            // Re-select if we had one selected
-            if (selectedAuthId) {
-                select.value = selectedAuthId;
-            }
-            
-            // Render cards
             if (!auths || auths.length === 0) {
-                container.innerHTML = `
-                    <div style="text-align: center; padding: 40px 20px; color: #6c757d; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); border-radius: 12px; border: 2px dashed #ffc107;">
-                        <div style="font-size: 48px; margin-bottom: 15px;">✈️</div>
-                        <h4 style="color: #2c3e50; margin-bottom: 10px;">No travel authorizations yet</h4>
-                        <p>Click "New Authorization" above to get started.</p>
-                    </div>
-                `;
+                container.innerHTML = `<div style="text-align: center; padding: 40px 20px; color: #6c757d; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); border-radius: 12px; border: 2px dashed #ffc107;"><div style="font-size: 48px; margin-bottom: 15px;">✈️</div><h4 style="color: #2c3e50; margin-bottom: 10px;">No travel authorizations yet</h4><p>Click "New Authorization" above to get started.</p></div>`;
                 return;
             }
             
             let html = '<h4 style="margin-bottom: 15px; color: #2c3e50;">📋 All Authorizations</h4><div style="display: grid; gap: 12px;">';
-            
             auths.forEach(at => {
                 const status = at.status || 'draft';
                 const statusBadge = getStatusBadgeHTML(status);
@@ -2689,45 +2696,13 @@
                 const canEdit = status === 'rejected' || status === 'draft';
                 const count = at.expense_count || 0;
                 const total = parseFloat(at.expenses_total || at.est_total || 0).toFixed(2);
-                
-                html += `
-                    <div class="trip-card ${status}" style="border-left: 4px solid ${statusColor}; cursor: pointer;" onclick="document.getElementById('ta-auth-select').value='${at.id}'; handleAuthSelection();">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
-                            <div style="flex: 1;">
-                                <div style="font-size: 16px; font-weight: bold; color: #2c3e50; margin-bottom: 4px;">
-                                    ✈️ ${sanitizeForDisplay(at.name || at.destination)}
-                                </div>
-                                <div style="color: #666; font-size: 13px; line-height: 1.5;">
-                                    📅 ${at.start_date} → ${at.end_date}
-                                    ${at.destination ? ` · 📍 ${sanitizeForDisplay(at.destination)}` : ''}
-                                    ${at.approver_name ? ` · 👤 ${sanitizeForDisplay(at.approver_name)}` : ''}
-                                </div>
-                                <div style="font-size: 13px; color: #17a2b8; margin-top: 4px; font-weight: 600;">
-                                    💰 ${count} expense${count !== 1 ? 's' : ''} · $${total} estimated
-                                </div>
-                                ${at.purpose ? `<div style="font-size: 12px; color: #888; margin-top: 4px;">📋 ${sanitizeForDisplay(at.purpose)}</div>` : ''}
-                                ${status === 'rejected' && at.rejection_reason ? `
-                                    <div style="font-size: 12px; color: #721c24; margin-top: 4px; padding: 4px 8px; background: #f8d7da; border-radius: 4px;">
-                                        ❌ ${sanitizeForDisplay(at.rejection_reason)}
-                                    </div>` : ''}
-                            </div>
-                            <div style="text-align: right;">
-                                ${statusBadge}
-                                ${canEdit ? `<div style="margin-top: 6px;">
-                                    <button onclick="event.stopPropagation(); editTravelAuth(${at.id})" class="btn" style="background: #ffc107; color: #212529; padding: 4px 10px; font-size: 12px;">✏️ Edit</button>
-                                </div>` : ''}
-                                ${at.trip_id ? '<div style="margin-top: 6px;"><span style="color: #28a745; font-size: 12px; font-weight: bold;">🧳 Linked</span></div>' : ''}
-                            </div>
-                        </div>
-                    </div>
-                `;
+                html += `<div class="trip-card ${status}" style="border-left: 4px solid ${statusColor}; cursor: pointer;" onclick="document.getElementById('ta-auth-select').value='${at.id}'; handleAuthSelection();"><div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;"><div style="flex: 1;"><div style="font-size: 16px; font-weight: bold; color: #2c3e50; margin-bottom: 4px;">✈️ ${sanitizeForDisplay(at.name || at.destination)}</div><div style="color: #666; font-size: 13px; line-height: 1.5;">📅 ${at.start_date} → ${at.end_date}${at.destination ? ` · 📍 ${sanitizeForDisplay(at.destination)}` : ''}${at.approver_name ? ` · 👤 ${sanitizeForDisplay(at.approver_name)}` : ''}</div><div style="font-size: 13px; color: #17a2b8; margin-top: 4px; font-weight: 600;">💰 ${count} expense${count !== 1 ? 's' : ''} · $${total} estimated</div>${at.purpose ? `<div style="font-size: 12px; color: #888; margin-top: 4px;">📋 ${sanitizeForDisplay(at.purpose)}</div>` : ''}${status === 'rejected' && at.rejection_reason ? `<div style="font-size: 12px; color: #721c24; margin-top: 4px; padding: 4px 8px; background: #f8d7da; border-radius: 4px;">❌ ${sanitizeForDisplay(at.rejection_reason)}</div>` : ''}</div><div style="text-align: right;">${statusBadge}${canEdit ? `<div style="margin-top: 6px;"><button onclick="event.stopPropagation(); editTravelAuth(${at.id})" class="btn" style="background: #ffc107; color: #212529; padding: 4px 10px; font-size: 12px;">✏️ Edit</button></div>` : ''}${at.trip_id ? '<div style="margin-top: 6px;"><span style="color: #28a745; font-size: 12px; font-weight: bold;">🧳 Linked</span></div>' : ''}</div></div></div>`;
             });
-            
             html += '</div>';
             container.innerHTML = html;
         }
         
-        // Handle auth selection from dropdown
+        // Handle auth selection — build Day Planner
         async function handleAuthSelection() {
             const select = document.getElementById('ta-auth-select');
             const atId = select.value;
@@ -2742,45 +2717,37 @@
             }
             
             selectedAuthId = atId;
-            
-            // Get status from option
             const option = select.selectedOptions[0];
             const status = option?.dataset?.status || 'draft';
-            const canAddExpenses = status === 'draft' || status === 'rejected';
+            const canEdit = status === 'draft' || status === 'rejected';
+            const startDate = option?.dataset?.startDate;
+            const endDate = option?.dataset?.endDate;
+            const tripName = option?.dataset?.name || '';
+            const destination = option?.dataset?.destination || '';
             
-            // Show info
             const statusColors = { draft: '#6c757d', pending: '#ffc107', approved: '#28a745', rejected: '#dc3545' };
             infoDiv.style.display = 'block';
             infoDiv.style.background = `${statusColors[status]}22`;
             infoDiv.style.border = `1px solid ${statusColors[status]}`;
-            infoDiv.innerHTML = `<strong>Status:</strong> ${status.toUpperCase()} ${canAddExpenses ? '— You can add/remove estimated expenses' : status === 'pending' ? '— Waiting for approval (read-only)' : '— Approved ✅'}`;
+            infoDiv.innerHTML = `<strong>Status:</strong> ${status.toUpperCase()} ${canEdit ? '— Toggle expenses on/off below' : status === 'pending' ? '— Waiting for approval (read-only)' : '— Approved ✅'}`;
             
-            // Show expense section
             expenseSection.style.display = 'block';
             
-            // Restrict date pickers to authorization date range
-            const startDate = option?.dataset?.startDate;
-            const endDate = option?.dataset?.endDate;
-            const dateField = document.getElementById('ta-expense-date');
-            if (startDate && endDate) {
-                dateField.min = startDate;
-                dateField.max = endDate;
-                dateField.value = startDate; // default to first day
-                // Also restrict hotel check-in/check-out dates
-                const checkinField = document.getElementById('ta-hotel-checkin');
-                const checkoutField = document.getElementById('ta-hotel-checkout');
-                if (checkinField) { checkinField.min = startDate; checkinField.max = endDate; }
-                if (checkoutField) { checkoutField.min = startDate; checkoutField.max = endDate; }
-            }
+            // Store state
+            dpState.startDate = startDate;
+            dpState.endDate = endDate;
+            dpState.canEdit = canEdit;
+            dpState.destination = destination;
             
-            // Show/hide form based on editability
-            document.getElementById('ta-expense-form').style.display = canAddExpenses ? 'block' : 'none';
+            // Update header
+            document.getElementById('dp-trip-name').textContent = `✈️ ${tripName || 'Travel Authorization'}`;
+            document.getElementById('dp-trip-dates').textContent = `📅 ${startDate} → ${endDate}${destination ? ` · 📍 ${destination}` : ''}`;
             
-            // Load expenses
-            await loadAuthExpenses(atId, canAddExpenses);
+            // Load existing expenses then build grid
+            await loadAuthExpenses(atId, canEdit);
         }
         
-        // Load expenses for selected auth
+        // Load expenses for selected auth, then render day planner
         async function loadAuthExpenses(atId, canEdit) {
             try {
                 const response = await fetch(`/api/travel-auth/${atId}/expenses`, {
@@ -2788,219 +2755,317 @@
                 });
                 const expenses = await response.json();
                 authExpenses = Array.isArray(expenses) ? expenses : [];
-                renderAuthExpenses(canEdit);
             } catch (error) {
                 console.error('Error loading auth expenses:', error);
                 authExpenses = [];
-                renderAuthExpenses(canEdit);
             }
+            dpBuildGrid(canEdit);
         }
         
-        // Render auth expenses list
-        function renderAuthExpenses(canEdit) {
-            const list = document.getElementById('ta-expenses-list');
-            const countEl = document.getElementById('ta-expense-count');
-            const totalEl = document.getElementById('ta-expense-total');
-            const submitSection = document.getElementById('ta-submit-section');
+        // ═══════════════════════════════════════════════════════════════════════════════
+        // DAY PLANNER - Core Logic
+        // ═══════════════════════════════════════════════════════════════════════════════
+        
+        const DP_RATES = {
+            breakfast:    { rate: 23.45, icon: '🥐', label: 'Bkfst' },
+            lunch:        { rate: 29.75, icon: '🥗', label: 'Lunch' },
+            dinner:       { rate: 47.05, icon: '🍽️', label: 'Dinner' },
+            incidentals:  { rate: 32.08, icon: '📱', label: 'Incid.' },
+        };
+        const DP_VEHICLE_RATE = 0.68;
+        const DP_HOTEL_DEFAULT = 150;
+        
+        function dpBuildGrid(canEdit) {
+            const { startDate, endDate } = dpState;
+            if (!startDate || !endDate) return;
             
-            countEl.textContent = authExpenses.length;
-            const total = authExpenses.reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-            totalEl.textContent = `$${total.toFixed(2)}`;
+            const start = new Date(startDate + 'T00:00:00');
+            const end = new Date(endDate + 'T00:00:00');
+            const totalDays = Math.round((end - start) / (86400000)) + 1;
+            if (totalDays < 1 || totalDays > 60) return;
             
-            if (authExpenses.length === 0) {
-                list.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 15px;">No estimated expenses yet. Add some above!</p>';
-                submitSection.style.display = canEdit ? 'block' : 'none';
-                return;
-            }
+            // Build day state from existing expenses
+            const existingByDateType = {};
+            let existingVehicleKm = 0;
+            const otherExpenses = [];
             
-            const typeIcons = { breakfast: '🥐', lunch: '🥗', dinner: '🍽️', incidentals: '📱', vehicle_km: '🚗', hotel: '🏨', other: '📝' };
-            
-            let html = '';
             authExpenses.forEach(e => {
-                html += `
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: white; border-radius: 8px; margin-bottom: 8px; border: 1px solid #dee2e6;">
-                        <div style="flex: 1;">
-                            <strong>${typeIcons[e.expense_type] || '📋'} ${e.expense_type}</strong>
-                            <span style="color: #666; font-size: 13px;"> · ${e.date} · ${sanitizeForDisplay(e.location || '')}</span>
-                            ${e.vendor ? `<span style="color: #888; font-size: 12px;"> · ${sanitizeForDisplay(e.vendor)}</span>` : ''}
-                            ${e.description ? `<div style="font-size: 12px; color: #888; margin-top: 2px;">${sanitizeForDisplay(e.description)}</div>` : ''}
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <strong style="color: #17a2b8;">$${parseFloat(e.amount).toFixed(2)}</strong>
-                            ${canEdit ? `<button onclick="removeAuthExpense(${e.id})" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer;">🗑️</button>` : ''}
-                        </div>
-                    </div>
-                `;
+                const key = `${e.date}|${e.expense_type}`;
+                if (e.expense_type === 'vehicle_km') {
+                    // Parse km from description or use amount/rate
+                    const kmMatch = e.description ? e.description.match(/([\d.]+)\s*km/) : null;
+                    existingVehicleKm = kmMatch ? parseFloat(kmMatch[1]) : (parseFloat(e.amount) / DP_VEHICLE_RATE);
+                } else if (e.expense_type === 'other') {
+                    otherExpenses.push({ id: e.id, description: e.vendor || e.description || '', amount: parseFloat(e.amount), date: e.date });
+                } else {
+                    existingByDateType[key] = e;
+                }
             });
             
-            list.innerHTML = html;
-            submitSection.style.display = canEdit ? 'block' : 'none';
-        }
-        
-        // Update TA per diem rate display
-        function updateTAPerDiemRate() {
-            const type = document.getElementById('ta-expense-type').value;
-            const display = document.getElementById('ta-per-diem-display');
-            const amountInput = document.getElementById('ta-amount');
-            const vehicleGroup = document.getElementById('ta-vehicle-km-group');
-            const hotelGroup = document.getElementById('ta-hotel-group');
-            
-            vehicleGroup.style.display = 'none';
-            hotelGroup.style.display = 'none';
-            amountInput.readOnly = false;
-            
-            if (njcRates[type]) {
-                const r = njcRates[type];
-                if (r.rate !== null) {
-                    display.innerHTML = `${r.icon} <strong>${r.name}</strong> — NJC Rate: <strong>$${r.rate.toFixed(2)}</strong><div style="font-size:12px;opacity:0.8;margin-top:4px;">Amount is locked to official rate (estimate)</div>`;
-                    display.style.background = '#e8f5e9';
-                    display.style.color = '#2e7d32';
-                    amountInput.value = r.rate.toFixed(2);
-                    amountInput.readOnly = true;
-                } else {
-                    display.innerHTML = `${r.icon} <strong>${r.name}</strong> — Enter estimated amount<div style="font-size:12px;opacity:0.8;margin-top:4px;">No receipt required for estimates</div>`;
-                    display.style.background = '#fff3cd';
-                    display.style.color = '#856404';
-                    amountInput.value = '';
+            // Generate days
+            dpState.days = [];
+            for (let i = 0; i < totalDays; i++) {
+                const d = new Date(start);
+                d.setDate(d.getDate() + i);
+                const dateStr = d.toISOString().split('T')[0];
+                const isFirst = i === 0;
+                const isLast = i === totalDays - 1;
+                const showHotel = !isLast; // no hotel on return day
+                
+                const dayLabel = isFirst ? 'Departure' : isLast ? 'Return' : '';
+                const monthDay = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                
+                const perDiem = {};
+                for (const type of Object.keys(DP_RATES)) {
+                    const key = `${dateStr}|${type}`;
+                    // If expenses exist, match them; otherwise default ON
+                    if (authExpenses.length > 0) {
+                        perDiem[type] = !!existingByDateType[key];
+                    } else {
+                        perDiem[type] = true; // default ON for new
+                    }
                 }
-            } else if (type === 'other') {
-                display.innerHTML = '📝 <strong>Other Expense</strong> — Enter estimated amount';
-                display.style.background = '#e3f2fd';
-                display.style.color = '#0d47a1';
-                amountInput.value = '';
-            } else {
-                display.innerHTML = '💰 Select expense type above to see official NJC government rates<div style="font-size:12px;opacity:0.8;margin-top:5px;">These are ESTIMATES — no receipt required</div>';
-                display.style.background = '';
-                display.style.color = '';
-                amountInput.value = '';
+                
+                let hotelOn = false;
+                let hotelRate = DP_HOTEL_DEFAULT;
+                if (showHotel) {
+                    const hotelKey = `${dateStr}|hotel`;
+                    if (authExpenses.length > 0) {
+                        hotelOn = !!existingByDateType[hotelKey];
+                        if (existingByDateType[hotelKey]) {
+                            hotelRate = parseFloat(existingByDateType[hotelKey].amount) || DP_HOTEL_DEFAULT;
+                        }
+                    } else {
+                        hotelOn = true; // default ON
+                    }
+                }
+                
+                dpState.days.push({ date: dateStr, dayNum: i + 1, monthDay, dayLabel, isFirst, isLast, perDiem, showHotel, hotelOn, hotelRate });
             }
             
-            if (type === 'vehicle_km') {
-                vehicleGroup.style.display = 'block';
-                amountInput.value = '';
-                amountInput.readOnly = true;
-            }
+            dpState.vehicleKm = existingVehicleKm;
+            dpState.otherExpenses = otherExpenses;
+            dpState.canEdit = canEdit;
+            
+            dpRenderCards();
+            dpRecalcTotal();
+            
+            // Show/hide submit and edit controls
+            document.getElementById('dp-submit-section').style.display = canEdit ? 'block' : 'none';
+            document.getElementById('dp-vehicle-km').disabled = !canEdit;
+            document.getElementById('dp-vehicle-km').value = existingVehicleKm > 0 ? existingVehicleKm : '';
+        }
+        
+        function dpRenderCards() {
+            const container = document.getElementById('dp-day-cards');
+            const { days, canEdit } = dpState;
+            const readonlyClass = canEdit ? '' : ' readonly';
+            
+            let html = '';
+            days.forEach((day, idx) => {
+                const labelExtra = day.dayLabel ? ` (${day.dayLabel})` : '';
+                html += `<div class="dp-day-card">`;
+                html += `<div class="dp-day-label">📅 ${day.monthDay} — Day ${day.dayNum}${labelExtra}</div>`;
+                html += `<div class="dp-tiles">`;
+                
+                // Per diem tiles
+                for (const [type, info] of Object.entries(DP_RATES)) {
+                    const on = day.perDiem[type];
+                    const cls = on ? 'on' : 'off';
+                    const onclick = canEdit ? `onclick="dpToggle(${idx},'${type}')"` : '';
+                    html += `<div class="dp-tile ${cls}${readonlyClass}" ${onclick} id="dp-tile-${idx}-${type}">
+                        <span class="dp-tile-icon">${info.icon}</span>
+                        <span class="dp-tile-amount">$${info.rate.toFixed(2)}</span>
+                        <span class="dp-tile-status">${on ? '✅' : '❌'}</span>
+                    </div>`;
+                }
+                
+                // Hotel tile
+                if (day.showHotel) {
+                    const on = day.hotelOn;
+                    const cls = on ? 'on' : 'off';
+                    const onclick = canEdit ? `onclick="dpToggle(${idx},'hotel')"` : '';
+                    html += `<div class="dp-tile ${cls}${readonlyClass}" ${onclick} id="dp-tile-${idx}-hotel" style="width: auto; min-width: 88px;">
+                        <span class="dp-tile-icon">🏨</span>
+                        <span class="dp-tile-amount">Hotel</span>
+                        <span class="dp-tile-status">${on ? '✅' : '❌'}</span>
+                    </div>`;
+                    if (on) {
+                        html += `<div class="dp-hotel-row">
+                            <span style="font-size: 13px; color: #856404;">$</span>
+                            <input type="number" class="dp-hotel-rate-input" value="${day.hotelRate.toFixed(2)}" step="0.01" min="0" 
+                                onchange="dpUpdateHotelRate(${idx}, this.value)" ${canEdit ? '' : 'disabled'}>
+                            <span style="font-size: 12px; color: #856404;">/night</span>
+                        </div>`;
+                    }
+                }
+                
+                html += `</div></div>`;
+            });
+            
+            container.innerHTML = html;
+            
+            // Render other expenses
+            dpRenderOtherExpenses();
+        }
+        
+        function dpToggle(dayIdx, type) {
+            if (!dpState.canEdit) return;
+            const day = dpState.days[dayIdx];
             if (type === 'hotel') {
-                hotelGroup.style.display = 'block';
-                amountInput.value = '';
-                amountInput.readOnly = true;
-            }
-        }
-        
-        // Calculate TA vehicle amount
-        function calculateTAVehicleAmount() {
-            const km = parseFloat(document.getElementById('ta-kilometers').value || 0);
-            const rate = njcRates.vehicle_km.rate;
-            const total = km * rate;
-            document.getElementById('ta-amount').value = total.toFixed(2);
-        }
-        
-        // Calculate TA hotel amount
-        function calculateTAHotelAmount() {
-            const checkin = document.getElementById('ta-hotel-checkin').value;
-            const checkout = document.getElementById('ta-hotel-checkout').value;
-            const rate = parseFloat(document.getElementById('ta-hotel-rate').value || 0);
-            const calcDiv = document.getElementById('ta-hotel-calc');
-            
-            if (checkin && checkout && rate > 0) {
-                const nights = Math.max(0, Math.ceil((new Date(checkout) - new Date(checkin)) / (1000 * 60 * 60 * 24)));
-                const total = nights * rate;
-                calcDiv.style.display = 'block';
-                calcDiv.textContent = `${nights} night${nights !== 1 ? 's' : ''} × $${rate.toFixed(2)} = $${total.toFixed(2)}`;
-                document.getElementById('ta-amount').value = total.toFixed(2);
+                day.hotelOn = !day.hotelOn;
             } else {
-                calcDiv.style.display = 'none';
+                day.perDiem[type] = !day.perDiem[type];
             }
+            dpRenderCards();
+            dpRecalcTotal();
         }
         
-        // Add expense to auth
-        async function addAuthExpense(event) {
-            event.preventDefault();
-            if (!selectedAuthId) { showTAMessage('error', 'Please select an authorization first'); return; }
+        function dpUpdateHotelRate(dayIdx, value) {
+            dpState.days[dayIdx].hotelRate = parseFloat(value) || 0;
+            dpRecalcTotal();
+        }
+        
+        function dpRecalcTotal() {
+            let total = 0;
             
-            const type = document.getElementById('ta-expense-type').value;
-            const date = document.getElementById('ta-expense-date').value;
-            const location = document.getElementById('ta-location').value;
-            const amount = document.getElementById('ta-amount').value;
-            const vendor = document.getElementById('ta-vendor').value;
-            const description = document.getElementById('ta-description').value;
+            // Per diems + hotels
+            dpState.days.forEach(day => {
+                for (const [type, info] of Object.entries(DP_RATES)) {
+                    if (day.perDiem[type]) total += info.rate;
+                }
+                if (day.showHotel && day.hotelOn) total += day.hotelRate;
+            });
             
-            if (!type || !date || !amount || parseFloat(amount) <= 0) {
-                showTAMessage('error', 'Please fill in all required fields');
+            // Vehicle
+            const km = parseFloat(document.getElementById('dp-vehicle-km')?.value || 0);
+            dpState.vehicleKm = km;
+            const vehicleTotal = km * DP_VEHICLE_RATE;
+            total += vehicleTotal;
+            const vtEl = document.getElementById('dp-vehicle-total');
+            if (vtEl) vtEl.textContent = `$${vehicleTotal.toFixed(2)}`;
+            
+            // Other expenses
+            dpState.otherExpenses.forEach(o => { total += parseFloat(o.amount) || 0; });
+            
+            document.getElementById('dp-running-total').textContent = `$${total.toFixed(2)}`;
+            document.getElementById('dp-grand-total').textContent = `$${total.toFixed(2)}`;
+        }
+        
+        function dpAddOtherExpense() {
+            dpState.otherExpenses.push({ description: '', amount: 0, date: dpState.startDate });
+            dpRenderOtherExpenses();
+        }
+        
+        function dpRenderOtherExpenses() {
+            const container = document.getElementById('dp-other-list');
+            const { otherExpenses, canEdit } = dpState;
+            if (otherExpenses.length === 0) {
+                container.innerHTML = '<p style="color: #999; font-size: 13px; text-align: center;">No other expenses added.</p>';
                 return;
             }
-            
-            // Validate date is within authorization range
-            const dateField = document.getElementById('ta-expense-date');
-            if (dateField.min && dateField.max && (date < dateField.min || date > dateField.max)) {
-                showTAMessage('error', `Expense date must be within ${dateField.min} to ${dateField.max}`);
-                return;
-            }
-            
-            const body = { expense_type: type, date, location, amount: parseFloat(amount), vendor, description };
-            
-            if (type === 'vehicle_km') {
-                body.kilometers = document.getElementById('ta-kilometers').value;
-                body.vehicle_from = document.getElementById('ta-vehicle-from').value;
-                body.vehicle_to = document.getElementById('ta-vehicle-to').value;
-            }
-            if (type === 'hotel') {
-                body.hotel_checkin = document.getElementById('ta-hotel-checkin').value;
-                body.hotel_checkout = document.getElementById('ta-hotel-checkout').value;
-            }
-            
-            try {
-                const response = await fetch(`/api/travel-auth/${selectedAuthId}/expenses`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
-                    body: JSON.stringify(body)
-                });
-                const result = await response.json();
-                if (result.success) {
-                    showTAMessage('success', 'Estimated expense added!');
-                    document.getElementById('ta-expense-form').reset();
-                    document.getElementById('ta-vehicle-km-group').style.display = 'none';
-                    document.getElementById('ta-hotel-group').style.display = 'none';
-                    document.getElementById('ta-per-diem-display').innerHTML = '💰 Select expense type above to see official NJC government rates<div style="font-size:12px;opacity:0.8;margin-top:5px;">These are ESTIMATES — no receipt required</div>';
-                    document.getElementById('ta-per-diem-display').style.background = '';
-                    await loadAuthExpenses(selectedAuthId, true);
-                    await loadTravelAuths(); // refresh totals in cards
-                } else {
-                    showTAMessage('error', result.error || 'Failed to add expense');
-                }
-            } catch (error) {
-                showTAMessage('error', 'Network error: ' + error.message);
-            }
+            let html = '';
+            otherExpenses.forEach((o, i) => {
+                html += `<div class="dp-other-item">
+                    <input type="text" placeholder="Description" value="${sanitizeForDisplay(o.description)}" style="flex: 1; min-width: 150px;" onchange="dpUpdateOther(${i},'desc',this.value)" ${canEdit ? '' : 'disabled'}>
+                    <input type="number" placeholder="Amount" value="${o.amount || ''}" step="0.01" min="0" style="width: 100px;" onchange="dpUpdateOther(${i},'amount',this.value)" ${canEdit ? '' : 'disabled'}>
+                    <input type="date" value="${o.date}" style="width: 140px;" onchange="dpUpdateOther(${i},'date',this.value)" ${canEdit ? '' : 'disabled'} min="${dpState.startDate}" max="${dpState.endDate}">
+                    ${canEdit ? `<button onclick="dpRemoveOther(${i})" style="background: #dc3545; color: white; border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 12px;">🗑️</button>` : ''}
+                </div>`;
+            });
+            container.innerHTML = html;
         }
         
-        // Remove expense from auth
-        async function removeAuthExpense(expenseId) {
-            if (!selectedAuthId) return;
-            if (!confirm('Remove this estimated expense?')) return;
-            
-            try {
-                const response = await fetch(`/api/travel-auth/${selectedAuthId}/expenses/${expenseId}`, {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${sessionId}` }
-                });
-                const result = await response.json();
-                if (result.success) {
-                    await loadAuthExpenses(selectedAuthId, true);
-                    await loadTravelAuths();
-                } else {
-                    showTAMessage('error', result.error || 'Failed to remove expense');
-                }
-            } catch (error) {
-                showTAMessage('error', 'Network error: ' + error.message);
-            }
+        function dpUpdateOther(idx, field, value) {
+            if (field === 'desc') dpState.otherExpenses[idx].description = value;
+            else if (field === 'amount') dpState.otherExpenses[idx].amount = parseFloat(value) || 0;
+            else if (field === 'date') dpState.otherExpenses[idx].date = value;
+            dpRecalcTotal();
         }
         
-        // Submit auth for approval
-        async function submitAuthForApproval() {
+        function dpRemoveOther(idx) {
+            dpState.otherExpenses.splice(idx, 1);
+            dpRenderOtherExpenses();
+            dpRecalcTotal();
+        }
+        
+        // Submit Day Planner — delete all existing, then add ON items
+        async function dpSubmitForApproval() {
             if (!selectedAuthId) return;
             if (!confirm('Submit this authorization with all estimated expenses for manager approval?')) return;
             
+            const submitBtn = document.querySelector('#dp-submit-section button');
+            submitBtn.disabled = true;
+            submitBtn.textContent = '⏳ Submitting...';
+            
             try {
+                // 1. Delete all existing expenses
+                for (const e of authExpenses) {
+                    await fetch(`/api/travel-auth/${selectedAuthId}/expenses/${e.id}`, {
+                        method: 'DELETE',
+                        headers: { 'Authorization': `Bearer ${sessionId}` }
+                    });
+                }
+                
+                // 2. Add all ON per diems and hotels
+                for (const day of dpState.days) {
+                    for (const [type, info] of Object.entries(DP_RATES)) {
+                        if (day.perDiem[type]) {
+                            await fetch(`/api/travel-auth/${selectedAuthId}/expenses`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                                body: JSON.stringify({
+                                    expense_type: type, date: day.date,
+                                    location: dpState.destination, amount: info.rate,
+                                    vendor: 'NJC Per Diem Rate', description: `Day ${day.dayNum}${day.dayLabel ? ' (' + day.dayLabel + ')' : ''}`
+                                })
+                            });
+                        }
+                    }
+                    if (day.showHotel && day.hotelOn) {
+                        await fetch(`/api/travel-auth/${selectedAuthId}/expenses`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                            body: JSON.stringify({
+                                expense_type: 'hotel', date: day.date,
+                                location: dpState.destination, amount: day.hotelRate,
+                                vendor: 'Hotel', description: `Night of ${day.monthDay}`,
+                                hotel_checkin: day.date, hotel_checkout: day.date
+                            })
+                        });
+                    }
+                }
+                
+                // 3. Add vehicle if km > 0
+                if (dpState.vehicleKm > 0) {
+                    await fetch(`/api/travel-auth/${selectedAuthId}/expenses`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                        body: JSON.stringify({
+                            expense_type: 'vehicle_km', date: dpState.startDate,
+                            location: dpState.destination, amount: dpState.vehicleKm * DP_VEHICLE_RATE,
+                            vendor: 'Personal Vehicle', description: `${dpState.vehicleKm} km @ $${DP_VEHICLE_RATE}/km`,
+                            kilometers: dpState.vehicleKm
+                        })
+                    });
+                }
+                
+                // 4. Add other expenses
+                for (const o of dpState.otherExpenses) {
+                    if (o.amount > 0) {
+                        await fetch(`/api/travel-auth/${selectedAuthId}/expenses`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                            body: JSON.stringify({
+                                expense_type: 'other', date: o.date || dpState.startDate,
+                                location: dpState.destination, amount: o.amount,
+                                vendor: o.description || 'Other', description: o.description || ''
+                            })
+                        });
+                    }
+                }
+                
+                // 5. Submit for approval
                 const response = await fetch(`/api/travel-auth/${selectedAuthId}/submit`, {
                     method: 'PUT',
                     headers: { 'Authorization': `Bearer ${sessionId}` }
@@ -3009,12 +3074,15 @@
                 if (result.success) {
                     showTAMessage('success', 'Authorization submitted for approval! ✅');
                     await loadTravelAuths();
-                    handleAuthSelection(); // refresh view
+                    handleAuthSelection();
                 } else {
                     showTAMessage('error', result.error || 'Failed to submit');
                 }
             } catch (error) {
                 showTAMessage('error', 'Network error: ' + error.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '📤 Submit for Approval';
             }
         }
         
@@ -3028,42 +3096,29 @@
             resetATFormToCreate();
         }
         
-        // Hide create AT modal
         function hideCreateATModal() {
             document.getElementById('create-at-modal').style.display = 'none';
         }
         
-        // Create travel authorization
         async function createTravelAuth(event) {
             event.preventDefault();
-            
             const name = document.getElementById('at-name').value;
             const startDate = document.getElementById('at-start-date').value;
             const endDate = document.getElementById('at-end-date').value;
             const destination = document.getElementById('at-destination').value;
             const purpose = document.getElementById('at-purpose').value;
             
-            if (!name || !startDate || !endDate) {
-                showTAMessage('error', 'Please fill in all required fields.');
-                return;
-            }
-            if (new Date(startDate) > new Date(endDate)) {
-                showTAMessage('error', 'End date must be after start date.');
-                return;
-            }
+            if (!name || !startDate || !endDate) { showTAMessage('error', 'Please fill in all required fields.'); return; }
+            if (new Date(startDate) > new Date(endDate)) { showTAMessage('error', 'End date must be after start date.'); return; }
             
             try {
                 const response = await fetch('/api/travel-auth', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
                     body: JSON.stringify({
-                        name: sanitizeInput(name),
-                        destination: sanitizeInput(destination || ''),
-                        start_date: startDate,
-                        end_date: endDate,
-                        purpose: sanitizeInput(purpose || ''),
-                        est_transport: 0, est_lodging: 0, est_meals: 0, est_other: 0,
-                        details: JSON.stringify({})
+                        name: sanitizeInput(name), destination: sanitizeInput(destination || ''),
+                        start_date: startDate, end_date: endDate, purpose: sanitizeInput(purpose || ''),
+                        est_transport: 0, est_lodging: 0, est_meals: 0, est_other: 0, details: JSON.stringify({})
                     })
                 });
                 const result = await response.json();
@@ -3071,7 +3126,6 @@
                     showTAMessage('success', `Authorization "${name}" created as draft!`);
                     hideCreateATModal();
                     await loadTravelAuths();
-                    // Auto-select the new auth
                     document.getElementById('ta-auth-select').value = result.id;
                     handleAuthSelection();
                 } else {
@@ -3082,7 +3136,6 @@
             }
         }
         
-        // Edit travel authorization
         async function editTravelAuth(atId) {
             try {
                 const response = await fetch(`/api/travel-auth/${atId}`, {
@@ -3090,13 +3143,11 @@
                 });
                 if (!response.ok) { showTAMessage('error', 'Failed to load authorization details.'); return; }
                 const at = await response.json();
-                
                 document.getElementById('at-name').value = at.name || at.destination || '';
                 document.getElementById('at-destination').value = at.destination || '';
                 document.getElementById('at-start-date').value = at.start_date || '';
                 document.getElementById('at-end-date').value = at.end_date || '';
                 document.getElementById('at-purpose').value = at.purpose || '';
-                
                 const form = document.getElementById('create-at-form');
                 form.onsubmit = (event) => updateTravelAuth(event, atId);
                 document.querySelector('#create-at-modal h3').textContent = '✏️ Edit Authorization to Travel';
