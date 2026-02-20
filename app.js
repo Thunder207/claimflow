@@ -3377,6 +3377,27 @@ app.post('/api/travel-auth', requireAuth, async (req, res) => {
     const est_total = parseFloat(est_transport) + parseFloat(est_lodging) + 
                      parseFloat(est_meals) + parseFloat(est_other);
     
+    // Check for overlapping travel authorizations
+    try {
+        const overlap = await new Promise((resolve, reject) => {
+            db.get(
+                `SELECT id, name, start_date, end_date FROM travel_authorizations 
+                 WHERE employee_id = ? AND status NOT IN ('rejected') 
+                 AND start_date <= ? AND end_date >= ?`,
+                [req.user.employeeId, end_date, start_date],
+                (err, row) => err ? reject(err) : resolve(row)
+            );
+        });
+        if (overlap) {
+            return res.status(400).json({
+                success: false,
+                error: `Dates overlap with existing authorization "${overlap.name}" (${overlap.start_date} → ${overlap.end_date}). Please choose different dates.`
+            });
+        }
+    } catch (e) {
+        console.error('❌ Error checking overlap:', e);
+    }
+    
     // Get supervisor (approver)
     db.get('SELECT supervisor_id FROM employees WHERE id = ?', [req.user.employeeId], (err, employee) => {
         if (err) {
@@ -3658,6 +3679,27 @@ app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
         const est_total = parseFloat(est_transport) + parseFloat(est_lodging) + 
                          parseFloat(est_meals) + parseFloat(est_other);
         
+        // Check for overlapping travel authorizations (exclude self)
+        if (start_date && end_date) {
+            db.get(
+                `SELECT id, name, start_date, end_date FROM travel_authorizations 
+                 WHERE employee_id = ? AND id != ? AND status NOT IN ('rejected') 
+                 AND start_date <= ? AND end_date >= ?`,
+                [req.user.employeeId, atId, end_date, start_date],
+                (err2, overlap) => {
+                    if (overlap) {
+                        return res.status(400).json({
+                            error: `Dates overlap with existing authorization "${overlap.name}" (${overlap.start_date} → ${overlap.end_date}). Please choose different dates.`
+                        });
+                    }
+                    doUpdate();
+                }
+            );
+        } else {
+            doUpdate();
+        }
+        
+        function doUpdate() {
         // Update the AT — keep draft status if draft, otherwise set to draft for re-editing
         const newStatus = at.status === 'draft' ? 'draft' : 'draft';
         const updateQuery = `
@@ -3697,6 +3739,7 @@ app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
                 message: 'Travel Authorization updated!' 
             });
         });
+        } // end doUpdate
     });
 });
 
