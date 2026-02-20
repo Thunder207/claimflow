@@ -2817,6 +2817,11 @@
                 
                 const perDiem = {};
                 for (const type of Object.keys(DP_RATES)) {
+                    // No incidentals on last day (only applies when staying overnight)
+                    if (type === 'incidentals' && isLast) {
+                        perDiem[type] = false;
+                        continue;
+                    }
                     const key = `${dateStr}|${type}`;
                     // If expenses exist, match them; otherwise default ON
                     if (authExpenses.length > 0) {
@@ -2870,6 +2875,8 @@
                 
                 // Per diem tiles
                 for (const [type, info] of Object.entries(DP_RATES)) {
+                    // Hide incidentals on last day (only applies with overnight stay)
+                    if (type === 'incidentals' && day.isLast) continue;
                     const on = day.perDiem[type];
                     const cls = on ? 'on' : 'off';
                     const onclick = canEdit ? `onclick="dpToggle(${idx},'${type}')"` : '';
