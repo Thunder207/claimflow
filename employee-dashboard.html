@@ -983,173 +983,70 @@
                 </button>
             </div>
 
-            <!-- EXPENSE FORM — BELOW TRIP SELECTOR -->
-            <h3 style="margin-bottom: 15px; color: #2c3e50;" data-i18n="add_expense_to_trip">📝 Add Expense to Trip</h3>
-            
-            <form id="expense-form" class="expense-form">
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
-                    <div class="form-group">
-                        <label for="expense-type" data-i18n="what_expense_type">What type of expense is this? *</label>
-                        <select id="expense-type" name="expense_type" required onchange="updatePerDiemRate()" title="Choose the category that best matches your expense" aria-describedby="expense-type-help">
-                            <option value="">Choose your expense type...</option>
-                            <optgroup label="🏛️ Government Per Diem (NJC Fixed Rates - One per day)">
-                                <option value="breakfast">🥐 Breakfast - $23.45</option>
-                                <option value="lunch">🥗 Lunch - $29.75</option>
-                                <option value="dinner">🍽️ Dinner - $47.05</option>
-                                <option value="incidentals">📱 Incidentals - $32.08</option>
-                            </optgroup>
-                            <optgroup label="🚗 Travel & Accommodation">
-                                <option value="vehicle_km">🚗 Vehicle (per km) - $0.68</option>
-                                <option value="hotel">🏨 Hotel (Receipt Required) - No Limit</option>
-                            </optgroup>
-                            <optgroup label="📝 Other Business Expenses">
-                                <option value="other">📝 Other Expense (Custom Amount)</option>
-                            </optgroup>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="expense-date" data-i18n="date">Date *</label>
-                        <input type="date" id="expense-date" name="date" required>
-                    </div>
-                </div>
+            <!-- TRIP DAY PLANNER — replaces old expense form -->
+            <div id="tdp-section" style="display: none;">
                 
-                <!-- Hotel Date Range (hidden by default) -->
-                <div id="hotel-date-range" style="display: none; margin: 20px 0; padding: 20px; background: #fff3cd; border: 2px solid #ffc107; border-radius: 12px;">
-                    <h4 style="color: #856404; margin-bottom: 8px;">🏨 Hotel Stay Information</h4>
-                    <p style="color: #856404; margin-bottom: 15px; font-size: 13px;">Government policy requires check-in and check-out dates for all hotel claims.</p>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label for="hotel-checkin" data-i18n="checkin_date">Check-in Date *</label>
-                            <input type="date" id="hotel-checkin" onchange="calculateHotelNights()" required>
+                <!-- Day Planner Header -->
+                <div id="tdp-header" style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #28a745;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <div>
+                            <h4 style="color: #1b5e20; margin: 0 0 4px 0;" id="tdp-trip-name">🧳 Trip Name</h4>
+                            <div style="color: #2e7d32; font-size: 13px;" id="tdp-trip-dates">📅 Dates · 📍 Destination</div>
+                            <div id="tdp-status-badge" style="margin-top: 6px; font-size: 12px;"></div>
                         </div>
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label for="hotel-checkout" data-i18n="checkout_date">Check-out Date *</label>
-                            <input type="date" id="hotel-checkout" onchange="calculateHotelNights()" required>
+                        <div style="text-align: right;">
+                            <div style="font-size: 13px; color: #666; font-weight: 600;">Trip Total</div>
+                            <div id="tdp-running-total" style="font-size: 28px; font-weight: bold; color: #28a745;">$0.00</div>
                         </div>
-                    </div>
-                    <div id="hotel-nights-display" style="margin: 15px 0; padding: 15px; background: #fff; border: 1px solid #ffc107; border-radius: 8px; font-weight: bold; color: #856404; text-align: center;"></div>
-                    <div style="font-size: 12px; color: #856404; opacity: 0.8;">
-                        ℹ️ Don't forget to upload your hotel receipt below - it's required for all accommodation expenses.
-                    </div>
-                </div>
-                
-                <!-- Trip selector moved to top of form -->
-                
-                <div class="per-diem-info" id="per-diem-display" style="text-align: center; font-size: 15px;">
-                    💰 Select expense type above to see official NJC government rates
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">Per diem rates are locked to prevent overpayment • Receipts required for hotels</div>
-                </div>
-                
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
-                    <div class="form-group">
-                        <label for="location">Where did this expense occur? *</label>
-                        <input type="text" id="location" name="location" placeholder="e.g., Ottawa, ON or Toronto Airport" required title="Enter the city or specific location where you incurred this expense" aria-describedby="location-help">
-                        <small id="location-help" style="color: #666; font-size: 12px; display: block; margin-top: 4px;">💡 Include city and province for accurate expense tracking</small>
-                    </div>
-                    
-                    <div id="vehicle-km-group" style="display: none;">
-                        <div class="form-group">
-                            <label for="vehicle-from">From (Departure Location) *</label>
-                            <input type="text" id="vehicle-from" name="vehicle_from" placeholder="e.g., 123 Main St, Ottawa, ON">
-                        </div>
-                        <div class="form-group">
-                            <label for="vehicle-to">To (Destination) *</label>
-                            <input type="text" id="vehicle-to" name="vehicle_to" placeholder="e.g., 456 Queen St, Toronto, ON">
-                        </div>
-                        <div class="form-group">
-                            <label for="kilometers">Kilometers Traveled *</label>
-                            <input type="number" id="kilometers" name="kilometers" step="0.1" min="0.1" max="10000" placeholder="e.g., 450" oninput="calculateVehicleAmount()">
-                            <small style="color: #666; font-size: 12px;">NJC rate: $0.68/km — Enter odometer-based or mapped distance</small>
-                        </div>
-                        <div id="vehicle-calc-display" style="display:none; background:#e8f5e9; border-radius:8px; padding:10px 14px; margin-top:8px; font-size:14px;">
-                            <strong>🚗 Mileage Calculation:</strong>
-                            <span id="vehicle-calc-text"></span>
-                        </div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="amount" id="amount-label" data-i18n="amount">Amount Paid *</label>
-                        <input type="number" id="amount" name="amount" step="0.01" data-i18n="amount_placeholder" placeholder="25.50" required aria-describedby="amount-help" oninput="validateAmount()">
-                        <div id="amount-info" style="margin-top: 5px; font-size: 12px; color: #666;"></div>
-                        <div id="amount-error" style="color: #dc3545; font-size: 12px; margin-top: 4px; display: none;" role="alert"></div>
-                        <small id="amount-help" style="color: #666; font-size: 12px; display: block; margin-top: 4px;">💡 Enter the exact amount you paid (e.g., 25.50)</small>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label for="vendor" data-i18n="vendor">Business name or details *</label>
-                    <input type="text" id="vendor" name="vendor" data-i18n="vendor_placeholder" placeholder="e.g., Tim Hortons, Marriott Hotel, or travel details" required title="Enter the business name where you spent money, or details for vehicle expenses">
-                </div>
-                
-                <div class="form-group">
-                    <label for="description" data-i18n="description">Business purpose or additional notes (Optional)</label>
-                    <textarea id="description" name="description" rows="3" data-i18n="description_placeholder" placeholder="e.g., Business lunch with client John Smith to discuss Q3 budget, or Conference travel for mandatory training" title="Explain the business purpose - this helps with approval and audit compliance"></textarea>
-                    <div style="font-size: 12px; color: #666; margin-top: 4px;">💡 <strong>Tip:</strong> Adding business context helps supervisors approve faster</div>
-                </div>
-                
-                <div class="form-group">
-                    <label>Receipt Photo <span style="color: #666; font-weight: normal;">(Required for hotels • Optional for per diem)</span></label>
-                    <div class="photo-section" onclick="document.getElementById('file-input').click()">
-                        <div class="camera-icon">📷</div>
-                        <div><strong>Tap to capture or upload receipt</strong></div>
-                        <div style="font-size: 12px; color: #6c757d; margin-top: 5px;">✅ Supports: JPG, PNG, GIF, WebP (Max 10MB)</div>
-                        <div style="font-size: 11px; color: #666; margin-top: 3px;">💡 Per diem meals: receipt optional | Hotels: receipt mandatory</div>
-                        <img id="photo-preview" class="photo-preview" style="display: none;">
-                    </div>
-                    <input type="file" id="file-input" accept="image/*" capture="environment">
-                </div>
-                
-                <!-- Single button - all expenses must be associated with a trip -->
-                <div style="margin-top: 20px;">
-                    <button type="button" onclick="addExpenseToTrip()" class="btn btn-success" style="padding: 18px; font-size: 16px; width: 100%;">
-                        🧳 Add Expense to Trip
-                    </button>
-                </div>
-                
-                <!-- Individual expenses draft list -->
-                <div id="individual-draft-section" style="display: none; margin-top: 30px; padding: 20px; background: #f0f8ff; border-radius: 12px;">
-                    <h4 style="color: #007bff; margin-bottom: 15px;">💰 Individual Expenses (Draft)</h4>
-                    <div id="draft-individual-list">
-                        <p style="text-align: center; color: #6c757d; padding: 20px;">
-                            No individual expenses added yet.<br>
-                            <small>Click "Add Individual Expense" to start building your expense batch.</small>
-                        </p>
-                    </div>
-                    <div id="individual-submit-section" style="margin-top: 20px; text-align: center; display: none;">
-                        <button type="button" onclick="submitIndividualExpensesForApproval()" class="btn btn-primary" style="padding: 15px 30px; font-size: 16px;">
-                            📤 Submit All Individual Expenses
-                        </button>
-                        <button type="button" onclick="clearIndividualDraft()" class="btn" style="background: #dc3545; color: white; padding: 15px 30px; font-size: 16px; margin-left: 15px;">
-                            🗑️ Clear Individual Draft
-                        </button>
                     </div>
                 </div>
 
-            </form>
+                <!-- Saving indicator -->
+                <div id="tdp-saving" style="display: none; text-align: center; padding: 8px; background: #fff3cd; border-radius: 8px; margin-bottom: 12px; font-size: 13px; color: #856404;">
+                    ⏳ Saving...
+                </div>
 
-                <!-- Trip expenses draft list (outside form to prevent form interference) -->
-                <div id="trip-draft-section" style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 12px; border-left: 4px solid #28a745;">
-                    <h4 style="color: #28a745; margin-bottom: 8px;">🧳 Your Trip Expenses</h4>
-                    <p style="color: #666; margin-bottom: 15px; font-size: 14px;">Build your expense report by adding expenses above, then submit the complete trip for approval.</p>
-                    <div id="draft-expenses-list">
-                        <p style="text-align: center; color: #6c757d; padding: 20px;">
-                            No expenses added yet.<br>
-                            <small>💡 <strong>Next step:</strong> Select a trip above and click "Add Expense to Trip" after filling out the form.</small>
-                        </p>
+                <!-- Day Cards Container -->
+                <div id="tdp-day-cards" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;"></div>
+
+                <!-- Vehicle Section -->
+                <div style="background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #ffc107;">
+                    <h4 style="color: #856404; margin: 0 0 12px 0;">🚗 Vehicle / Mileage</h4>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <label style="margin: 0; white-space: nowrap; color: #856404; font-weight: 600;">Kilometers:</label>
+                        <input type="number" id="tdp-vehicle-km" step="0.1" min="0" max="99999" placeholder="0" style="width: 120px; padding: 10px; border-radius: 8px; border: 2px solid #ffc107; font-size: 15px;" oninput="tdpRecalcTotal()">
+                        <span style="color: #856404; font-size: 14px;">× $0.68/km = <strong id="tdp-vehicle-total">$0.00</strong></span>
                     </div>
-                    <div id="trip-submit-section" style="margin-top: 20px; text-align: center; display: none;">
-                        <button type="button" id="btn-submit-trip" class="btn btn-success" style="padding: 15px 30px; font-size: 16px; cursor: pointer; z-index: 999; position: relative;" title="Send entire trip to supervisor for approval">
+                </div>
+
+                <!-- Hotel Receipts Section -->
+                <div id="tdp-receipts-section" style="display: none; background: linear-gradient(135deg, #fce4ec 0%, #f8bbd0 100%); padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #e91e63;">
+                    <h4 style="color: #880e4f; margin: 0 0 12px 0;">📷 Hotel Receipts</h4>
+                    <p style="color: #880e4f; font-size: 13px; margin-bottom: 12px;">Upload receipts for each hotel night. Required for hotel expense claims.</p>
+                    <div id="tdp-receipt-list"></div>
+                </div>
+
+                <!-- Running Total + Submit -->
+                <div style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 20px; border-radius: 12px; text-align: center; border: 2px solid #28a745;">
+                    <div style="font-size: 14px; color: #2e7d32; font-weight: 600; margin-bottom: 4px;">💰 Trip Expense Total</div>
+                    <div id="tdp-grand-total" style="font-size: 32px; font-weight: bold; color: #28a745; margin-bottom: 16px;">$0.00</div>
+                    <div id="tdp-submit-section">
+                        <button type="button" id="btn-submit-trip" onclick="tdpSubmitTrip()" class="btn btn-success" style="padding: 14px 40px; font-size: 16px;">
                             📤 Submit Trip for Approval
                         </button>
-                        <button type="button" id="btn-clear-draft" class="btn" style="background: #dc3545; color: white; padding: 15px 30px; font-size: 16px; margin-left: 15px;" title="Remove all expenses from this draft">
-                            🗑️ Clear All Expenses
-                        </button>
                         <div style="margin-top: 10px; font-size: 13px; color: #666;">
-                            💡 Trip will be submitted to your supervisor for review and approval
+                            💡 Expenses are saved automatically as you toggle. Submit when ready for approval.
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Prompt shown when no trip selected -->
+            <div id="tdp-placeholder" style="text-align: center; padding: 40px 20px; color: #6c757d; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 12px; border: 2px dashed #dee2e6;">
+                <div style="font-size: 48px; margin-bottom: 15px;">🧳</div>
+                <h4 style="color: #2c3e50; margin-bottom: 10px;">Select a trip above to add expenses</h4>
+                <p>Use the Day Planner grid to quickly toggle per diem meals, hotel nights, and vehicle mileage.</p>
+            </div>
                 
                 <!-- My Trips Overview -->
                 <div style="margin-top: 30px; border-top: 2px solid #e9ecef; padding-top: 20px;">
@@ -4487,8 +4384,8 @@
                 lockBtn.style.display = 'inline-block';
                 updateTripInfo(selectedValue);
                 
-                // Auto-fill location from trip destination
-                fetchTripDestination(selectedValue);
+                // Load Trip Day Planner
+                tdpLoadTrip(selectedValue);
             } else {
                 // Hide lock button when no trip selected
                 lockBtn.style.display = 'none';
@@ -4497,6 +4394,9 @@
                 lockedTripName = '';
                 updateTripLockButton();
                 updateTripInfo('');
+                
+                // Hide Trip Day Planner
+                tdpLoadTrip(null);
             }
         }
         
@@ -4795,18 +4695,8 @@
         }
         
         // Set up event delegation for submit and clear buttons (works even when buttons are recreated)
+        // Note: btn-submit-trip now uses onclick="tdpSubmitTrip()" directly via Day Planner
         document.addEventListener('click', function(e) {
-            if (e.target && e.target.id === 'btn-submit-trip') {
-                e.preventDefault();
-                e.stopPropagation();
-
-                
-                submitTripForApproval().catch(function(err) {
-                    console.error('❌ Submit trip failed:', err);
-                    showMessage('error', `❌ Failed to submit trip: ${err.message}`);
-                });
-            }
-            
             if (e.target && e.target.id === 'btn-clear-draft') {
                 e.preventDefault();
                 e.stopPropagation();
@@ -5022,6 +4912,451 @@
                 document.getElementById('standalone-error-text').textContent = 'Some failed: ' + errors.join(', ');
                 document.getElementById('standalone-error').style.display = 'block';
                 setTimeout(() => document.getElementById('standalone-error').style.display = 'none', 8000);
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════════════
+        // TRIP DAY PLANNER (TDP) - Actual expense entry via visual toggle grid
+        // ═══════════════════════════════════════════════════════════════════════════════
+        
+        let tdpState = { days: [], vehicleKm: 0, vehicleExpenseId: null, canEdit: true, tripId: null, tripName: '', destination: '', startDate: null, endDate: null, tripStatus: '' };
+        let tdpExpenses = []; // existing expenses loaded from server
+        let tdpSaving = false;
+
+        // Called when a trip is selected — replaces old handleTripSelection behavior for form
+        async function tdpLoadTrip(tripId) {
+            const section = document.getElementById('tdp-section');
+            const placeholder = document.getElementById('tdp-placeholder');
+            
+            if (!tripId) {
+                section.style.display = 'none';
+                placeholder.style.display = 'block';
+                tdpState.tripId = null;
+                return;
+            }
+
+            // Fetch trip details
+            try {
+                const resp = await fetch(`/api/trips/${tripId}`, { headers: { 'Authorization': `Bearer ${sessionId}` } });
+                if (!resp.ok) { showMessage('error', 'Failed to load trip details'); return; }
+                const trip = await resp.json();
+
+                tdpState.tripId = tripId;
+                tdpState.tripName = trip.trip_name || trip.name || '';
+                tdpState.destination = trip.destination || '';
+                tdpState.startDate = trip.start_date;
+                tdpState.endDate = trip.end_date;
+                tdpState.tripStatus = trip.status || 'draft';
+                tdpState.canEdit = !['submitted', 'approved', 'pending'].includes(tdpState.tripStatus);
+
+                // Update header
+                document.getElementById('tdp-trip-name').textContent = `🧳 ${tdpState.tripName}`;
+                document.getElementById('tdp-trip-dates').textContent = `📅 ${tdpState.startDate} → ${tdpState.endDate}${tdpState.destination ? ` · 📍 ${tdpState.destination}` : ''}`;
+                
+                const statusColors = { draft: '#6c757d', pending: '#ffc107', submitted: '#ffc107', approved: '#28a745', rejected: '#dc3545' };
+                const statusEmojis = { draft: '📝', pending: '⏳', submitted: '⏳', approved: '✅', rejected: '❌' };
+                document.getElementById('tdp-status-badge').innerHTML = `<span style="background: ${statusColors[tdpState.tripStatus] || '#6c757d'}22; color: ${statusColors[tdpState.tripStatus] || '#6c757d'}; padding: 3px 10px; border-radius: 12px; font-weight: 600; border: 1px solid ${statusColors[tdpState.tripStatus] || '#6c757d'}">${statusEmojis[tdpState.tripStatus] || '📋'} ${tdpState.tripStatus.toUpperCase()}${!tdpState.canEdit ? ' (read-only)' : ''}</span>`;
+
+                // Use expenses from trip response
+                tdpExpenses = Array.isArray(trip.expenses) ? trip.expenses : [];
+                tdpBuildGrid();
+                
+                placeholder.style.display = 'none';
+                section.style.display = 'block';
+                
+                // Show/hide submit
+                document.getElementById('tdp-submit-section').style.display = tdpState.canEdit ? 'block' : 'none';
+                document.getElementById('tdp-vehicle-km').disabled = !tdpState.canEdit;
+            } catch (err) {
+                console.error('TDP load error:', err);
+                showMessage('error', 'Failed to load trip: ' + err.message);
+            }
+        }
+
+        async function tdpLoadExpenses(tripId) {
+            try {
+                // Get all user expenses, filter by trip_id
+                const resp = await fetch('/api/expenses', { headers: { 'Authorization': `Bearer ${sessionId}` } });
+                const allExpenses = await resp.json();
+                tdpExpenses = (Array.isArray(allExpenses) ? allExpenses : []).filter(e => String(e.trip_id) === String(tripId));
+            } catch (err) {
+                console.error('TDP load expenses error:', err);
+                tdpExpenses = [];
+            }
+            tdpBuildGrid();
+        }
+
+        function tdpBuildGrid() {
+            const { startDate, endDate, canEdit } = tdpState;
+            if (!startDate || !endDate) return;
+
+            const start = new Date(startDate + 'T00:00:00');
+            const end = new Date(endDate + 'T00:00:00');
+            const totalDays = Math.round((end - start) / 86400000) + 1;
+            if (totalDays < 1 || totalDays > 60) return;
+
+            // Index existing expenses
+            const existingByDateType = {};
+            let existingVehicleKm = 0;
+            let vehicleExpenseId = null;
+
+            tdpExpenses.forEach(e => {
+                const key = `${e.date}|${e.expense_type}`;
+                if (e.expense_type === 'vehicle_km') {
+                    const kmMatch = e.description ? e.description.match(/([\d.]+)\s*km/) : null;
+                    existingVehicleKm = kmMatch ? parseFloat(kmMatch[1]) : (parseFloat(e.amount) / DP_VEHICLE_RATE);
+                    vehicleExpenseId = e.id;
+                } else if (e.expense_type !== 'other') {
+                    existingByDateType[key] = e;
+                }
+            });
+
+            tdpState.days = [];
+            for (let i = 0; i < totalDays; i++) {
+                const d = new Date(start);
+                d.setDate(d.getDate() + i);
+                const dateStr = d.toISOString().split('T')[0];
+                const isFirst = i === 0;
+                const isLast = i === totalDays - 1;
+                const showHotel = !isLast;
+                const dayLabel = isFirst ? 'Departure' : isLast ? 'Return' : '';
+                const monthDay = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+                const perDiem = {};
+                for (const type of Object.keys(DP_RATES)) {
+                    if (type === 'incidentals' && isLast) { perDiem[type] = false; continue; }
+                    const key = `${dateStr}|${type}`;
+                    if (tdpExpenses.length > 0) {
+                        perDiem[type] = !!existingByDateType[key];
+                    } else {
+                        perDiem[type] = true; // default ON for empty trips
+                    }
+                }
+                // Store expense IDs for toggling
+                const expenseIds = {};
+                for (const type of Object.keys(DP_RATES)) {
+                    const key = `${dateStr}|${type}`;
+                    if (existingByDateType[key]) expenseIds[type] = existingByDateType[key].id;
+                }
+
+                let hotelOn = false;
+                let hotelRate = DP_HOTEL_DEFAULT;
+                let hotelExpenseId = null;
+                if (showHotel) {
+                    const hotelKey = `${dateStr}|hotel`;
+                    if (tdpExpenses.length > 0) {
+                        hotelOn = !!existingByDateType[hotelKey];
+                        if (existingByDateType[hotelKey]) {
+                            hotelRate = parseFloat(existingByDateType[hotelKey].amount) || DP_HOTEL_DEFAULT;
+                            hotelExpenseId = existingByDateType[hotelKey].id;
+                        }
+                    } else {
+                        hotelOn = true;
+                    }
+                }
+
+                tdpState.days.push({ date: dateStr, dayNum: i + 1, monthDay, dayLabel, isFirst, isLast, perDiem, showHotel, hotelOn, hotelRate, expenseIds, hotelExpenseId });
+            }
+
+            tdpState.vehicleKm = existingVehicleKm;
+            tdpState.vehicleExpenseId = vehicleExpenseId;
+            document.getElementById('tdp-vehicle-km').value = existingVehicleKm > 0 ? existingVehicleKm : '';
+
+            tdpRenderCards();
+            tdpRecalcTotal();
+        }
+
+        function tdpRenderCards() {
+            const container = document.getElementById('tdp-day-cards');
+            const { days, canEdit } = tdpState;
+            const readonlyClass = canEdit ? '' : ' readonly';
+            let hasHotel = false;
+
+            let html = '';
+            days.forEach((day, idx) => {
+                const labelExtra = day.dayLabel ? ` (${day.dayLabel})` : '';
+                html += `<div class="dp-day-card">`;
+                html += `<div class="dp-day-label">📅 ${day.monthDay} — Day ${day.dayNum}${labelExtra}</div>`;
+                html += `<div class="dp-tiles">`;
+
+                for (const [type, info] of Object.entries(DP_RATES)) {
+                    if (type === 'incidentals' && day.isLast) continue;
+                    const on = day.perDiem[type];
+                    const cls = on ? 'on' : 'off';
+                    const onclick = canEdit ? `onclick="tdpToggle(${idx},'${type}')"` : '';
+                    html += `<div class="dp-tile ${cls}${readonlyClass}" ${onclick} id="tdp-tile-${idx}-${type}">
+                        <span class="dp-tile-icon">${info.icon}</span>
+                        <span class="dp-tile-amount">$${info.rate.toFixed(2)}</span>
+                        <span class="dp-tile-status">${on ? '✅' : '❌'}</span>
+                    </div>`;
+                }
+
+                if (day.showHotel) {
+                    const on = day.hotelOn;
+                    if (on) hasHotel = true;
+                    const cls = on ? 'on' : 'off';
+                    const onclick = canEdit ? `onclick="tdpToggle(${idx},'hotel')"` : '';
+                    html += `<div class="dp-tile ${cls}${readonlyClass}" ${onclick} id="tdp-tile-${idx}-hotel" style="width: auto; min-width: 88px;">
+                        <span class="dp-tile-icon">🏨</span>
+                        <span class="dp-tile-amount">Hotel</span>
+                        <span class="dp-tile-status">${on ? '✅' : '❌'}</span>
+                    </div>`;
+                    if (on) {
+                        html += `<div class="dp-hotel-row">
+                            <span style="font-size: 13px; color: #856404;">$</span>
+                            <input type="number" class="dp-hotel-rate-input" value="${day.hotelRate.toFixed(2)}" step="0.01" min="0"
+                                onchange="tdpUpdateHotelRate(${idx}, this.value)" ${canEdit ? '' : 'disabled'}>
+                            <span style="font-size: 12px; color: #856404;">/night (actual)</span>
+                        </div>`;
+                    }
+                }
+
+                html += `</div></div>`;
+            });
+
+            container.innerHTML = html;
+
+            // Show/hide receipt section
+            document.getElementById('tdp-receipts-section').style.display = hasHotel ? 'block' : 'none';
+            if (hasHotel) tdpRenderReceipts();
+        }
+
+        function tdpRenderReceipts() {
+            const list = document.getElementById('tdp-receipt-list');
+            const hotelDays = tdpState.days.filter(d => d.showHotel && d.hotelOn);
+            if (hotelDays.length === 0) { list.innerHTML = ''; return; }
+            let html = '';
+            hotelDays.forEach((day, i) => {
+                html += `<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px; padding: 8px; background: white; border-radius: 8px;">
+                    <span style="font-weight: 600; color: #880e4f; min-width: 80px;">🏨 ${day.monthDay}</span>
+                    <span style="color: #666; font-size: 13px;">$${day.hotelRate.toFixed(2)}</span>
+                    <input type="file" accept="image/*" capture="environment" style="flex: 1; font-size: 13px;" id="tdp-receipt-${day.date}" ${tdpState.canEdit ? '' : 'disabled'}>
+                </div>`;
+            });
+            list.innerHTML = html;
+        }
+
+        async function tdpToggle(dayIdx, type) {
+            if (!tdpState.canEdit || tdpSaving) return;
+            const day = tdpState.days[dayIdx];
+
+            if (type === 'hotel') {
+                day.hotelOn = !day.hotelOn;
+                if (day.hotelOn) {
+                    await tdpCreateExpense(dayIdx, 'hotel');
+                } else {
+                    await tdpDeleteExpense(day.hotelExpenseId);
+                    day.hotelExpenseId = null;
+                }
+            } else {
+                day.perDiem[type] = !day.perDiem[type];
+                if (day.perDiem[type]) {
+                    await tdpCreateExpense(dayIdx, type);
+                } else {
+                    await tdpDeleteExpense(day.expenseIds[type]);
+                    delete day.expenseIds[type];
+                }
+            }
+
+            tdpRenderCards();
+            tdpRecalcTotal();
+        }
+
+        async function tdpCreateExpense(dayIdx, type) {
+            const day = tdpState.days[dayIdx];
+            const isHotel = type === 'hotel';
+            const amount = isHotel ? day.hotelRate : DP_RATES[type].rate;
+            const vendor = isHotel ? 'Hotel' : 'NJC Per Diem Rate';
+            const desc = isHotel ? `Night of ${day.monthDay}` : `Day ${day.dayNum}${day.dayLabel ? ' (' + day.dayLabel + ')' : ''}`;
+
+            tdpShowSaving(true);
+            try {
+                const formData = new FormData();
+                formData.append('expense_type', type);
+                formData.append('date', day.date);
+                formData.append('location', tdpState.destination);
+                formData.append('amount', amount);
+                formData.append('vendor', vendor);
+                formData.append('description', desc);
+                formData.append('trip_id', tdpState.tripId);
+                if (isHotel) {
+                    formData.append('hotel_checkin', day.date);
+                    formData.append('hotel_checkout', day.date);
+                }
+
+                // Check for receipt file
+                if (isHotel) {
+                    const fileInput = document.getElementById(`tdp-receipt-${day.date}`);
+                    if (fileInput && fileInput.files[0]) {
+                        formData.append('receipt', fileInput.files[0]);
+                    }
+                }
+
+                const resp = await fetch('/api/expenses', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${sessionId}` },
+                    body: formData
+                });
+                const result = await resp.json();
+                if (resp.ok && result.success) {
+                    if (isHotel) {
+                        day.hotelExpenseId = result.id || result.expense_id;
+                    } else {
+                        day.expenseIds[type] = result.id || result.expense_id;
+                    }
+                } else {
+                    showMessage('error', `Failed to create expense: ${result.error || 'Unknown error'}`);
+                    // Revert toggle
+                    if (isHotel) day.hotelOn = false; else day.perDiem[type] = false;
+                    tdpRenderCards();
+                }
+            } catch (err) {
+                showMessage('error', 'Network error creating expense: ' + err.message);
+                if (type === 'hotel') day.hotelOn = false; else day.perDiem[type] = false;
+                tdpRenderCards();
+            }
+            tdpShowSaving(false);
+        }
+
+        async function tdpDeleteExpense(expenseId) {
+            if (!expenseId) return;
+            tdpShowSaving(true);
+            try {
+                await fetch(`/api/expenses/${expenseId}/mine`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+            } catch (err) {
+                console.error('TDP delete error:', err);
+            }
+            tdpShowSaving(false);
+        }
+
+        async function tdpUpdateHotelRate(dayIdx, value) {
+            const day = tdpState.days[dayIdx];
+            day.hotelRate = parseFloat(value) || 0;
+            tdpRecalcTotal();
+            
+            // Update on server if expense exists
+            if (day.hotelExpenseId && tdpState.canEdit) {
+                tdpShowSaving(true);
+                try {
+                    await fetch(`/api/expenses/${day.hotelExpenseId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                        body: JSON.stringify({ amount: day.hotelRate })
+                    });
+                } catch (err) { console.error('TDP hotel rate update error:', err); }
+                tdpShowSaving(false);
+            }
+        }
+
+        function tdpRecalcTotal() {
+            let total = 0;
+            tdpState.days.forEach(day => {
+                for (const [type, info] of Object.entries(DP_RATES)) {
+                    if (day.perDiem[type]) total += info.rate;
+                }
+                if (day.showHotel && day.hotelOn) total += day.hotelRate;
+            });
+
+            const km = parseFloat(document.getElementById('tdp-vehicle-km')?.value || 0);
+            tdpState.vehicleKm = km;
+            const vehicleTotal = km * DP_VEHICLE_RATE;
+            total += vehicleTotal;
+            const vtEl = document.getElementById('tdp-vehicle-total');
+            if (vtEl) vtEl.textContent = `$${vehicleTotal.toFixed(2)}`;
+
+            document.getElementById('tdp-running-total').textContent = `$${total.toFixed(2)}`;
+            document.getElementById('tdp-grand-total').textContent = `$${total.toFixed(2)}`;
+        }
+
+        function tdpShowSaving(show) {
+            tdpSaving = show;
+            document.getElementById('tdp-saving').style.display = show ? 'block' : 'none';
+        }
+
+        async function tdpSubmitTrip() {
+            if (!tdpState.tripId) return;
+            
+            // First, handle vehicle km — create/update/delete as needed
+            const km = parseFloat(document.getElementById('tdp-vehicle-km')?.value || 0);
+            if (km > 0) {
+                if (tdpState.vehicleExpenseId) {
+                    // Update existing
+                    try {
+                        await fetch(`/api/expenses/${tdpState.vehicleExpenseId}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                            body: JSON.stringify({ amount: km * DP_VEHICLE_RATE, description: `${km} km @ $${DP_VEHICLE_RATE}/km`, kilometers: km })
+                        });
+                    } catch (err) { console.error(err); }
+                } else {
+                    // Create new
+                    try {
+                        const formData = new FormData();
+                        formData.append('expense_type', 'vehicle_km');
+                        formData.append('date', tdpState.startDate);
+                        formData.append('location', tdpState.destination);
+                        formData.append('amount', km * DP_VEHICLE_RATE);
+                        formData.append('vendor', 'Personal Vehicle');
+                        formData.append('description', `${km} km @ $${DP_VEHICLE_RATE}/km`);
+                        formData.append('trip_id', tdpState.tripId);
+                        formData.append('kilometers', km);
+                        await fetch('/api/expenses', {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${sessionId}` },
+                            body: formData
+                        });
+                    } catch (err) { console.error(err); }
+                }
+            } else if (tdpState.vehicleExpenseId) {
+                // Delete vehicle expense if km is 0
+                await tdpDeleteExpense(tdpState.vehicleExpenseId);
+            }
+
+            // Upload any hotel receipts that haven't been uploaded yet
+            for (const day of tdpState.days) {
+                if (day.showHotel && day.hotelOn && day.hotelExpenseId) {
+                    const fileInput = document.getElementById(`tdp-receipt-${day.date}`);
+                    if (fileInput && fileInput.files[0]) {
+                        try {
+                            const formData = new FormData();
+                            formData.append('receipt', fileInput.files[0]);
+                            await fetch(`/api/expenses/${day.hotelExpenseId}/receipt`, {
+                                method: 'POST',
+                                headers: { 'Authorization': `Bearer ${sessionId}` },
+                                body: formData
+                            });
+                        } catch (err) { console.error('Receipt upload error:', err); }
+                    }
+                }
+            }
+
+            // Submit the trip
+            try {
+                showMessage('info', '📤 Submitting trip...');
+                const resp = await fetch(`/api/trips/${tdpState.tripId}/submit`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                const result = await resp.json();
+                if (result.success) {
+                    showMessage('success', '✅ Trip submitted for approval!');
+                    tdpState.canEdit = false;
+                    tdpState.tripStatus = 'submitted';
+                    tdpRenderCards();
+                    document.getElementById('tdp-submit-section').style.display = 'none';
+                    document.getElementById('tdp-vehicle-km').disabled = true;
+                    // Refresh status badge
+                    document.getElementById('tdp-status-badge').innerHTML = '<span style="background: #ffc10722; color: #ffc107; padding: 3px 10px; border-radius: 12px; font-weight: 600; border: 1px solid #ffc107">⏳ SUBMITTED (read-only)</span>';
+                    // Reload trips list
+                    if (typeof loadTrips === 'function') loadTrips();
+                } else {
+                    showMessage('error', result.error || 'Failed to submit trip');
+                }
+            } catch (err) {
+                showMessage('error', 'Network error: ' + err.message);
             }
         }
         

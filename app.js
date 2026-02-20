@@ -3282,6 +3282,28 @@ app.put('/api/expenses/:id', requireAuth, (req, res) => {
     });
 });
 
+// Employee can delete their own draft expenses (for Day Planner toggle-off)
+app.delete('/api/expenses/:id/mine', requireAuth, (req, res) => {
+    const { id } = req.params;
+    db.get(`SELECT e.*, t.status as trip_status FROM expenses e LEFT JOIN trips t ON e.trip_id = t.id WHERE e.id = ?`, [id], (err, expense) => {
+        if (err) return res.status(500).json({ success: false, error: 'Database error' });
+        if (!expense) return res.status(404).json({ success: false, error: 'Expense not found' });
+        if (expense.employee_id !== req.user.employeeId) {
+            return res.status(403).json({ success: false, error: 'Not your expense' });
+        }
+        if (expense.status === 'approved') {
+            return res.status(400).json({ success: false, error: 'Cannot delete approved expenses' });
+        }
+        if (expense.trip_status && expense.trip_status !== 'draft') {
+            return res.status(400).json({ success: false, error: 'Cannot delete expenses in a submitted trip' });
+        }
+        db.run('DELETE FROM expenses WHERE id = ?', [id], function(err) {
+            if (err) return res.status(500).json({ success: false, error: 'Failed to delete' });
+            res.json({ success: true });
+        });
+    });
+});
+
 // ============================================
 // FEATURE 3: Notifications table + endpoints
 // ============================================
