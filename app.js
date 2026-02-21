@@ -3460,6 +3460,8 @@ app.get('/api/travel-auth', requireAuth, (req, res) => {
         `;
         params = [];
     } else if (req.user.role === 'supervisor') {
+        // Employee dashboard: only show supervisor's OWN auths (not ones they approved)
+        // Supervisor approval view is in admin.html with its own endpoint
         query = `
             SELECT ta.*, e.name as employee_name, s.name as approver_name,
                    (SELECT COUNT(*) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expense_count,
@@ -3467,10 +3469,10 @@ app.get('/api/travel-auth', requireAuth, (req, res) => {
             FROM travel_authorizations ta
             JOIN employees e ON ta.employee_id = e.id
             LEFT JOIN employees s ON ta.approver_id = s.id
-            WHERE ta.employee_id = ? OR ta.approver_id = ?
+            WHERE ta.employee_id = ?
             ORDER BY ta.created_at DESC
         `;
-        params = [req.user.employeeId, req.user.employeeId];
+        params = [req.user.employeeId];
     } else {
         query = `
             SELECT ta.*, e.name as employee_name, s.name as approver_name,
