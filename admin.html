@@ -2588,21 +2588,49 @@ try {
                             <button onclick="rejectTravelAuth(${auth.id})" class="btn btn-danger" style="min-height: 44px; padding: 10px 20px; font-size: 14px;">❌ Reject</button>
                         </div>` : '';
                     
+                    // Calculate number of days
+                    const startD = new Date(auth.start_date + 'T00:00:00');
+                    const endD = new Date(auth.end_date + 'T00:00:00');
+                    const numDays = Math.round((endD - startD) / 86400000) + 1;
+
                     return `
-                        <div style="background: white; border: 2px solid ${auth.status === 'pending' ? '#f0ad4e' : '#e9ecef'}; border-radius: 12px; padding: 20px; margin-bottom: 15px; ${auth.status === 'pending' ? 'box-shadow: 0 2px 8px rgba(240,173,78,0.2);' : ''}">
-                            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
-                                <div>
-                                    <strong style="font-size: 16px; color: #2c3e50;">${auth.name || auth.destination || 'Travel Authorization'}</strong>
-                                    <div style="font-size: 13px; color: #666; margin-top: 4px;">
-                                        👤 ${auth.employee_name || 'Unknown'} • 📍 ${auth.destination || 'N/A'} • 📅 ${auth.start_date || ''} to ${auth.end_date || ''}
+                        <div style="background: white; border: 2px solid ${auth.status === 'pending' ? '#f0ad4e' : '#e9ecef'}; border-radius: 12px; overflow: hidden; margin-bottom: 15px; ${auth.status === 'pending' ? 'box-shadow: 0 2px 8px rgba(240,173,78,0.2);' : ''}">
+                            <!-- Header -->
+                            <div style="padding: 16px 20px; background: linear-gradient(135deg, #2c3e50, #3498db); color: white;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                                    <div>
+                                        <div style="font-size: 20px; font-weight: bold;">✈️ ${auth.name || auth.destination || 'Travel Authorization'}</div>
+                                        <div style="font-size: 14px; opacity: 0.9; margin-top: 4px;">
+                                            👤 ${auth.employee_name || 'Unknown'} · 📍 ${auth.destination || 'N/A'} · 📅 ${auth.start_date} → ${auth.end_date} (${numDays} day${numDays > 1 ? 's' : ''})
+                                        </div>
+                                        ${auth.purpose ? `<div style="font-size: 13px; opacity: 0.8; margin-top: 4px;">📋 ${auth.purpose}</div>` : ''}
                                     </div>
-                                    ${auth.purpose ? `<div style="font-size: 13px; color: #888; margin-top: 4px;">📋 ${auth.purpose}</div>` : ''}
+                                    <div style="text-align: right;">
+                                        <div style="font-size: 24px; font-weight: bold;">$${parseFloat(auth.est_total || 0).toFixed(2)}</div>
+                                        <span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 12px;">${s.text}</span>
+                                    </div>
                                 </div>
-                                <span class="${s.cls}" style="padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600;">${s.text}</span>
                             </div>
-                            ${costBreakdown}
-                            ${auth.rejection_reason ? `<div style="margin-top: 10px; padding: 8px 12px; background: #f8d7da; border-radius: 6px; font-size: 13px; color: #721c24;">❌ Rejected: ${auth.rejection_reason}</div>` : ''}
-                            ${actions}
+                            <!-- Cost Summary -->
+                            <div style="display: flex; gap: 0; border-bottom: 1px solid #eee;">
+                                ${auth.est_meals > 0 ? `<div style="flex: 1; padding: 12px; text-align: center; border-right: 1px solid #eee;"><div style="font-size: 12px; color: #888;">🍽️ Meals</div><div style="font-size: 18px; font-weight: bold; color: #2c3e50;">$${parseFloat(auth.est_meals).toFixed(2)}</div></div>` : ''}
+                                ${auth.est_lodging > 0 ? `<div style="flex: 1; padding: 12px; text-align: center; border-right: 1px solid #eee;"><div style="font-size: 12px; color: #888;">🏨 Lodging</div><div style="font-size: 18px; font-weight: bold; color: #2c3e50;">$${parseFloat(auth.est_lodging).toFixed(2)}</div></div>` : ''}
+                                ${auth.est_transport > 0 ? `<div style="flex: 1; padding: 12px; text-align: center; border-right: 1px solid #eee;"><div style="font-size: 12px; color: #888;">🚗 Transport</div><div style="font-size: 18px; font-weight: bold; color: #2c3e50;">$${parseFloat(auth.est_transport).toFixed(2)}</div></div>` : ''}
+                                ${auth.est_other > 0 ? `<div style="flex: 1; padding: 12px; text-align: center;"><div style="font-size: 12px; color: #888;">📋 Other</div><div style="font-size: 18px; font-weight: bold; color: #2c3e50;">$${parseFloat(auth.est_other).toFixed(2)}</div></div>` : ''}
+                            </div>
+                            <!-- Expandable Detail -->
+                            <div style="padding: 12px 20px; border-bottom: 1px solid #eee;">
+                                <button onclick="toggleAuthDetail(${auth.id}, this)" style="background: none; border: 1px solid #dee2e6; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; color: #495057; width: 100%;">
+                                    📋 View Full Day-by-Day Breakdown ▼
+                                </button>
+                                <div id="auth-detail-${auth.id}" style="display: none; margin-top: 12px;"></div>
+                            </div>
+                            ${auth.rejection_reason ? `<div style="margin: 12px 20px; padding: 8px 12px; background: #f8d7da; border-radius: 6px; font-size: 13px; color: #721c24;">❌ Rejected: ${auth.rejection_reason}</div>` : ''}
+                            ${auth.status === 'pending' ? `
+                            <div style="padding: 16px 20px; background: #f8f9fa; display: flex; gap: 10px; flex-wrap: wrap;">
+                                <button onclick="approveTravelAuth(${auth.id})" class="btn btn-success" style="min-height: 44px; padding: 10px 24px; font-size: 15px;">✅ Approve</button>
+                                <button onclick="rejectTravelAuth(${auth.id})" class="btn btn-danger" style="min-height: 44px; padding: 10px 24px; font-size: 15px;">❌ Reject</button>
+                            </div>` : ''}
                         </div>`;
                 }).join('');
                 
@@ -2617,6 +2645,72 @@ try {
             }
         }
         
+        async function toggleAuthDetail(authId, btn) {
+            const detail = document.getElementById(`auth-detail-${authId}`);
+            if (detail.style.display !== 'none') {
+                detail.style.display = 'none';
+                btn.innerHTML = '📋 View Full Day-by-Day Breakdown ▼';
+                return;
+            }
+            detail.style.display = 'block';
+            btn.innerHTML = '📋 Hide Breakdown ▲';
+            
+            if (detail.dataset.loaded) return;
+            detail.innerHTML = '<div style="text-align: center; padding: 20px; color: #888;">Loading expenses...</div>';
+            
+            try {
+                const resp = await fetch(`/api/travel-auth/${authId}/expenses`, {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                if (!resp.ok) throw new Error('Failed');
+                const expenses = await resp.json();
+                
+                if (expenses.length === 0) {
+                    detail.innerHTML = '<div style="color: #888; padding: 10px;">No estimated expenses found.</div>';
+                    detail.dataset.loaded = 'true';
+                    return;
+                }
+                
+                // Group by date
+                const byDate = {};
+                expenses.forEach(e => {
+                    if (!byDate[e.date]) byDate[e.date] = [];
+                    byDate[e.date].push(e);
+                });
+                const dates = Object.keys(byDate).sort();
+                const totalDays = dates.length;
+                
+                let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+                dates.forEach((date, idx) => {
+                    const dayLabel = idx === 0 ? 'Departure' : idx === totalDays - 1 ? 'Return' : `Day ${idx + 1}`;
+                    const d = new Date(date + 'T00:00:00');
+                    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    const dayTotal = byDate[date].reduce((s, e) => s + parseFloat(e.amount), 0);
+                    const typeEmoji = {breakfast:'🥐',lunch:'🥗',dinner:'🍽️',incidentals:'📱',hotel:'🏨',mileage:'🚗',other:'📋'};
+                    
+                    html += `
+                    <div style="background: #f8f9fa; border-radius: 8px; padding: 10px 14px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <strong style="font-size: 14px; color: #2c3e50;">📅 ${dateStr} — ${dayLabel}</strong>
+                            <span style="font-weight: 600; color: #27ae60;">$${dayTotal.toFixed(2)}</span>
+                        </div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                            ${byDate[date].map(e => {
+                                const emoji = typeEmoji[e.expense_type] || '📋';
+                                const label = e.meal_name || e.expense_type;
+                                return `<span style="background: white; border: 1px solid #dee2e6; border-radius: 6px; padding: 4px 10px; font-size: 13px;">${emoji} ${label} <strong>$${parseFloat(e.amount).toFixed(2)}</strong></span>`;
+                            }).join('')}
+                        </div>
+                    </div>`;
+                });
+                html += '</div>';
+                detail.innerHTML = html;
+                detail.dataset.loaded = 'true';
+            } catch (e) {
+                detail.innerHTML = '<div style="color: #dc3545; padding: 10px;">❌ Failed to load details.</div>';
+            }
+        }
+
         async function approveTravelAuth(id) {
             try {
                 const response = await fetch(`/api/travel-auth/${id}/approve`, {
