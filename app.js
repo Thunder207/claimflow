@@ -447,14 +447,14 @@ function initializeDatabase() {
 
 // 📋 Insert default data
 function insertDefaultData() {
-    // Insert sample employees with login credentials
+    // Insert sample employees with login credentials - FIXED HIERARCHY
     const employees = [
-        ['John Smith', 'EMP001', 'john.smith@company.com', hashPassword('manager123'), 'Senior Manager', 'Finance', null, 'admin'],
-        ['Sarah Johnson', 'EMP002', 'sarah.johnson@company.com', hashPassword('sarah123'), 'Financial Analyst', 'Finance', 1, 'supervisor'],
-        ['Mike Davis', 'EMP003', 'mike.davis@company.com', hashPassword('mike123'), 'Accountant', 'Finance', 1, 'employee'],
-        ['Lisa Brown', 'EMP004', 'lisa.brown@company.com', hashPassword('lisa123'), 'Department Head', 'Operations', null, 'supervisor'],
-        ['David Wilson', 'EMP005', 'david.wilson@company.com', hashPassword('david123'), 'Operations Specialist', 'Operations', 4, 'employee'],
-        ['Anna Lee', 'EMP006', 'anna.lee@company.com', hashPassword('anna123'), 'Project Coordinator', 'Operations', 4, 'employee']
+        ['John Smith', 'EMP001', 'john.smith@company.com', hashPassword('manager123'), 'Senior Manager', 'Management', null, 'admin'],
+        ['Sarah Johnson', 'EMP002', 'sarah.johnson@company.com', hashPassword('sarah123'), 'Finance Supervisor', 'Finance', null, 'supervisor'], // Independent
+        ['Mike Davis', 'EMP003', 'mike.davis@company.com', hashPassword('mike123'), 'Accountant', 'Finance', 2, 'employee'], // Reports to Sarah
+        ['Lisa Brown', 'EMP004', 'lisa.brown@company.com', hashPassword('lisa123'), 'Operations Supervisor', 'Operations', null, 'supervisor'], // Independent  
+        ['David Wilson', 'EMP005', 'david.wilson@company.com', hashPassword('david123'), 'Operations Specialist', 'Operations', 4, 'employee'], // Reports to Lisa
+        ['Anna Lee', 'EMP006', 'anna.lee@company.com', hashPassword('anna123'), 'Project Coordinator', 'Operations', 4, 'employee'] // Reports to Lisa
     ];
     
     // Insert employees sequentially to guarantee consistent IDs
@@ -482,10 +482,11 @@ function insertDefaultData() {
             else console.log('✅ Fixed Mike Davis supervisor assignment');
         });
         
-        // Bug 5 Fix: Ensure Lisa Brown is assigned to Sarah Johnson as supervisor
-        db.run(`UPDATE employees SET supervisor_id = (SELECT id FROM employees WHERE email = 'sarah.johnson@company.com') 
-                WHERE employee_number = 'EMP004' AND (supervisor_id IS NULL OR supervisor_id = 0)`, (err) => {
-            if (err) console.error('❌ Error fixing Lisa supervisor:', err.message);
+        // 🚨 GOVERNANCE FIX: Lisa Brown should be INDEPENDENT Operations supervisor, NOT report to Sarah
+        db.run(`UPDATE employees SET supervisor_id = NULL 
+                WHERE employee_number = 'EMP004'`, (err) => {
+            if (err) console.error('❌ Error making Lisa independent supervisor:', err.message);
+            else console.log('✅ Fixed Lisa Brown - now independent Operations supervisor');
         });
         
         // Add category column for standalone expenses
