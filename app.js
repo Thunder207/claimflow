@@ -1017,8 +1017,8 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
         }
     }
     
-    // Hotel category validation: receipt required
-    if (expense_type === 'hotel' && !req.file) {
+    // Hotel category validation: receipt required (but not for trip Day Planner — receipt uploaded separately)
+    if (expense_type === 'hotel' && !req.file && !trip_id) {
         return res.status(400).json({
             success: false,
             error: 'Hotel expenses require a receipt photo for audit compliance. Please scroll down and upload your hotel receipt before submitting.'
