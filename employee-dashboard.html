@@ -2529,10 +2529,13 @@
         }
         
         // Add date change listener to update rates and check per diem limits
-        document.getElementById('expense-date').addEventListener('change', async function() {
-            await updatePerDiemRate(); // Update rates based on new date
-            checkPerDiemLimits(); // Check per diem limits
-        });
+        const expenseDateInput = document.getElementById('expense-date');
+        if (expenseDateInput) {
+            expenseDateInput.addEventListener('change', async function() {
+                await updatePerDiemRate(); // Update rates based on new date
+                checkPerDiemLimits(); // Check per diem limits
+            });
+        }
         
         // ═══════════════════════════════════════════════════════════════════════════════
         // TRAVEL AUTHORIZATION (AT) MANAGEMENT FUNCTIONS
@@ -2585,7 +2588,14 @@
                 });
             }
             select.innerHTML = options;
-            if (selectedAuthId) select.value = selectedAuthId;
+            if (selectedAuthId) {
+                select.value = selectedAuthId;
+            } else if (auths && auths.length === 1) {
+                // Auto-select if only one auth exists
+                select.value = auths[0].id;
+                selectedAuthId = auths[0].id;
+                setTimeout(() => handleAuthSelection(), 50);
+            }
             
             if (!auths || auths.length === 0) {
                 container.innerHTML = `<div style="text-align: center; padding: 40px 20px; color: #6c757d; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); border-radius: 12px; border: 2px dashed #ffc107;"><div style="font-size: 48px; margin-bottom: 15px;">✈️</div><h4 style="color: #2c3e50; margin-bottom: 10px;">No travel authorizations yet</h4><p>Click "New Authorization" above to get started.</p></div>`;
