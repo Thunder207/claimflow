@@ -875,13 +875,8 @@ app.get('/api/expenses', requireAuth, (req, res) => {
             ORDER BY e.created_at DESC
         `;
     } else if (req.user.role === 'supervisor') {
-        // Bug 5 Fix: Supervisor sees their full team's expenses (including indirect reports)
+        // 🚨 GOVERNANCE FIX: Supervisor sees ONLY direct reports' expenses (not indirect)
         query = `
-            WITH RECURSIVE team AS (
-                SELECT id FROM employees WHERE supervisor_id = ?
-                UNION ALL
-                SELECT e.id FROM employees e INNER JOIN team t ON e.supervisor_id = t.id
-            )
             SELECT e.*, 
                    emp.name as employee_name_from_db,
                    emp.supervisor_id,
@@ -895,7 +890,7 @@ app.get('/api/expenses', requireAuth, (req, res) => {
             LEFT JOIN employees emp ON e.employee_id = emp.id
             LEFT JOIN employees sup ON emp.supervisor_id = sup.id
             LEFT JOIN trips t ON e.trip_id = t.id
-            WHERE emp.id IN (SELECT id FROM team)
+            WHERE emp.supervisor_id = ?
             ORDER BY e.created_at DESC
         `;
         params = [req.user.employeeId];
@@ -3488,22 +3483,15 @@ app.get('/api/travel-auth', requireAuth, (req, res) => {
         params = [];
     } else if (req.user.role === 'supervisor') {
         if (req.query.view === 'team') {
-            // CRITICAL FIX: Supervisor approval view — show ALL employees under supervisor hierarchy
+            // 🚨 GOVERNANCE FIX: Supervisor sees ONLY direct reports (not indirect/recursive)
             query = `
-                WITH RECURSIVE team AS (
-                    -- Direct reports
-                    SELECT id FROM employees WHERE supervisor_id = ?
-                    UNION ALL
-                    -- Indirect reports (recursive)
-                    SELECT e.id FROM employees e INNER JOIN team t ON e.supervisor_id = t.id
-                )
                 SELECT ta.*, e.name as employee_name, s.name as approver_name,
                        (SELECT COUNT(*) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expense_count,
                        (SELECT COALESCE(SUM(ex.amount), 0) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expenses_total
                 FROM travel_authorizations ta
                 JOIN employees e ON ta.employee_id = e.id
                 LEFT JOIN employees s ON ta.approver_id = s.id
-                WHERE e.id IN (SELECT id FROM team)
+                WHERE e.supervisor_id = ?
                 ORDER BY ta.created_at DESC
             `;
         } else {
