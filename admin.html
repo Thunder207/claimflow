@@ -2420,7 +2420,7 @@ try {
         async function loadTravelAuthApprovals() {
             const container = document.getElementById('travel-auth-container');
             try {
-                const response = await fetch('/api/travel-auth', {
+                const response = await fetch('/api/travel-auth?view=team', {
                     headers: { 'Authorization': `Bearer ${sessionId}` }
                 });
                 
