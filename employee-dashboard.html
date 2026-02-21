@@ -4739,7 +4739,7 @@
         function checkSupervisorRole() {
             try {
                 const user = JSON.parse(localStorage.getItem('user'));
-                if (user && user.role === 'supervisor') {
+                if (user && (user.role === 'supervisor' || user.role === 'admin')) {
                     document.getElementById('supervisor-switch-btn').style.display = 'inline-block';
                 }
             } catch (error) {
