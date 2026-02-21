@@ -1265,87 +1265,161 @@ try {
                     return;
                 }
                 
-                container.innerHTML = expenses.map(expense => {
-                    const statusClass = expense.status === 'approved' ? 'status-approved' : 
-                                      expense.status === 'rejected' ? 'status-rejected' : 
-                                      expense.status === 'returned' ? 'status-returned' : 'status-pending';
-                    const statusText = expense.status === 'approved' ? '✅ Approved' :
-                                     expense.status === 'rejected' ? '❌ Rejected' :
-                                     expense.status === 'returned' ? '↩️ Returned for Correction' : '⏳ Pending';
-                    
-                    let actionButtons = '';
-                    let bulkCheckbox = '';
-                    
-                    if (expense.status === 'pending') {
-                        if (currentUserRole === 'supervisor') {
-                            // Add checkbox for bulk selection
-                            bulkCheckbox = `
-                                <div style="display: flex; align-items: center; margin-bottom: 10px;">
-                                    <input type="checkbox" class="expense-checkbox" data-expense-id="${expense.id}" 
-                                           onchange="updateBulkActionButtons()" 
-                                           style="margin-right: 8px; transform: scale(1.2);">
-                                    <label style="font-size: 12px; color: #666; cursor: pointer;">Select for bulk action</label>
-                                </div>
-                            `;
-                            
-                            actionButtons = `
-                                <button class="btn btn-success" onclick="approveExpense(${expense.id})">✅ Approve</button>
-                                <button class="btn btn-warning" onclick="returnExpense(${expense.id})" style="background: #fd7e14; color: white;">↩️ Return for Correction</button>
-                                <button class="btn btn-danger" onclick="rejectExpense(${expense.id})">❌ Reject</button>
-                            `;
-                        } else if (currentUserRole === 'admin') {
-                            actionButtons = `
-                                <div style="color: #6c757d; font-size: 12px; margin-bottom: 5px;">⚠️ Admin role: System management only</div>
-                                <button class="btn btn-warning" onclick="deleteExpense(${expense.id})">🗑️ Delete</button>
-                            `;
-                        }
+                // Group expenses by trip (or "ungrouped" for non-trip expenses)
+                const groups = {};
+                expenses.forEach(exp => {
+                    const key = exp.trip_id ? `trip-${exp.trip_id}` : 'no-trip';
+                    if (!groups[key]) {
+                        groups[key] = {
+                            tripId: exp.trip_id,
+                            tripName: exp.trip_name || null,
+                            tripStart: exp.trip_start,
+                            tripEnd: exp.trip_end,
+                            tripDestination: exp.trip_destination,
+                            employeeName: exp.employee_name || exp.employee_name_from_db,
+                            expenses: []
+                        };
                     }
-                    
-                    return `
-                        <div class="expense-item">
-                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap;">
-                                <div style="flex-grow: 1; min-width: 300px;">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
-                                        <div style="font-weight: bold; color: #2c3e50; font-size: 18px;">
-                                            ${expense.meal_name || expense.expense_type} • ${expense.employee_name}
-                                        </div>
-                                        <div class="status-badge ${statusClass}">
-                                            ${statusText}
+                    groups[key].expenses.push(exp);
+                });
+
+                let html = '';
+                // Render trip groups first (pending trips on top)
+                const sortedKeys = Object.keys(groups).sort((a, b) => {
+                    if (a === 'no-trip') return 1;
+                    if (b === 'no-trip') return -1;
+                    const aPending = groups[a].expenses.filter(e => e.status === 'pending').length;
+                    const bPending = groups[b].expenses.filter(e => e.status === 'pending').length;
+                    return bPending - aPending;
+                });
+
+                for (const key of sortedKeys) {
+                    const group = groups[key];
+                    const total = group.expenses.reduce((s, e) => s + parseFloat(e.amount), 0);
+                    const pendingExps = group.expenses.filter(e => e.status === 'pending');
+                    const approvedExps = group.expenses.filter(e => e.status === 'approved');
+                    const rejectedExps = group.expenses.filter(e => e.status === 'rejected');
+
+                    if (group.tripId) {
+                        // === TRIP GROUP CARD ===
+                        const pendingIds = pendingExps.map(e => e.id);
+                        html += `
+                        <div style="background: white; border-radius: 12px; border: 2px solid ${pendingExps.length > 0 ? '#f0ad4e' : '#27ae60'}; margin-bottom: 20px; overflow: hidden;">
+                            <!-- Trip Header -->
+                            <div style="background: linear-gradient(135deg, #2c3e50, #3498db); color: white; padding: 16px 20px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                                    <div>
+                                        <div style="font-size: 20px; font-weight: bold;">✈️ ${group.tripName || 'Trip #' + group.tripId}</div>
+                                        <div style="font-size: 14px; opacity: 0.9; margin-top: 4px;">
+                                            👤 ${group.employeeName} · 📍 ${group.tripDestination || 'N/A'} · 📅 ${group.tripStart} → ${group.tripEnd}
                                         </div>
                                     </div>
-                                    <div style="color: #666; font-size: 14px; margin-bottom: 12px;">
-                                        <span style="color: #27ae60; font-size: 20px; font-weight: bold;">$${parseFloat(expense.amount).toFixed(2)}</span> • 
-                                        📅 ${expense.date} • 
-                                        📍 ${expense.location || 'No location'}
-                                        ${expense.vendor ? ` • 🏪 ${expense.vendor}` : ''}
+                                    <div style="text-align: right;">
+                                        <div style="font-size: 24px; font-weight: bold;">$${total.toFixed(2)}</div>
+                                        <div style="font-size: 12px; opacity: 0.8;">${group.expenses.length} expenses</div>
                                     </div>
-                                    ${expense.description ? `
-                                        <div style="font-size: 13px; color: #666; margin-bottom: 12px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px;">
-                                            📋 ${expense.description}
-                                        </div>
-                                    ` : ''}
-                                    ${expense.approval_comment ? `
-                                        <div style="font-size: 13px; color: #155724; margin-bottom: 12px; padding: 8px 12px; background: #d4edda; border-radius: 6px;">
-                                            ✅ <strong>${expense.approved_by}:</strong> ${expense.approval_comment}
-                                        </div>
-                                    ` : ''}
-                                    ${expense.rejection_reason ? `
-                                        <div style="font-size: 13px; color: #721c24; margin-bottom: 12px; padding: 8px 12px; background: #f8d7da; border-radius: 6px;">
-                                            ❌ <strong>${expense.approved_by}:</strong> ${expense.rejection_reason}
-                                        </div>
-                                    ` : ''}
-                                    ${bulkCheckbox}
-                                    ${actionButtons ? `<div style="margin-top: 15px;">${actionButtons}</div>` : ''}
                                 </div>
-                                ${expense.receipt_photo ? `
-                                    <div style="flex-shrink: 0;">
-                                        <img src="${expense.receipt_photo}" alt="Receipt" style="max-width: 100px; max-height: 100px; border-radius: 8px; cursor: pointer; border: 2px solid #ddd;" onclick="viewReceipt('${expense.receipt_photo}')">
-                                    </div>
-                                ` : ''}
                             </div>
-                        </div>
-                    `;
-                }).join('');
+                            <!-- Status Summary -->
+                            <div style="display: flex; gap: 12px; padding: 12px 20px; background: #f8f9fa; border-bottom: 1px solid #eee; flex-wrap: wrap;">
+                                ${pendingExps.length > 0 ? `<span style="background: #fff3cd; color: #856404; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;">⏳ ${pendingExps.length} Pending</span>` : ''}
+                                ${approvedExps.length > 0 ? `<span style="background: #d4edda; color: #155724; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;">✅ ${approvedExps.length} Approved</span>` : ''}
+                                ${rejectedExps.length > 0 ? `<span style="background: #f8d7da; color: #721c24; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;">❌ ${rejectedExps.length} Rejected</span>` : ''}
+                            </div>
+                            ${pendingExps.length > 0 && currentUserRole === 'supervisor' ? `
+                            <!-- Bulk Actions -->
+                            <div style="padding: 12px 20px; background: #fff8e1; border-bottom: 1px solid #eee; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                <button class="btn btn-success" onclick="bulkApproveTrip([${pendingIds.join(',')}])" style="font-size: 15px; padding: 8px 20px;">
+                                    ✅ Approve All ${pendingExps.length} Expenses
+                                </button>
+                                <button class="btn btn-danger" onclick="bulkRejectTrip([${pendingIds.join(',')}])" style="font-size: 13px; padding: 6px 14px;">
+                                    ❌ Reject All
+                                </button>
+                            </div>
+                            ` : ''}
+                            <!-- Expense Breakdown Table -->
+                            <div style="padding: 12px 20px;">
+                                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                                    <thead>
+                                        <tr style="border-bottom: 2px solid #dee2e6; text-align: left;">
+                                            <th style="padding: 8px 4px;">Date</th>
+                                            <th style="padding: 8px 4px;">Type</th>
+                                            <th style="padding: 8px 4px; text-align: right;">Amount</th>
+                                            <th style="padding: 8px 4px; text-align: center;">Status</th>
+                                            ${currentUserRole === 'supervisor' ? '<th style="padding: 8px 4px; text-align: center;">Action</th>' : ''}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${group.expenses.sort((a, b) => a.date.localeCompare(b.date) || a.expense_type.localeCompare(b.expense_type)).map(exp => {
+                                            const sClass = exp.status === 'approved' ? '#27ae60' : exp.status === 'rejected' ? '#dc3545' : '#f0ad4e';
+                                            const sIcon = exp.status === 'approved' ? '✅' : exp.status === 'rejected' ? '❌' : '⏳';
+                                            const typeEmoji = {breakfast:'🥐',lunch:'🥗',dinner:'🍽️',incidentals:'📱',hotel:'🏨',mileage:'🚗',other:'📋'}[exp.expense_type] || '📋';
+                                            return `<tr style="border-bottom: 1px solid #f0f0f0;">
+                                                <td style="padding: 8px 4px;">${exp.date}</td>
+                                                <td style="padding: 8px 4px;">${typeEmoji} ${exp.meal_name || exp.expense_type}</td>
+                                                <td style="padding: 8px 4px; text-align: right; font-weight: 600;">$${parseFloat(exp.amount).toFixed(2)}</td>
+                                                <td style="padding: 8px 4px; text-align: center;"><span style="color: ${sClass}; font-weight: 600;">${sIcon}</span></td>
+                                                ${currentUserRole === 'supervisor' && exp.status === 'pending' ? `
+                                                <td style="padding: 8px 4px; text-align: center;">
+                                                    <button onclick="approveExpense(${exp.id})" style="background: #27ae60; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-right: 4px;">✅</button>
+                                                    <button onclick="rejectExpense(${exp.id})" style="background: #dc3545; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">❌</button>
+                                                </td>` : currentUserRole === 'supervisor' ? '<td></td>' : ''}
+                                            </tr>`;
+                                        }).join('')}
+                                        <tr style="border-top: 2px solid #dee2e6; font-weight: bold;">
+                                            <td style="padding: 8px 4px;" colspan="2">Total</td>
+                                            <td style="padding: 8px 4px; text-align: right; font-size: 16px; color: #27ae60;">$${total.toFixed(2)}</td>
+                                            <td></td>
+                                            ${currentUserRole === 'supervisor' ? '<td></td>' : ''}
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>`;
+                    } else {
+                        // === NON-TRIP EXPENSES (original flat cards) ===
+                        group.expenses.forEach(expense => {
+                            const statusClass = expense.status === 'approved' ? 'status-approved' : 
+                                              expense.status === 'rejected' ? 'status-rejected' : 
+                                              expense.status === 'returned' ? 'status-returned' : 'status-pending';
+                            const statusText = expense.status === 'approved' ? '✅ Approved' :
+                                             expense.status === 'rejected' ? '❌ Rejected' :
+                                             expense.status === 'returned' ? '↩️ Returned for Correction' : '⏳ Pending';
+                            let actionButtons = '';
+                            if (expense.status === 'pending') {
+                                if (currentUserRole === 'supervisor') {
+                                    actionButtons = `
+                                        <button class="btn btn-success" onclick="approveExpense(${expense.id})">✅ Approve</button>
+                                        <button class="btn btn-warning" onclick="returnExpense(${expense.id})" style="background: #fd7e14; color: white;">↩️ Return</button>
+                                        <button class="btn btn-danger" onclick="rejectExpense(${expense.id})">❌ Reject</button>
+                                    `;
+                                } else if (currentUserRole === 'admin') {
+                                    actionButtons = `<button class="btn btn-warning" onclick="deleteExpense(${expense.id})">🗑️ Delete</button>`;
+                                }
+                            }
+                            html += `
+                            <div class="expense-item">
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap;">
+                                    <div style="flex-grow: 1;">
+                                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+                                            <div style="font-weight: bold; color: #2c3e50; font-size: 18px;">
+                                                ${expense.meal_name || expense.expense_type} • ${expense.employee_name}
+                                            </div>
+                                            <div class="status-badge ${statusClass}">${statusText}</div>
+                                        </div>
+                                        <div style="color: #666; font-size: 14px; margin-bottom: 12px;">
+                                            <span style="color: #27ae60; font-size: 20px; font-weight: bold;">$${parseFloat(expense.amount).toFixed(2)}</span> • 
+                                            📅 ${expense.date} • 📍 ${expense.location || 'N/A'}
+                                        </div>
+                                        ${actionButtons ? `<div style="margin-top: 10px;">${actionButtons}</div>` : ''}
+                                    </div>
+                                    ${expense.receipt_photo ? `<img src="${expense.receipt_photo}" alt="Receipt" style="max-width: 80px; border-radius: 8px; cursor: pointer; border: 2px solid #ddd;" onclick="viewReceipt('${expense.receipt_photo}')">` : ''}
+                                </div>
+                            </div>`;
+                        });
+                    }
+                }
+                container.innerHTML = html;
                 
             } catch (error) {
                 console.error('❌ Error loading expenses:', error);
@@ -2138,6 +2212,41 @@ try {
                     </div>
                 `;
             }
+        }
+
+        async function bulkApproveTrip(expenseIds) {
+            if (!confirm(`Approve all ${expenseIds.length} expenses?`)) return;
+            let success = 0, fail = 0;
+            for (const id of expenseIds) {
+                try {
+                    const r = await fetch(`/api/expenses/${id}/approve`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                        body: JSON.stringify({ comment: 'Bulk approved' })
+                    });
+                    if (r.ok) success++; else fail++;
+                } catch(e) { fail++; }
+            }
+            alert(`✅ ${success} approved${fail > 0 ? `, ❌ ${fail} failed` : ''}`);
+            loadExpenses();
+        }
+
+        async function bulkRejectTrip(expenseIds) {
+            const reason = prompt('Rejection reason for all expenses:');
+            if (!reason) return;
+            let success = 0, fail = 0;
+            for (const id of expenseIds) {
+                try {
+                    const r = await fetch(`/api/expenses/${id}/reject`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                        body: JSON.stringify({ reason })
+                    });
+                    if (r.ok) success++; else fail++;
+                } catch(e) { fail++; }
+            }
+            alert(`❌ ${success} rejected${fail > 0 ? `, ⚠️ ${fail} failed` : ''}`);
+            loadExpenses();
         }
 
         async function approveExpense(expenseId) {

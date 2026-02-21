@@ -877,10 +877,16 @@ app.get('/api/expenses', requireAuth, (req, res) => {
             SELECT e.*, 
                    emp.name as employee_name_from_db,
                    emp.supervisor_id,
-                   sup.name as supervisor_name
+                   sup.name as supervisor_name,
+                   t.trip_name,
+                   t.start_date as trip_start,
+                   t.end_date as trip_end,
+                   t.destination as trip_destination,
+                   t.status as trip_status
             FROM expenses e
             LEFT JOIN employees emp ON e.employee_id = emp.id
             LEFT JOIN employees sup ON emp.supervisor_id = sup.id
+            LEFT JOIN trips t ON e.trip_id = t.id
             WHERE emp.id IN (SELECT id FROM team)
             ORDER BY e.created_at DESC
         `;
