@@ -2332,7 +2332,7 @@ try {
         }
 
         async function bulkRejectTrip(expenseIds) {
-            const reason = prompt('Rejection reason for all expenses:');
+            const reason = await showRejectModal();
             if (!reason) return;
             let success = 0, fail = 0;
             for (const id of expenseIds) {
@@ -2378,17 +2378,8 @@ try {
         }
 
         async function rejectExpense(expenseId) {
-            const reason = prompt(`📝 Rejection Reason (Required)\n\nPlease provide a clear, detailed reason why this expense cannot be approved.\n\nCommon reasons:\n• Missing receipt or documentation\n• Expense outside policy guidelines\n• Incorrect amount or calculations\n• Business purpose not clear\n\nEmployee will see this message:`);
-            
-            if (!reason || !reason.trim()) {
-                showMessage('danger', '⚠️ Rejection reason is required for audit compliance and to help the employee understand the issue.');
-                return;
-            }
-            
-            if (reason.trim().length < 10) {
-                showMessage('danger', '⚠️ Please provide a more detailed reason (at least 10 characters) to help the employee understand and resubmit correctly.');
-                return;
-            }
+            const reason = await showRejectModal();
+            if (!reason) return;
 
             try {
                 const response = await fetch(`/api/expenses/${expenseId}/reject`, {
@@ -2834,8 +2825,8 @@ try {
         }
         
         async function rejectTravelAuth(id) {
-            const reason = prompt('Please provide a reason for rejection:');
-            if (!reason || reason.trim() === '') return;
+            const reason = await showRejectModal();
+            if (!reason) return;
             
             try {
                 const response = await fetch(`/api/travel-auth/${id}/reject`, {
@@ -3900,6 +3891,44 @@ try {
             }
         }
 
+    </script>
+
+    <!-- Rejection Reason Modal -->
+    <div id="reject-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
+        <div style="background:white; border-radius:12px; padding:24px; max-width:480px; width:90%; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+            <h3 style="margin:0 0 8px; color:#2c3e50;">❌ Reject Expense(s)</h3>
+            <p style="color:#666; font-size:14px; margin:0 0 16px;">Provide a reason for the employee. Must be at least 10 characters.</p>
+            <textarea id="reject-reason" rows="4" placeholder="e.g., Missing receipt, outside policy guidelines, incorrect amount..." style="width:100%; padding:10px; border:1px solid #dee2e6; border-radius:8px; font-size:14px; resize:vertical; box-sizing:border-box;"></textarea>
+            <div style="display:flex; gap:10px; margin-top:16px; justify-content:flex-end;">
+                <button onclick="closeRejectModal()" style="padding:10px 20px; border:1px solid #dee2e6; background:white; border-radius:6px; cursor:pointer; font-size:14px;">Cancel</button>
+                <button onclick="confirmRejectModal()" style="padding:10px 20px; background:#dc3545; color:white; border:none; border-radius:6px; cursor:pointer; font-size:14px; font-weight:600;">❌ Reject</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        let rejectModalCallback = null;
+        function showRejectModal() {
+            return new Promise((resolve) => {
+                document.getElementById('reject-reason').value = '';
+                const modal = document.getElementById('reject-modal');
+                modal.style.display = 'flex';
+                rejectModalCallback = resolve;
+                setTimeout(() => document.getElementById('reject-reason').focus(), 100);
+            });
+        }
+        function closeRejectModal() {
+            document.getElementById('reject-modal').style.display = 'none';
+            if (rejectModalCallback) { rejectModalCallback(null); rejectModalCallback = null; }
+        }
+        function confirmRejectModal() {
+            const reason = document.getElementById('reject-reason').value.trim();
+            if (!reason || reason.length < 10) {
+                document.getElementById('reject-reason').style.border = '2px solid #dc3545';
+                return;
+            }
+            document.getElementById('reject-modal').style.display = 'none';
+            if (rejectModalCallback) { rejectModalCallback(reason); rejectModalCallback = null; }
+        }
     </script>
 </body>
 </html>
