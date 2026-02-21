@@ -3248,7 +3248,8 @@
         }
         
         // Prevent form submission - use buttons instead
-        document.getElementById('expense-form').addEventListener('submit', function(e) {
+        const expenseFormEl = document.getElementById('expense-form');
+        if (expenseFormEl) expenseFormEl.addEventListener('submit', function(e) {
             e.preventDefault();
             showMessage('info', '👆 Please select a trip and use the "Add Expense to Trip" button above.');
         });
