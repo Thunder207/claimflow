@@ -475,6 +475,13 @@ function insertDefaultData() {
     insertEmployeeSequential(0);
     
     function runPostInsertMigrations() {
+        // CRITICAL FIX: Assign Mike Davis to Sarah Johnson as supervisor (missing in demo data)
+        db.run(`UPDATE employees SET supervisor_id = (SELECT id FROM employees WHERE email = 'sarah.johnson@company.com') 
+                WHERE employee_number = 'EMP003' AND supervisor_id IS NULL`, (err) => {
+            if (err) console.error('❌ Error fixing Mike Davis supervisor:', err.message);
+            else console.log('✅ Fixed Mike Davis supervisor assignment');
+        });
+        
         // Bug 5 Fix: Ensure Lisa Brown is assigned to Sarah Johnson as supervisor
         db.run(`UPDATE employees SET supervisor_id = (SELECT id FROM employees WHERE email = 'sarah.johnson@company.com') 
                 WHERE employee_number = 'EMP004' AND (supervisor_id IS NULL OR supervisor_id = 0)`, (err) => {
@@ -973,8 +980,21 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
             }
         }
     
-    // Bug 2 Fix: Validate expense type
+    // CRITICAL FIX: Validate expense type and handle common aliases
     const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other'];
+    
+    // Handle common expense type aliases
+    if (expense_type === 'meals') {
+        return res.status(400).json({
+            success: false,
+            error: 'Use specific meal types: "breakfast", "lunch", or "dinner" instead of "meals"',
+            valid_types: validExpenseTypes
+        });
+    }
+    if (expense_type === 'transport') {
+        expense_type = 'vehicle_km'; // Normalize transport to vehicle_km
+    }
+    
     if (!validExpenseTypes.includes(expense_type)) {
         return res.status(400).json({
             success: false,
@@ -3467,15 +3487,22 @@ app.get('/api/travel-auth', requireAuth, (req, res) => {
         params = [];
     } else if (req.user.role === 'supervisor') {
         if (req.query.view === 'team') {
-            // Supervisor approval view (admin.html) — show department auths
+            // CRITICAL FIX: Supervisor approval view — show ALL employees under supervisor hierarchy
             query = `
+                WITH RECURSIVE team AS (
+                    -- Direct reports
+                    SELECT id FROM employees WHERE supervisor_id = ?
+                    UNION ALL
+                    -- Indirect reports (recursive)
+                    SELECT e.id FROM employees e INNER JOIN team t ON e.supervisor_id = t.id
+                )
                 SELECT ta.*, e.name as employee_name, s.name as approver_name,
                        (SELECT COUNT(*) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expense_count,
                        (SELECT COALESCE(SUM(ex.amount), 0) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expenses_total
                 FROM travel_authorizations ta
                 JOIN employees e ON ta.employee_id = e.id
                 LEFT JOIN employees s ON ta.approver_id = s.id
-                WHERE e.department = (SELECT department FROM employees WHERE id = ?)
+                WHERE e.id IN (SELECT id FROM team)
                 ORDER BY ta.created_at DESC
             `;
         } else {
@@ -3612,10 +3639,19 @@ app.put('/api/travel-auth/:id/approve', requireAuth, requireRole('supervisor'), 
 // 5. Reject Travel Authorization
 app.put('/api/travel-auth/:id/reject', requireAuth, requireRole('supervisor'), (req, res) => {
     const atId = req.params.id;
-    const { rejection_reason } = req.body;
+    // CRITICAL FIX: Accept rejection reason from multiple possible body formats
+    const rejection_reason = req.body.rejection_reason || req.body.reason || req.body.rejectionReason;
     
     if (!rejection_reason || rejection_reason.trim() === '') {
-        return res.status(400).json({ error: 'Rejection reason is required' });
+        return res.status(400).json({ 
+            error: 'Rejection reason is required',
+            expected_body: { rejection_reason: 'Your reason here' }
+        });
+    }
+    
+    // Validate minimum length for governance compliance
+    if (rejection_reason.trim().length < 10) {
+        return res.status(400).json({ error: 'Rejection reason must be at least 10 characters' });
     }
     
     // Check if user is the approver
@@ -3826,6 +3862,20 @@ app.post('/api/travel-auth/:id/expenses', requireAuth, async (req, res) => {
     if (!expense_type || !date || !amount) {
         return res.status(400).json({ error: 'Missing required fields: expense_type, date, amount' });
     }
+    
+    // CRITICAL FIX: Validate expense type for travel auth
+    const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other', 'transport'];
+    if (!validExpenseTypes.includes(expense_type)) {
+        return res.status(400).json({ 
+            error: `Invalid expense type "${expense_type}". Valid types: ${validExpenseTypes.join(', ')}`,
+            received_body: req.body
+        });
+    }
+    
+    // Normalize "transport" to "vehicle_km" for consistency
+    if (expense_type === 'transport') {
+        expense_type = 'vehicle_km';
+    }
 
     try {
     // Check ownership and draft/rejected status
@@ -3896,7 +3946,13 @@ app.post('/api/travel-auth/:id/expenses', requireAuth, async (req, res) => {
     });
     } catch (err) {
         console.error('❌ Error in travel auth expense:', err);
-        res.status(500).json({ error: 'Database error' });
+        console.error('Request body:', req.body);
+        console.error('Full error stack:', err.stack);
+        res.status(500).json({ 
+            error: 'Internal server error',
+            details: err.message,
+            debug: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        });
     }
 });
 
