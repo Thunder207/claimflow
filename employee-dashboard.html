@@ -2416,7 +2416,7 @@
         const photoSection = document.querySelector('.photo-section');
         const photoPreview = document.getElementById('photo-preview');
         
-        fileInput.addEventListener('change', async function(e) {
+        if (fileInput) fileInput.addEventListener('change', async function(e) {
             const file = e.target.files[0];
             if (file) {
                 if (file.size > 10 * 1024 * 1024) {
