@@ -2141,13 +2141,6 @@ try {
         }
 
         async function approveExpense(expenseId) {
-            // Add confirmation with more context
-            const confirmMsg = 'Approve this expense?\n\nThis will:\n✅ Mark it as approved\n💰 Make it available for payment processing\n📧 Notify the employee\n\nThis action cannot be undone.';
-            
-            if (!confirm(confirmMsg)) {
-                return;
-            }
-            
             try {
                 const response = await fetch(`/api/expenses/${expenseId}/approve`, {
                     method: 'POST',
