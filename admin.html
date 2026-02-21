@@ -1246,7 +1246,8 @@ try {
                 const allExpenses = await response.json();
 
                 // API already filters by role (supervisor sees team only, admin sees all)
-                let expenses = allExpenses;
+                // Filter out estimate expenses — those are travel auth estimates, not actual expenses
+                let expenses = allExpenses.filter(e => e.status !== 'estimate');
 
                 await updateDashboardStats(expenses);
                 
@@ -1500,7 +1501,9 @@ try {
                 });
                 if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 
-                allLoadedExpenses = await response.json();
+                const rawExpenses = await response.json();
+                // Filter out estimate expenses — those are travel auth estimates, not actual expenses
+                allLoadedExpenses = rawExpenses.filter(e => e.status !== 'estimate');
 
                 await updateDashboardStats(allLoadedExpenses);
                 displayFilteredExpenses(allLoadedExpenses);

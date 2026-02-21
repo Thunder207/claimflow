@@ -5300,7 +5300,24 @@
         async function tdpSubmitTrip() {
             if (!tdpState.tripId) return;
             
-            // First, handle vehicle km — create/update/delete as needed
+            // First, create expense records for any enabled meals that don't have DB records yet
+            // (Grid defaults meals to ON visually, but records only exist if explicitly toggled)
+            showMessage('info', '📤 Saving expenses...');
+            for (let dayIdx = 0; dayIdx < tdpState.days.length; dayIdx++) {
+                const day = tdpState.days[dayIdx];
+                for (const type of Object.keys(DP_RATES)) {
+                    if (day.perDiem[type] && !day.expenseIds[type]) {
+                        // Meal is visually ON but has no DB record — create it
+                        await tdpCreateExpense(dayIdx, type);
+                    }
+                }
+                // Hotel
+                if (day.showHotel && day.hotelOn && !day.hotelExpenseId) {
+                    await tdpCreateExpense(dayIdx, 'hotel');
+                }
+            }
+
+            // Handle vehicle km — create/update/delete as needed
             const km = parseFloat(document.getElementById('tdp-vehicle-km')?.value || 0);
             if (km > 0) {
                 if (tdpState.vehicleExpenseId) {
