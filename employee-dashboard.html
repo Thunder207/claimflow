@@ -2084,6 +2084,9 @@
                 await loadNotifications();
                 setInterval(loadNotifications, 30000);
                 
+                // Show supervisor button if applicable (must run after user is loaded)
+                checkSupervisorRole();
+                
             } catch (error) {
                 console.error('Dashboard data load error:', error);
             }
