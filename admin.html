@@ -1504,65 +1504,165 @@ try {
                 return;
             }
             
-            container.innerHTML = expenses.map(expense => {
-                const statusClass = expense.status === 'approved' ? 'status-approved' : 
-                                  expense.status === 'rejected' ? 'status-rejected' : 'status-pending';
-                const statusText = expense.status === 'approved' ? '✅ Approved' :
-                                 expense.status === 'rejected' ? '❌ Rejected' : '⏳ Pending';
-                
-                let actionButtons = '';
-                if (expense.status === 'pending') {
-                    if (currentUserRole === 'supervisor') {
-                        actionButtons = `
-                            <button class="btn btn-success" onclick="approveExpense(${expense.id})">✅ Approve</button>
-                            <button class="btn btn-danger" onclick="rejectExpense(${expense.id})">❌ Reject</button>
-                        `;
-                    } else if (currentUserRole === 'admin') {
-                        actionButtons = `
-                            <div style="color: #6c757d; font-size: 12px; margin-bottom: 5px;">⚠️ Admin role: System management only</div>
-                            <button class="btn btn-warning" onclick="deleteExpense(${expense.id})">🗑️ Delete</button>
-                        `;
-                    }
+            // Group expenses by trip
+            const groups = {};
+            expenses.forEach(exp => {
+                const key = exp.trip_id ? `trip-${exp.trip_id}` : 'no-trip';
+                if (!groups[key]) {
+                    groups[key] = {
+                        tripId: exp.trip_id,
+                        tripName: exp.trip_name || null,
+                        tripStart: exp.trip_start,
+                        tripEnd: exp.trip_end,
+                        tripDestination: exp.trip_destination,
+                        employeeName: exp.employee_name || exp.employee_name_from_db,
+                        expenses: []
+                    };
                 }
-                
-                return `
-                    <div class="expense-item">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap;">
-                            <div style="flex-grow: 1; min-width: 300px;">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
-                                    <div style="font-weight: bold; color: #2c3e50; font-size: 18px;">
-                                        ${expense.meal_name || expense.expense_type} • ${expense.employee_name}
-                                    </div>
-                                    <div class="status-badge ${statusClass}">
-                                        ${statusText}
+                groups[key].expenses.push(exp);
+            });
+
+            // Sort: groups with pending first
+            const sortedKeys = Object.keys(groups).sort((a, b) => {
+                if (a === 'no-trip') return 1;
+                if (b === 'no-trip') return -1;
+                const aPending = groups[a].expenses.filter(e => e.status === 'pending').length;
+                const bPending = groups[b].expenses.filter(e => e.status === 'pending').length;
+                return bPending - aPending;
+            });
+
+            let html = '';
+            const typeEmoji = {breakfast:'🥐',lunch:'🥗',dinner:'🍽️',incidentals:'📱',hotel:'🏨',mileage:'🚗',other:'📋'};
+
+            for (const key of sortedKeys) {
+                const group = groups[key];
+                const total = group.expenses.reduce((s, e) => s + parseFloat(e.amount), 0);
+                const pendingExps = group.expenses.filter(e => e.status === 'pending');
+                const approvedExps = group.expenses.filter(e => e.status === 'approved');
+                const rejectedExps = group.expenses.filter(e => e.status === 'rejected');
+
+                if (group.tripId) {
+                    // === TRIP GROUP — matches Travel Auth style ===
+                    const pendingIds = pendingExps.map(e => e.id);
+                    const startD = group.tripStart ? new Date(group.tripStart + 'T00:00:00') : null;
+                    const endD = group.tripEnd ? new Date(group.tripEnd + 'T00:00:00') : null;
+                    const numDays = startD && endD ? Math.round((endD - startD) / 86400000) + 1 : '?';
+
+                    // Group expenses by date for day-by-day view
+                    const byDate = {};
+                    group.expenses.forEach(e => {
+                        if (!byDate[e.date]) byDate[e.date] = [];
+                        byDate[e.date].push(e);
+                    });
+                    const dates = Object.keys(byDate).sort();
+
+                    html += `
+                    <div style="background: white; border-radius: 12px; border: 2px solid ${pendingExps.length > 0 ? '#f0ad4e' : '#27ae60'}; margin-bottom: 20px; overflow: hidden;">
+                        <!-- Trip Header -->
+                        <div style="background: linear-gradient(135deg, #2c3e50, #3498db); color: white; padding: 16px 20px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                                <div>
+                                    <div style="font-size: 20px; font-weight: bold;">✈️ ${group.tripName || 'Trip #' + group.tripId}</div>
+                                    <div style="font-size: 14px; opacity: 0.9; margin-top: 4px;">
+                                        👤 ${group.employeeName} · 📍 ${group.tripDestination || 'N/A'} · 📅 ${group.tripStart || '?'} → ${group.tripEnd || '?'} (${numDays} day${numDays !== 1 ? 's' : ''})
                                     </div>
                                 </div>
-                                <div style="color: #666; font-size: 14px; margin-bottom: 12px;">
-                                    <span style="color: #27ae60; font-size: 20px; font-weight: bold;">$${parseFloat(expense.amount).toFixed(2)}</span> • 
-                                    📅 ${expense.date} • 
-                                    📍 ${expense.location || 'No location'}
-                                    ${expense.vendor ? ` • 🏪 ${expense.vendor}` : ''}
+                                <div style="text-align: right;">
+                                    <div style="font-size: 24px; font-weight: bold;">$${total.toFixed(2)}</div>
+                                    <div style="font-size: 12px; opacity: 0.8;">${group.expenses.length} expenses</div>
                                 </div>
-                                ${expense.description ? `
-                                    <div style="font-size: 13px; color: #666; margin-bottom: 12px; padding: 8px 12px; background: #f8f9fa; border-radius: 6px;">
-                                        📋 ${expense.description}
-                                    </div>
-                                ` : ''}
-                                ${expense.receipt_path ? `
-                                    <button class="btn btn-secondary" onclick="viewReceipt('${expense.receipt_path}')" style="font-size: 12px;">
-                                        📎 View Receipt
-                                    </button>
-                                ` : ''}
                             </div>
-                            ${actionButtons ? `
-                                <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
-                                    ${actionButtons}
-                                </div>
-                            ` : ''}
                         </div>
-                    </div>
-                `;
-            }).join('');
+                        <!-- Status Summary -->
+                        <div style="display: flex; gap: 12px; padding: 12px 20px; background: #f8f9fa; border-bottom: 1px solid #eee; flex-wrap: wrap;">
+                            ${pendingExps.length > 0 ? `<span style="background: #fff3cd; color: #856404; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;">⏳ ${pendingExps.length} Pending</span>` : ''}
+                            ${approvedExps.length > 0 ? `<span style="background: #d4edda; color: #155724; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;">✅ ${approvedExps.length} Approved</span>` : ''}
+                            ${rejectedExps.length > 0 ? `<span style="background: #f8d7da; color: #721c24; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;">❌ ${rejectedExps.length} Rejected</span>` : ''}
+                        </div>
+                        ${pendingExps.length > 0 && currentUserRole === 'supervisor' ? `
+                        <!-- Bulk Actions -->
+                        <div style="padding: 12px 20px; background: #fff8e1; border-bottom: 1px solid #eee; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                            <button class="btn btn-success" onclick="bulkApproveTrip([${pendingIds.join(',')}])" style="font-size: 15px; padding: 8px 20px;">
+                                ✅ Approve All ${pendingExps.length} Expenses
+                            </button>
+                            <button class="btn btn-danger" onclick="bulkRejectTrip([${pendingIds.join(',')}])" style="font-size: 13px; padding: 6px 14px;">
+                                ❌ Reject All
+                            </button>
+                        </div>
+                        ` : ''}
+                        <!-- Expandable Day-by-Day Breakdown -->
+                        <div style="padding: 12px 20px; border-bottom: 1px solid #eee;">
+                            <button onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.textContent = this.nextElementSibling.style.display === 'none' ? '📋 View Day-by-Day Breakdown ▼' : '📋 Hide Breakdown ▲';" style="background: none; border: 1px solid #dee2e6; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; color: #495057; width: 100%;">
+                                📋 View Day-by-Day Breakdown ▼
+                            </button>
+                            <div style="display: none; margin-top: 12px;">
+                                <div style="display: flex; flex-direction: column; gap: 8px;">
+                                    ${dates.map((date, idx) => {
+                                        const dayLabel = idx === 0 ? 'Departure' : idx === dates.length - 1 && dates.length > 1 ? 'Return' : `Day ${idx + 1}`;
+                                        const d = new Date(date + 'T00:00:00');
+                                        const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                                        const dayTotal = byDate[date].reduce((s, e) => s + parseFloat(e.amount), 0);
+                                        const dayPending = byDate[date].filter(e => e.status === 'pending').length;
+                                        return `
+                                        <div style="background: #f8f9fa; border-radius: 8px; padding: 10px 14px; ${dayPending > 0 ? 'border-left: 3px solid #f0ad4e;' : 'border-left: 3px solid #27ae60;'}">
+                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                                <strong style="font-size: 14px; color: #2c3e50;">📅 ${dateStr} — ${dayLabel}</strong>
+                                                <span style="font-weight: 600; color: #27ae60;">$${dayTotal.toFixed(2)}</span>
+                                            </div>
+                                            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                                                ${byDate[date].map(e => {
+                                                    const emoji = typeEmoji[e.expense_type] || '📋';
+                                                    const label = e.meal_name || e.expense_type;
+                                                    const sColor = e.status === 'approved' ? '#d4edda' : e.status === 'rejected' ? '#f8d7da' : '#fff3cd';
+                                                    const sIcon = e.status === 'approved' ? '✅' : e.status === 'rejected' ? '❌' : '⏳';
+                                                    return `<span style="background: ${sColor}; border: 1px solid #dee2e6; border-radius: 6px; padding: 4px 10px; font-size: 13px;">${emoji} ${label} <strong>$${parseFloat(e.amount).toFixed(2)}</strong> ${sIcon}</span>`;
+                                                }).join('')}
+                                            </div>
+                                        </div>`;
+                                    }).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+                } else {
+                    // === NON-TRIP EXPENSES (individual cards) ===
+                    group.expenses.forEach(expense => {
+                        const statusClass = expense.status === 'approved' ? 'status-approved' : 
+                                          expense.status === 'rejected' ? 'status-rejected' : 'status-pending';
+                        const statusText = expense.status === 'approved' ? '✅ Approved' :
+                                         expense.status === 'rejected' ? '❌ Rejected' : '⏳ Pending';
+                        let actionButtons = '';
+                        if (expense.status === 'pending') {
+                            if (currentUserRole === 'supervisor') {
+                                actionButtons = `
+                                    <button class="btn btn-success" onclick="approveExpense(${expense.id})">✅ Approve</button>
+                                    <button class="btn btn-danger" onclick="rejectExpense(${expense.id})">❌ Reject</button>
+                                `;
+                            } else if (currentUserRole === 'admin') {
+                                actionButtons = `<button class="btn btn-warning" onclick="deleteExpense(${expense.id})">🗑️ Delete</button>`;
+                            }
+                        }
+                        html += `
+                        <div class="expense-item">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap;">
+                                <div style="flex-grow: 1;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+                                        <div style="font-weight: bold; color: #2c3e50; font-size: 18px;">${expense.meal_name || expense.expense_type} • ${expense.employee_name}</div>
+                                        <div class="status-badge ${statusClass}">${statusText}</div>
+                                    </div>
+                                    <div style="color: #666; font-size: 14px; margin-bottom: 12px;">
+                                        <span style="color: #27ae60; font-size: 20px; font-weight: bold;">$${parseFloat(expense.amount).toFixed(2)}</span> • 
+                                        📅 ${expense.date} • 📍 ${expense.location || 'N/A'}
+                                    </div>
+                                    ${actionButtons ? `<div style="margin-top: 10px;">${actionButtons}</div>` : ''}
+                                </div>
+                                ${expense.receipt_path ? `<button class="btn btn-secondary" onclick="viewReceipt('${expense.receipt_path}')" style="font-size: 12px;">📎 Receipt</button>` : ''}
+                            </div>
+                        </div>`;
+                    });
+                }
+            }
+            container.innerHTML = html;
         }
 
         async function loadExpensesWithSearch() {
