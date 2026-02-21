@@ -1346,7 +1346,6 @@ try {
                                             <th style="padding: 8px 4px;">Type</th>
                                             <th style="padding: 8px 4px; text-align: right;">Amount</th>
                                             <th style="padding: 8px 4px; text-align: center;">Status</th>
-                                            ${currentUserRole === 'supervisor' ? '<th style="padding: 8px 4px; text-align: center;">Action</th>' : ''}
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1359,18 +1358,12 @@ try {
                                                 <td style="padding: 8px 4px;">${typeEmoji} ${exp.meal_name || exp.expense_type}</td>
                                                 <td style="padding: 8px 4px; text-align: right; font-weight: 600;">$${parseFloat(exp.amount).toFixed(2)}</td>
                                                 <td style="padding: 8px 4px; text-align: center;"><span style="color: ${sClass}; font-weight: 600;">${sIcon}</span></td>
-                                                ${currentUserRole === 'supervisor' && exp.status === 'pending' ? `
-                                                <td style="padding: 8px 4px; text-align: center;">
-                                                    <button onclick="approveExpense(${exp.id})" style="background: #27ae60; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-right: 4px;">✅</button>
-                                                    <button onclick="rejectExpense(${exp.id})" style="background: #dc3545; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">❌</button>
-                                                </td>` : currentUserRole === 'supervisor' ? '<td></td>' : ''}
                                             </tr>`;
                                         }).join('')}
                                         <tr style="border-top: 2px solid #dee2e6; font-weight: bold;">
                                             <td style="padding: 8px 4px;" colspan="2">Total</td>
                                             <td style="padding: 8px 4px; text-align: right; font-size: 16px; color: #27ae60;">$${total.toFixed(2)}</td>
                                             <td></td>
-                                            ${currentUserRole === 'supervisor' ? '<td></td>' : ''}
                                         </tr>
                                     </tbody>
                                 </table>
@@ -2315,20 +2308,19 @@ try {
         }
 
         async function bulkApproveTrip(expenseIds) {
-            if (!confirm(`Approve all ${expenseIds.length} expenses?`)) return;
             let success = 0, fail = 0;
             for (const id of expenseIds) {
                 try {
                     const r = await fetch(`/api/expenses/${id}/approve`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
-                        body: JSON.stringify({ comment: 'Bulk approved' })
+                        body: JSON.stringify({ comment: 'Trip approved' })
                     });
                     if (r.ok) success++; else fail++;
                 } catch(e) { fail++; }
             }
-            alert(`✅ ${success} approved${fail > 0 ? `, ❌ ${fail} failed` : ''}`);
-            loadExpenses();
+            showMessage('success', `✅ ${success} expenses approved${fail > 0 ? `, ❌ ${fail} failed` : ''}`);
+            loadExpensesWithSearch();
         }
 
         async function bulkRejectTrip(expenseIds) {
@@ -2345,8 +2337,8 @@ try {
                     if (r.ok) success++; else fail++;
                 } catch(e) { fail++; }
             }
-            alert(`❌ ${success} rejected${fail > 0 ? `, ⚠️ ${fail} failed` : ''}`);
-            loadExpenses();
+            showMessage('success', `❌ ${success} expenses rejected${fail > 0 ? `, ⚠️ ${fail} failed` : ''}`);
+            loadExpensesWithSearch();
         }
 
         async function approveExpense(expenseId) {
