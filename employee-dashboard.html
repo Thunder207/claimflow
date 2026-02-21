@@ -2033,7 +2033,7 @@
                 return;
             }
             
-            // Verify session and load user info
+            // Verify session first (redirect on failure)
             try {
                 const response = await fetch('/api/auth/me', {
                     headers: { 'Authorization': `Bearer ${sessionId}` }
@@ -2046,13 +2046,22 @@
                 const user = await response.json();
                 currentUser = user;
                 localStorage.setItem('user', JSON.stringify(user));
-                
+            } catch (error) {
+                localStorage.removeItem('sessionId');
+                localStorage.removeItem('user');
+                window.location.href = '/login';
+                return;
+            }
+            
+            // Load UI and data (non-fatal errors)
+            try {
                 // Update UI
-                document.getElementById('welcome-text').textContent = `👤 ${user.name}'s Dashboard`;
-                document.getElementById('user-info').textContent = `${user.position || 'Employee'} • ${user.department || 'Department'} • ${user.employee_number || 'No ID'}`;
+                document.getElementById('welcome-text').textContent = `👤 ${currentUser.name}'s Dashboard`;
+                document.getElementById('user-info').textContent = `${currentUser.position || 'Employee'} • ${currentUser.department || 'Department'} • ${currentUser.employee_number || 'No ID'}`;
                 
-                // Set today's date
-                document.getElementById('expense-date').valueAsDate = new Date();
+                // Set today's date on expense-date if it exists
+                const expDateEl = document.getElementById('expense-date');
+                if (expDateEl) expDateEl.valueAsDate = new Date();
                 
                 // Load data  
                 await loadMyExpenses();
@@ -2076,9 +2085,7 @@
                 setInterval(loadNotifications, 30000);
                 
             } catch (error) {
-                localStorage.removeItem('sessionId');
-                localStorage.removeItem('user');
-                window.location.href = '/login';
+                console.error('Dashboard data load error:', error);
             }
         });
         
