@@ -1251,7 +1251,7 @@
                 
                 <div class="form-group">
                     <label for="at-destination" data-i18n="destination">Destination</label>
-                    <input type="text" id="at-destination" placeholder="e.g., Toronto, ON">
+                    <input type="text" id="at-destination" placeholder="e.g., Toronto, ON" required>
                 </div>
                 
                 <div class="form-group">
@@ -3032,7 +3032,7 @@
             const destination = document.getElementById('at-destination').value;
             const purpose = document.getElementById('at-purpose').value;
             
-            if (!name || !startDate || !endDate) { showTAMessage('error', 'Please fill in all required fields.'); return; }
+            if (!name || !startDate || !endDate || !destination) { showTAMessage('error', 'Please fill in all required fields (name, destination, dates).'); return; }
             if (new Date(startDate) > new Date(endDate)) { showTAMessage('error', 'End date must be after start date.'); return; }
             
             try {

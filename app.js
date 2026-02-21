@@ -3366,10 +3366,10 @@ app.post('/api/travel-auth', requireAuth, async (req, res) => {
     } = req.body;
     
     // Validation
-    if (!name || !start_date || !end_date) {
+    if (!name || !start_date || !end_date || !destination) {
         return res.status(400).json({
             success: false,
-            error: 'Missing required fields: name, start_date, end_date'
+            error: 'Missing required fields: name, destination, start_date, end_date'
         });
     }
     
