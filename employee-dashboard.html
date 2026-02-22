@@ -1267,21 +1267,21 @@
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 10px;">
                             <div>
                                 <label style="color: #856404; font-size: 13px; font-weight: 600;">Departure Flight Cost: $</label>
-                                <input type="number" id="dp-flight-dep" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="dpRecalcTotal()">
+                                <input type="number" id="dp-flight-dep" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="dpRecalcTotal(); dpSaveTransport();">
                             </div>
                             <div>
                                 <label style="color: #856404; font-size: 13px; font-weight: 600;">Return Flight Cost: $</label>
-                                <input type="number" id="dp-flight-ret" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="dpRecalcTotal()">
+                                <input type="number" id="dp-flight-ret" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="dpRecalcTotal(); dpSaveTransport();">
                             </div>
                         </div>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 10px;">
                             <div>
                                 <label style="color: #856404; font-size: 13px; font-weight: 600;">Baggage Fees: $</label>
-                                <input type="number" id="dp-flight-bag" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="dpRecalcTotal()">
+                                <input type="number" id="dp-flight-bag" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="dpRecalcTotal(); dpSaveTransport();">
                             </div>
                             <div>
                                 <label style="color: #856404; font-size: 13px; font-weight: 600;">Route (optional):</label>
-                                <input type="text" id="dp-flight-route" placeholder="e.g., YOW → YUL" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;">
+                                <input type="text" id="dp-flight-route" placeholder="e.g., YOW → YUL" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="dpSaveTransport();">
                             </div>
                         </div>
                         <div style="text-align: right; color: #856404; font-weight: bold;">
@@ -3121,13 +3121,65 @@
                 if (day.showHotel && day.hotelOn) total += day.hotelRate;
             });
 
-            // Vehicle
-            const km = parseFloat(document.getElementById('dp-vehicle-km')?.value || 0);
-            dpState.vehicleKm = km;
-            const vehicleTotal = km * DP_VEHICLE_RATE;
-            total += vehicleTotal;
-            const vtEl = document.getElementById('dp-vehicle-total');
-            if (vtEl) vtEl.textContent = `$${vehicleTotal.toFixed(2)}`;
+            // Vehicle (Personal Vehicle mode)
+            const personalButton = document.querySelector('#dp-transport-toggles [data-mode="personal"]');
+            const isPersonalActive = personalButton && personalButton.classList.contains('active');
+            
+            if (isPersonalActive) {
+                const km = parseFloat(document.getElementById('dp-vehicle-km')?.value || 0);
+                dpState.vehicleKm = km;
+                const vehicleTotal = km * DP_VEHICLE_RATE;
+                total += vehicleTotal;
+                const vtEl = document.getElementById('dp-vehicle-total');
+                if (vtEl) vtEl.textContent = `$${vehicleTotal.toFixed(2)}`;
+            }
+
+            // Transportation costs (Flight, Train, Bus, Rental)
+            const transportModes = ['flight', 'train', 'bus', 'rental'];
+            let transportTotal = 0;
+            
+            transportModes.forEach(mode => {
+                const button = document.querySelector(`#dp-transport-toggles [data-mode="${mode}"]`);
+                if (button && button.classList.contains('active')) {
+                    let subtotal = 0;
+                    switch(mode) {
+                        case 'flight':
+                            const flightDep = parseFloat(document.getElementById('dp-flight-dep')?.value || 0);
+                            const flightRet = parseFloat(document.getElementById('dp-flight-ret')?.value || 0);
+                            const flightBag = parseFloat(document.getElementById('dp-flight-bag')?.value || 0);
+                            subtotal = flightDep + flightRet + flightBag;
+                            break;
+                        case 'train':
+                            const trainDep = parseFloat(document.getElementById('dp-train-dep')?.value || 0);
+                            const trainRet = parseFloat(document.getElementById('dp-train-ret')?.value || 0);
+                            subtotal = trainDep + trainRet;
+                            break;
+                        case 'bus':
+                            const busDep = parseFloat(document.getElementById('dp-bus-dep')?.value || 0);
+                            const busRet = parseFloat(document.getElementById('dp-bus-ret')?.value || 0);
+                            subtotal = busDep + busRet;
+                            break;
+                        case 'rental':
+                            const rentalDays = parseFloat(document.getElementById('dp-rental-days')?.value || 0);
+                            const rentalRate = parseFloat(document.getElementById('dp-rental-rate')?.value || 0);
+                            const rentalIns = parseFloat(document.getElementById('dp-rental-insurance')?.value || 0);
+                            const rentalFuel = parseFloat(document.getElementById('dp-rental-fuel')?.value || 0);
+                            subtotal = (rentalDays * rentalRate) + rentalIns + rentalFuel;
+                            break;
+                    }
+                    transportTotal += subtotal;
+                    
+                    // Update subtotal display
+                    const subtotalEl = document.getElementById(`dp-${mode}-total`);
+                    if (subtotalEl) subtotalEl.textContent = `$${subtotal.toFixed(2)}`;
+                }
+            });
+            
+            total += transportTotal;
+            
+            // Update transport total display
+            const transportTotalEl = document.getElementById('dp-transport-total');
+            if (transportTotalEl) transportTotalEl.textContent = `$${transportTotal.toFixed(2)}`;
 
             // Other expenses
             dpState.otherExpenses.forEach(o => { total += parseFloat(o.amount) || 0; });
@@ -5676,6 +5728,86 @@
             autoSaveTrip();
         }
 
+        function dpSaveTransport() {
+            try {
+                if (!dpState.tripId) {
+                    console.log('No DP tripId available for transport save');
+                    return;
+                }
+                
+                const transportData = {};
+                
+                // Save active modes and their values
+                const modes = ['personal', 'flight', 'train', 'bus', 'rental'];
+                modes.forEach(mode => {
+                    const button = document.querySelector(`#dp-transport-toggles [data-mode="${mode}"]`);
+                    const isActive = button && button.classList.contains('active');
+                    
+                    transportData[mode] = {
+                        active: isActive,
+                        data: {}
+                    };
+                    
+                    if (isActive) {
+                        // Save values based on mode
+                        switch(mode) {
+                            case 'flight':
+                                transportData[mode].data = {
+                                    departure: document.getElementById('dp-flight-dep')?.value || '',
+                                    return: document.getElementById('dp-flight-ret')?.value || '',
+                                    baggage: document.getElementById('dp-flight-bag')?.value || '',
+                                    route: document.getElementById('dp-flight-route')?.value || ''
+                                };
+                                break;
+                                
+                            case 'train':
+                                transportData[mode].data = {
+                                    departure: document.getElementById('dp-train-dep')?.value || '',
+                                    return: document.getElementById('dp-train-ret')?.value || '',
+                                    route: document.getElementById('dp-train-route')?.value || ''
+                                };
+                                break;
+                                
+                            case 'bus':
+                                transportData[mode].data = {
+                                    departure: document.getElementById('dp-bus-dep')?.value || '',
+                                    return: document.getElementById('dp-bus-ret')?.value || '',
+                                    route: document.getElementById('dp-bus-route')?.value || ''
+                                };
+                                break;
+                                
+                            case 'rental':
+                                transportData[mode].data = {
+                                    days: document.getElementById('dp-rental-days')?.value || '',
+                                    rate: document.getElementById('dp-rental-rate')?.value || '',
+                                    insurance: document.getElementById('dp-rental-insurance')?.value || '',
+                                    fuel: document.getElementById('dp-rental-fuel')?.value || ''
+                                };
+                                break;
+                                
+                            case 'personal':
+                                transportData[mode].data = {
+                                    kilometers: document.getElementById('dp-vehicle-km')?.value || ''
+                                };
+                                break;
+                        }
+                    }
+                });
+                
+                // Save to dpState
+                dpState.transport = transportData;
+                
+                // Save to localStorage for persistence
+                localStorage.setItem(`dpState_${dpState.tripId}`, JSON.stringify(dpState));
+                
+                console.log('DP Transport saved successfully');
+                
+            } catch (error) {
+                console.error('Error saving DP transport:', error);
+                showMessage('error', 'Failed to save transportation data');
+            }
+        }
+
         // Travel Day Planner Transport Functions (TDP)
         function tdpToggleTransport(mode) {
             console.log(`TDP Transport toggle clicked: ${mode}`);
@@ -5719,8 +5851,8 @@
             // Recalculate total
             tdpRecalcTotal();
             
-            // Save transport preferences
-            saveTdpTransport();
+            // Save transport preferences  
+            dpSaveTransport();
         }
 
         function clearTransportMode(mode) {
