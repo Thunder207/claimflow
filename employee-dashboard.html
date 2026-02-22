@@ -1372,7 +1372,7 @@
                     <h4 style="color: #856404; margin: 0 0 12px 0;">🚗 Vehicle / Mileage</h4>
                     <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                         <label style="margin: 0; white-space: nowrap; color: #856404; font-weight: 600;">Kilometers:</label>
-                        <input type="number" id="dp-vehicle-km" step="0.1" min="0" max="99999" placeholder="0" style="width: 120px; padding: 10px; border-radius: 8px; border: 2px solid #ffc107; font-size: 15px;" oninput="dpRecalcTotal()">
+                        <input type="number" id="dp-vehicle-km" step="0.1" min="0" max="99999" placeholder="0" style="width: 120px; padding: 10px; border-radius: 8px; border: 2px solid #ffc107; font-size: 15px;" oninput="dpRecalcTotal(); dpSaveTransport();">
                         <span style="color: #856404; font-size: 14px;">× $0.68/km = <strong id="dp-vehicle-total">$0.00</strong></span>
                     </div>
                 </div>
@@ -3127,7 +3127,7 @@
             
             if (isPersonalActive) {
                 const km = parseFloat(document.getElementById('dp-vehicle-km')?.value || 0);
-                dpState.vehicleKm = km;
+                tdpState.vehicleKm = km;
                 const vehicleTotal = km * DP_VEHICLE_RATE;
                 total += vehicleTotal;
                 const vtEl = document.getElementById('dp-vehicle-total');
@@ -5730,8 +5730,8 @@
 
         function dpSaveTransport() {
             try {
-                if (!dpState.tripId) {
-                    console.log('No DP tripId available for transport save');
+                if (!tdpState.tripId) {
+                    console.log('No tripId available for transport save');
                     return;
                 }
                 
@@ -5794,16 +5794,19 @@
                     }
                 });
                 
-                // Save to dpState
-                dpState.transport = transportData;
+                // Save to tdpState for consistency with other functions
+                if (!tdpState.transport) {
+                    tdpState.transport = {};
+                }
+                tdpState.transport = transportData;
                 
                 // Save to localStorage for persistence
-                localStorage.setItem(`dpState_${dpState.tripId}`, JSON.stringify(dpState));
+                localStorage.setItem(`tdpState_${tdpState.tripId}`, JSON.stringify(tdpState));
                 
-                console.log('DP Transport saved successfully');
+                console.log('Transport saved successfully');
                 
             } catch (error) {
-                console.error('Error saving DP transport:', error);
+                console.error('Error saving transport:', error);
                 showMessage('error', 'Failed to save transportation data');
             }
         }
