@@ -1243,19 +1243,19 @@
                     <div style="margin-bottom: 15px;">
                         <p style="color: #0c5460; font-size: 13px; margin-bottom: 10px;">How are you traveling to your destination? (select all that apply)</p>
                         <div id="dp-transport-toggles" style="display: flex; flex-wrap: wrap; gap: 8px;">
-                            <button type="button" class="transport-toggle" data-mode="personal" onclick="tdpToggleTransport('personal')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                            <button type="button" class="transport-toggle" data-mode="personal" onclick="dpToggleTransport('personal')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
                                 🚗 Personal Vehicle
                             </button>
-                            <button type="button" class="transport-toggle" data-mode="flight" onclick="tdpToggleTransport('flight')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                            <button type="button" class="transport-toggle" data-mode="flight" onclick="dpToggleTransport('flight')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
                                 ✈️ Flight
                             </button>
-                            <button type="button" class="transport-toggle" data-mode="train" onclick="tdpToggleTransport('train')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                            <button type="button" class="transport-toggle" data-mode="train" onclick="dpToggleTransport('train')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
                                 🚆 Train
                             </button>
-                            <button type="button" class="transport-toggle" data-mode="bus" onclick="tdpToggleTransport('bus')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                            <button type="button" class="transport-toggle" data-mode="bus" onclick="dpToggleTransport('bus')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
                                 🚌 Bus
                             </button>
-                            <button type="button" class="transport-toggle" data-mode="rental" onclick="tdpToggleTransport('rental')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                            <button type="button" class="transport-toggle" data-mode="rental" onclick="dpToggleTransport('rental')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
                                 🚙 Rental Car
                             </button>
                         </div>
@@ -5601,7 +5601,7 @@
         // Day Planner Transport Functions (DP)
         function dpToggleTransport(mode) {
             console.log(`DP Transport toggle clicked: ${mode}`);
-            const button = document.querySelector(`[data-mode="${mode}"]`);
+            const button = document.querySelector(`#dp-transport-toggles [data-mode="${mode}"]`);
             const section = document.getElementById(`dp-${mode}-section`);
             
             if (!button) {
@@ -5679,7 +5679,7 @@
         // Travel Day Planner Transport Functions (TDP)
         function tdpToggleTransport(mode) {
             console.log(`TDP Transport toggle clicked: ${mode}`);
-            const button = document.querySelector(`[data-mode="${mode}"]`);
+            const button = document.querySelector(`#tdp-transport-toggles [data-mode="${mode}"]`);
             const section = document.getElementById(`tdp-${mode}-section`);
             
             if (!button) {
