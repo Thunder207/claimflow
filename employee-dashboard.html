@@ -5599,8 +5599,15 @@
         // ═══════════════════════════════════════════════════════════════════════
 
         function tdpToggleTransport(mode) {
+            console.log(`Transport toggle clicked: ${mode}`);
             const button = document.querySelector(`[data-mode="${mode}"]`);
             const section = document.getElementById(`tdp-${mode}-section`);
+            
+            if (!button) {
+                console.error(`Transport button not found for mode: ${mode}`);
+                return;
+            }
+            
             const isActive = button.classList.contains('active');
             
             if (isActive) {
@@ -5708,7 +5715,10 @@
         }
 
         function saveTdpTransport() {
-            if (!currentTrip) return;
+            if (!currentTrip) {
+                console.log('No currentTrip available for transport save');
+                return;
+            }
             
             const transportData = {};
             
