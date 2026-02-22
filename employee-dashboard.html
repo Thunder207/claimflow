@@ -5598,13 +5598,92 @@
         // 🚗 SMART TRANSPORTATION SECTION FUNCTIONS
         // ═══════════════════════════════════════════════════════════════════════
 
+        // Day Planner Transport Functions (DP)
+        function dpToggleTransport(mode) {
+            console.log(`DP Transport toggle clicked: ${mode}`);
+            const button = document.querySelector(`[data-mode="${mode}"]`);
+            const section = document.getElementById(`dp-${mode}-section`);
+            
+            if (!button) {
+                console.error(`DP Transport button not found for mode: ${mode}`);
+                return;
+            }
+            
+            const isActive = button.classList.contains('active');
+            
+            if (isActive) {
+                // Deactivate
+                button.classList.remove('active');
+                button.style.background = 'white';
+                button.style.color = '#6c757d';
+                button.style.borderColor = '#6c757d';
+                
+                if (section) section.style.display = 'none';
+            } else {
+                // Activate
+                button.classList.add('active');
+                
+                // Set mode-specific colors
+                const modeColors = {
+                    'personal': { bg: '#dc3545', border: '#dc3545', color: 'white' },
+                    'flight': { bg: '#ffc107', border: '#ffc107', color: 'black' },
+                    'train': { bg: '#198754', border: '#198754', color: 'white' },
+                    'bus': { bg: '#e83e8c', border: '#e83e8c', color: 'white' },
+                    'rental': { bg: '#6f42c1', border: '#6f42c1', color: 'white' }
+                };
+                
+                const colors = modeColors[mode] || modeColors['flight'];
+                button.style.background = colors.bg;
+                button.style.color = colors.color;
+                button.style.borderColor = colors.border;
+                
+                if (section) section.style.display = 'block';
+            }
+            
+            // Update transport total
+            updateTransportTotal();
+            
+            // Save to current trip if available
+            if (currentTrip) {
+                saveDayPlannerTransport();
+            }
+        }
+        
+        function saveDayPlannerTransport() {
+            if (!currentTrip) {
+                console.log('No currentTrip available for DP transport save');
+                return;
+            }
+            
+            if (!currentTrip.transport) {
+                currentTrip.transport = {};
+            }
+            
+            // Get all active transport modes
+            const transportButtons = document.querySelectorAll('#dp-transport-toggles .transport-toggle.active');
+            const activeTransports = {};
+            
+            transportButtons.forEach(button => {
+                const mode = button.getAttribute('data-mode');
+                if (mode) {
+                    activeTransports[mode] = true;
+                }
+            });
+            
+            currentTrip.transport.modes = activeTransports;
+            
+            // Auto-save trip
+            autoSaveTrip();
+        }
+
+        // Travel Day Planner Transport Functions (TDP)
         function tdpToggleTransport(mode) {
-            console.log(`Transport toggle clicked: ${mode}`);
+            console.log(`TDP Transport toggle clicked: ${mode}`);
             const button = document.querySelector(`[data-mode="${mode}"]`);
             const section = document.getElementById(`tdp-${mode}-section`);
             
             if (!button) {
-                console.error(`Transport button not found for mode: ${mode}`);
+                console.error(`TDP Transport button not found for mode: ${mode}`);
                 return;
             }
             
