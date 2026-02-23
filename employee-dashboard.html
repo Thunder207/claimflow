@@ -5730,10 +5730,15 @@
 
         function dpSaveTransport() {
             try {
+                console.log('dpSaveTransport called, tdpState:', tdpState);
+                
                 if (!tdpState.tripId) {
-                    console.log('No tripId available for transport save');
+                    console.log('No tripId available for transport save, tdpState.tripId:', tdpState.tripId);
+                    showMessage('info', 'Please select a trip first before adding transportation');
                     return;
                 }
+                
+                console.log('Saving transport for tripId:', tdpState.tripId);
                 
                 const transportData = {};
                 
@@ -5742,6 +5747,8 @@
                 modes.forEach(mode => {
                     const button = document.querySelector(`#dp-transport-toggles [data-mode="${mode}"]`);
                     const isActive = button && button.classList.contains('active');
+                    
+                    console.log(`Mode ${mode}: button found=${!!button}, active=${isActive}`);
                     
                     transportData[mode] = {
                         active: isActive,
@@ -5752,12 +5759,14 @@
                         // Save values based on mode
                         switch(mode) {
                             case 'flight':
-                                transportData[mode].data = {
+                                const flightData = {
                                     departure: document.getElementById('dp-flight-dep')?.value || '',
                                     return: document.getElementById('dp-flight-ret')?.value || '',
                                     baggage: document.getElementById('dp-flight-bag')?.value || '',
                                     route: document.getElementById('dp-flight-route')?.value || ''
                                 };
+                                transportData[mode].data = flightData;
+                                console.log('Flight data:', flightData);
                                 break;
                                 
                             case 'train':
@@ -5794,6 +5803,8 @@
                     }
                 });
                 
+                console.log('Final transport data:', transportData);
+                
                 // Save to tdpState for consistency with other functions
                 if (!tdpState.transport) {
                     tdpState.transport = {};
@@ -5801,13 +5812,15 @@
                 tdpState.transport = transportData;
                 
                 // Save to localStorage for persistence
-                localStorage.setItem(`tdpState_${tdpState.tripId}`, JSON.stringify(tdpState));
+                const stateKey = `tdpState_${tdpState.tripId}`;
+                localStorage.setItem(stateKey, JSON.stringify(tdpState));
                 
-                console.log('Transport saved successfully');
+                console.log('Transport saved successfully to localStorage key:', stateKey);
+                showMessage('success', '✅ Transportation data saved');
                 
             } catch (error) {
                 console.error('Error saving transport:', error);
-                showMessage('error', 'Failed to save transportation data');
+                showMessage('error', 'Failed to save transportation data: ' + error.message);
             }
         }
 
