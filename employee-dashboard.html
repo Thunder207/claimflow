@@ -3040,11 +3040,44 @@
             const tripName = option?.dataset?.name || '';
             const destination = option?.dataset?.destination || '';
 
+            // Get full authorization details including transportation estimates
+            let authDetails = null;
+            try {
+                const detailResponse = await fetch(`/api/travel-auth/${atId}`, {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                authDetails = await detailResponse.json();
+            } catch (error) {
+                console.error('Error loading auth details:', error);
+            }
+
             const statusColors = { draft: '#6c757d', pending: '#ffc107', approved: '#28a745', rejected: '#dc3545' };
             infoDiv.style.display = 'block';
             infoDiv.style.background = `${statusColors[status]}22`;
             infoDiv.style.border = `1px solid ${statusColors[status]}`;
-            infoDiv.innerHTML = `<strong>Status:</strong> ${status.toUpperCase()} ${canEdit ? '- Toggle expenses on/off below' : status === 'pending' ? '- Waiting for approval (read-only)' : '- Approved ✅'}`;
+            
+            let estimatesHtml = '';
+            if (authDetails && authDetails.success) {
+                const auth = authDetails.authorization;
+                const estTransport = parseFloat(auth.est_transport || 0);
+                const estLodging = parseFloat(auth.est_lodging || 0);
+                const estMeals = parseFloat(auth.est_meals || 0);
+                const estOther = parseFloat(auth.est_other || 0);
+                const totalEst = estTransport + estLodging + estMeals + estOther;
+                
+                if (totalEst > 0) {
+                    estimatesHtml = `<div style="margin-top: 10px; padding: 8px; background: rgba(23, 162, 184, 0.1); border-radius: 6px;">
+                        <strong>💰 Estimated Costs:</strong>
+                        ${estTransport > 0 ? `🚗 Transportation: $${estTransport.toFixed(2)}` : ''}
+                        ${estLodging > 0 ? ` • 🏨 Lodging: $${estLodging.toFixed(2)}` : ''}
+                        ${estMeals > 0 ? ` • 🍽️ Meals: $${estMeals.toFixed(2)}` : ''}
+                        ${estOther > 0 ? ` • 📦 Other: $${estOther.toFixed(2)}` : ''}
+                        <br><strong>Total Estimate: $${totalEst.toFixed(2)}</strong>
+                    </div>`;
+                }
+            }
+            
+            infoDiv.innerHTML = `<strong>Status:</strong> ${status.toUpperCase()} ${canEdit ? '- Toggle expenses on/off below' : status === 'pending' ? '- Waiting for approval (read-only)' : '- Approved ✅'}${estimatesHtml}`;
 
             expenseSection.style.display = 'block';
 
