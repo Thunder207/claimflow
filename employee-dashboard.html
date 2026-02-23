@@ -3472,7 +3472,69 @@
                     }
                 }
 
-                // 5. Submit for approval
+                // 5. Add transportation expenses
+                if (dpState.transport) {
+                    const transportModes = ['flight', 'train', 'bus', 'rental'];
+                    for (const mode of transportModes) {
+                        const modeData = dpState.transport[mode];
+                        if (modeData && modeData.active) {
+                            let amount = 0;
+                            let description = '';
+                            let vendor = '';
+                            
+                            switch(mode) {
+                                case 'flight':
+                                    const flightDep = parseFloat(modeData.data.departure || 0);
+                                    const flightRet = parseFloat(modeData.data.return || 0);
+                                    const flightBag = parseFloat(modeData.data.baggage || 0);
+                                    amount = flightDep + flightRet + flightBag;
+                                    description = `Flight: ${flightDep > 0 ? 'Departure $' + flightDep.toFixed(2) : ''}${flightRet > 0 ? (flightDep > 0 ? ', ' : '') + 'Return $' + flightRet.toFixed(2) : ''}${flightBag > 0 ? ', Baggage $' + flightBag.toFixed(2) : ''}${modeData.data.route ? ' (' + modeData.data.route + ')' : ''}`;
+                                    vendor = 'Flight';
+                                    break;
+                                case 'train':
+                                    const trainDep = parseFloat(modeData.data.departure || 0);
+                                    const trainRet = parseFloat(modeData.data.return || 0);
+                                    amount = trainDep + trainRet;
+                                    description = `Train: ${trainDep > 0 ? 'Departure $' + trainDep.toFixed(2) : ''}${trainRet > 0 ? (trainDep > 0 ? ', ' : '') + 'Return $' + trainRet.toFixed(2) : ''}${modeData.data.route ? ' (' + modeData.data.route + ')' : ''}`;
+                                    vendor = 'Train';
+                                    break;
+                                case 'bus':
+                                    const busDep = parseFloat(modeData.data.departure || 0);
+                                    const busRet = parseFloat(modeData.data.return || 0);
+                                    amount = busDep + busRet;
+                                    description = `Bus: ${busDep > 0 ? 'Departure $' + busDep.toFixed(2) : ''}${busRet > 0 ? (busDep > 0 ? ', ' : '') + 'Return $' + busRet.toFixed(2) : ''}${modeData.data.route ? ' (' + modeData.data.route + ')' : ''}`;
+                                    vendor = 'Bus';
+                                    break;
+                                case 'rental':
+                                    const rentalDays = parseFloat(modeData.data.days || 0);
+                                    const rentalRate = parseFloat(modeData.data.rate || 0);
+                                    const rentalInsurance = parseFloat(modeData.data.insurance || 0);
+                                    const rentalFuel = parseFloat(modeData.data.fuel || 0);
+                                    amount = (rentalDays * rentalRate) + rentalInsurance + rentalFuel;
+                                    description = `Rental Car: ${rentalDays} days @ $${rentalRate.toFixed(2)}/day${rentalInsurance > 0 ? ', Insurance $' + rentalInsurance.toFixed(2) : ''}${rentalFuel > 0 ? ', Fuel $' + rentalFuel.toFixed(2) : ''}`;
+                                    vendor = 'Rental Car';
+                                    break;
+                            }
+                            
+                            if (amount > 0) {
+                                await fetch(`/api/travel-auth/${selectedAuthId}/expenses`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                                    body: JSON.stringify({
+                                        expense_type: 'transport_' + mode, 
+                                        date: dpState.startDate,
+                                        location: dpState.destination, 
+                                        amount: amount,
+                                        vendor: vendor, 
+                                        description: description
+                                    })
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // 6. Submit for approval
                 const response = await fetch(`/api/travel-auth/${selectedAuthId}/submit`, {
                     method: 'PUT',
                     headers: { 'Authorization': `Bearer ${sessionId}` }
@@ -6152,15 +6214,15 @@
 
         function dpSaveTransport() {
             try {
-                console.log('dpSaveTransport called, tdpState:', tdpState);
+                console.log('dpSaveTransport called, selectedAuthId:', selectedAuthId);
                 
-                if (!tdpState.tripId) {
-                    console.log('No tripId available for transport save, tdpState.tripId:', tdpState.tripId);
-                    showMessage('info', 'Please select a trip first before adding transportation');
+                if (!selectedAuthId) {
+                    console.log('No selectedAuthId available for transport save, selectedAuthId:', selectedAuthId);
+                    showMessage('info', 'Please select a travel authorization first before adding transportation');
                     return;
                 }
                 
-                console.log('Saving transport for tripId:', tdpState.tripId);
+                console.log('Saving transport for authId:', selectedAuthId);
                 
                 const transportData = {};
                 
@@ -6227,15 +6289,15 @@
                 
                 console.log('Final transport data:', transportData);
                 
-                // Save to tdpState for consistency with other functions
-                if (!tdpState.transport) {
-                    tdpState.transport = {};
+                // Save to dpState for Day Planner
+                if (!dpState.transport) {
+                    dpState.transport = {};
                 }
-                tdpState.transport = transportData;
+                dpState.transport = transportData;
                 
                 // Save to localStorage for persistence
-                const stateKey = `tdpState_${tdpState.tripId}`;
-                localStorage.setItem(stateKey, JSON.stringify(tdpState));
+                const stateKey = `dpState_${selectedAuthId}`;
+                localStorage.setItem(stateKey, JSON.stringify(dpState));
                 
                 console.log('Transport saved successfully to localStorage key:', stateKey);
                 showMessage('success', '✅ Transportation data saved');
