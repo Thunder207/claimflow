@@ -1519,6 +1519,72 @@
                     <textarea id="at-purpose" placeholder="e.g., Annual training conference, business meetings" rows="3"></textarea>
                 </div>
 
+                <!-- Transportation Section -->
+                <div class="form-group" style="margin-top: 25px;">
+                    <label style="display: block; margin-bottom: 10px; font-weight: bold; color: #2c3e50;">🚗 Transportation to Destination</label>
+                    <p style="color: #6c757d; font-size: 13px; margin-bottom: 15px;">How are you traveling to your destination? (select all that apply)</p>
+                    <div id="at-transport-toggles" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;">
+                        <button type="button" class="transport-toggle" data-mode="personal" onclick="atToggleTransport('personal')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                            🚗 Personal Vehicle
+                        </button>
+                        <button type="button" class="transport-toggle" data-mode="flight" onclick="atToggleTransport('flight')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                            ✈️ Flight
+                        </button>
+                        <button type="button" class="transport-toggle" data-mode="train" onclick="atToggleTransport('train')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                            🚆 Train
+                        </button>
+                        <button type="button" class="transport-toggle" data-mode="bus" onclick="atToggleTransport('bus')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                            🚌 Bus
+                        </button>
+                        <button type="button" class="transport-toggle" data-mode="rental" onclick="atToggleTransport('rental')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                            🚙 Rental Car
+                        </button>
+                    </div>
+
+                    <!-- Personal Vehicle Section -->
+                    <div id="at-personal-section" style="display: none; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); padding: 16px; border-radius: 10px; margin-bottom: 12px; border: 1px solid #ffc107;">
+                        <h5 style="color: #856404; margin: 0 0 12px 0;">🚗 Personal Vehicle</h5>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <label style="color: #856404; font-weight: 600;">Estimated Kilometers:</label>
+                            <input type="number" id="at-vehicle-km" step="0.1" min="0" placeholder="0" style="width: 120px; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="atRecalcTotal()">
+                            <span style="color: #856404; font-size: 14px;">× $0.68/km = <strong id="at-vehicle-total">$0.00</strong></span>
+                        </div>
+                    </div>
+
+                    <!-- Flight Section -->
+                    <div id="at-flight-section" style="display: none; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); padding: 16px; border-radius: 10px; margin-bottom: 12px; border: 1px solid #ffc107;">
+                        <h5 style="color: #856404; margin: 0 0 12px 0;">✈️ Flight</h5>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 10px;">
+                            <div>
+                                <label style="color: #856404; font-size: 13px; font-weight: 600;">Departure Flight Cost: $</label>
+                                <input type="number" id="at-flight-dep" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="atRecalcTotal()">
+                            </div>
+                            <div>
+                                <label style="color: #856404; font-size: 13px; font-weight: 600;">Return Flight Cost: $</label>
+                                <input type="number" id="at-flight-ret" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="atRecalcTotal()">
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 10px;">
+                            <div>
+                                <label style="color: #856404; font-size: 13px; font-weight: 600;">Baggage Fees: $</label>
+                                <input type="number" id="at-flight-bag" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="atRecalcTotal()">
+                            </div>
+                            <div>
+                                <label style="color: #856404; font-size: 13px; font-weight: 600;">Route (optional):</label>
+                                <input type="text" id="at-flight-route" placeholder="e.g., YOW → YUL" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;">
+                            </div>
+                        </div>
+                        <div style="text-align: right; color: #856404; font-weight: bold;">
+                            ✈️ Flight Subtotal: <span id="at-flight-total">$0.00</span>
+                        </div>
+                    </div>
+
+                    <!-- Transportation Total -->
+                    <div style="text-align: right; padding: 10px; background: rgba(23, 162, 184, 0.1); border-radius: 8px; font-weight: bold; color: #0c5460;">
+                        🚗 Transportation Total: <span id="at-transport-total" style="font-size: 18px;">$0.00</span>
+                    </div>
+                </div>
+
                 <div style="margin-top: 30px; display: flex; gap: 15px; justify-content: flex-end;">
                     <button type="button" onclick="hideCreateATModal()" class="btn" style="background: #6c757d;">
                         ❌ Cancel
@@ -3330,6 +3396,37 @@
             document.getElementById('at-start-date').value = today;
             document.getElementById('at-end-date').value = today;
             resetATFormToCreate();
+            atResetTransportForm();
+        }
+
+        function atResetTransportForm() {
+            // Clear all transport button states
+            const buttons = document.querySelectorAll('#at-transport-toggles .transport-toggle');
+            buttons.forEach(button => {
+                button.classList.remove('active');
+                button.style.backgroundColor = 'white';
+                button.style.borderColor = '#6c757d';
+                button.style.color = '#6c757d';
+            });
+            
+            // Hide all transport sections
+            const sections = document.querySelectorAll('[id^="at-"][id$="-section"]');
+            sections.forEach(section => {
+                section.style.display = 'none';
+            });
+            
+            // Clear all input values
+            const inputs = document.querySelectorAll('[id^="at-"] input');
+            inputs.forEach(input => {
+                input.value = '';
+            });
+            
+            // Reset totals
+            const totalEls = ['at-vehicle-total', 'at-flight-total', 'at-transport-total'];
+            totalEls.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = '$0.00';
+            });
         }
 
         function hideCreateATModal() {
@@ -3347,6 +3444,27 @@
             if (!name || !startDate || !endDate || !destination) { showTAMessage('error', 'Please fill in all required fields (name, destination, dates).'); return; }
             if (new Date(startDate) > new Date(endDate)) { showTAMessage('error', 'End date must be after start date.'); return; }
 
+            // Calculate transportation estimate
+            let transportEstimate = 0;
+            const transportData = atGetTransportData();
+            
+            Object.keys(transportData).forEach(mode => {
+                if (transportData[mode].active) {
+                    switch(mode) {
+                        case 'personal':
+                            const km = parseFloat(transportData[mode].data.kilometers || 0);
+                            transportEstimate += km * 0.68;
+                            break;
+                        case 'flight':
+                            const dep = parseFloat(transportData[mode].data.departure || 0);
+                            const ret = parseFloat(transportData[mode].data.return || 0);
+                            const bag = parseFloat(transportData[mode].data.baggage || 0);
+                            transportEstimate += dep + ret + bag;
+                            break;
+                    }
+                }
+            });
+
             try {
                 const response = await fetch('/api/travel-auth', {
                     method: 'POST',
@@ -3354,7 +3472,8 @@
                     body: JSON.stringify({
                         name: sanitizeInput(name), destination: sanitizeInput(destination || ''),
                         start_date: startDate, end_date: endDate, purpose: sanitizeInput(purpose || ''),
-                        est_transport: 0, est_lodging: 0, est_meals: 0, est_other: 0, details: JSON.stringify({})
+                        est_transport: transportEstimate, est_lodging: 0, est_meals: 0, est_other: 0, 
+                        details: JSON.stringify({ transport: transportData })
                     })
                 });
                 const result = await response.json();
@@ -5246,6 +5365,139 @@
                 document.getElementById('standalone-error').style.display = 'block';
                 setTimeout(() => document.getElementById('standalone-error').style.display = 'none', 8000);
             }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════════════
+        // AUTHORIZATION TO TRAVEL (AT) - Transportation Functions
+        // ═══════════════════════════════════════════════════════════════════════════════
+
+        let atTransportData = {};
+
+        function atToggleTransport(mode) {
+            console.log(`AT Transport toggle clicked: ${mode}`);
+            const button = document.querySelector(`#at-transport-toggles [data-mode="${mode}"]`);
+            const section = document.getElementById(`at-${mode}-section`);
+            
+            if (!button) {
+                console.error(`AT Transport button not found for mode: ${mode}`);
+                return;
+            }
+            
+            const isActive = button.classList.contains('active');
+            
+            if (isActive) {
+                // Deactivate
+                button.classList.remove('active');
+                button.style.backgroundColor = 'white';
+                button.style.borderColor = '#6c757d';
+                button.style.color = '#6c757d';
+                if (section) section.style.display = 'none';
+                
+                // Clear values for deactivated mode
+                atClearTransportMode(mode);
+            } else {
+                // Activate
+                button.classList.add('active');
+                
+                // Set mode-specific colors
+                const modeColors = {
+                    'personal': { bg: '#dc3545', border: '#dc3545', color: 'white' },
+                    'flight': { bg: '#ffc107', border: '#ffc107', color: 'black' },
+                    'train': { bg: '#28a745', border: '#28a745', color: 'white' },
+                    'bus': { bg: '#e91e63', border: '#e91e63', color: 'white' },
+                    'rental': { bg: '#9c27b0', border: '#9c27b0', color: 'white' }
+                };
+                
+                const colors = modeColors[mode] || modeColors['flight'];
+                button.style.backgroundColor = colors.bg;
+                button.style.color = colors.color;
+                button.style.borderColor = colors.border;
+                
+                if (section) section.style.display = 'block';
+            }
+            
+            atRecalcTotal();
+        }
+
+        function atClearTransportMode(mode) {
+            // Clear all inputs for this transport mode
+            const inputs = document.querySelectorAll(`#at-${mode}-section input`);
+            inputs.forEach(input => {
+                if (input.type === 'number') {
+                    input.value = '';
+                } else {
+                    input.value = '';
+                }
+            });
+        }
+
+        function atRecalcTotal() {
+            let transportTotal = 0;
+            
+            // Check each active transport mode
+            const modes = ['personal', 'flight', 'train', 'bus', 'rental'];
+            modes.forEach(mode => {
+                const button = document.querySelector(`#at-transport-toggles [data-mode="${mode}"]`);
+                if (button && button.classList.contains('active')) {
+                    let subtotal = 0;
+                    
+                    switch(mode) {
+                        case 'personal':
+                            const km = parseFloat(document.getElementById('at-vehicle-km')?.value || 0);
+                            subtotal = km * 0.68; // $0.68/km
+                            const vtEl = document.getElementById('at-vehicle-total');
+                            if (vtEl) vtEl.textContent = `$${subtotal.toFixed(2)}`;
+                            break;
+                            
+                        case 'flight':
+                            const flightDep = parseFloat(document.getElementById('at-flight-dep')?.value || 0);
+                            const flightRet = parseFloat(document.getElementById('at-flight-ret')?.value || 0);
+                            const flightBag = parseFloat(document.getElementById('at-flight-bag')?.value || 0);
+                            subtotal = flightDep + flightRet + flightBag;
+                            const ftEl = document.getElementById('at-flight-total');
+                            if (ftEl) ftEl.textContent = `$${subtotal.toFixed(2)}`;
+                            break;
+                    }
+                    
+                    transportTotal += subtotal;
+                }
+            });
+            
+            // Update total display
+            const totalEl = document.getElementById('at-transport-total');
+            if (totalEl) totalEl.textContent = `$${transportTotal.toFixed(2)}`;
+        }
+
+        function atGetTransportData() {
+            const transportData = {};
+            const modes = ['personal', 'flight', 'train', 'bus', 'rental'];
+            
+            modes.forEach(mode => {
+                const button = document.querySelector(`#at-transport-toggles [data-mode="${mode}"]`);
+                const isActive = button && button.classList.contains('active');
+                
+                if (isActive) {
+                    transportData[mode] = { active: true, data: {} };
+                    
+                    switch(mode) {
+                        case 'personal':
+                            transportData[mode].data = {
+                                kilometers: document.getElementById('at-vehicle-km')?.value || ''
+                            };
+                            break;
+                        case 'flight':
+                            transportData[mode].data = {
+                                departure: document.getElementById('at-flight-dep')?.value || '',
+                                return: document.getElementById('at-flight-ret')?.value || '',
+                                baggage: document.getElementById('at-flight-bag')?.value || '',
+                                route: document.getElementById('at-flight-route')?.value || ''
+                            };
+                            break;
+                    }
+                }
+            });
+            
+            return transportData;
         }
 
         // ═══════════════════════════════════════════════════════════════════════════════
