@@ -3566,6 +3566,23 @@
                             const bag = parseFloat(transportData[mode].data.baggage || 0);
                             transportEstimate += dep + ret + bag;
                             break;
+                        case 'train':
+                            const trainDep = parseFloat(transportData[mode].data.departure || 0);
+                            const trainRet = parseFloat(transportData[mode].data.return || 0);
+                            transportEstimate += trainDep + trainRet;
+                            break;
+                        case 'bus':
+                            const busDep = parseFloat(transportData[mode].data.departure || 0);
+                            const busRet = parseFloat(transportData[mode].data.return || 0);
+                            transportEstimate += busDep + busRet;
+                            break;
+                        case 'rental':
+                            const rentalDays = parseFloat(transportData[mode].data.days || 0);
+                            const rentalRate = parseFloat(transportData[mode].data.rate || 0);
+                            const rentalInsurance = parseFloat(transportData[mode].data.insurance || 0);
+                            const rentalFuel = parseFloat(transportData[mode].data.fuel || 0);
+                            transportEstimate += (rentalDays * rentalRate) + rentalInsurance + rentalFuel;
+                            break;
                     }
                 }
             });
