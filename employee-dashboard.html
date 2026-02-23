@@ -1579,6 +1579,78 @@
                         </div>
                     </div>
 
+                    <!-- Train Section -->
+                    <div id="at-train-section" style="display: none; background: linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%); padding: 16px; border-radius: 10px; margin-bottom: 12px; border: 1px solid #28a745;">
+                        <h5 style="color: #155724; margin: 0 0 12px 0;">🚆 Train</h5>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 10px;">
+                            <div>
+                                <label style="color: #155724; font-size: 13px; font-weight: 600;">Departure Train Cost: $</label>
+                                <input type="number" id="at-train-dep" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #28a745; font-size: 14px;" oninput="atRecalcTotal()">
+                            </div>
+                            <div>
+                                <label style="color: #155724; font-size: 13px; font-weight: 600;">Return Train Cost: $</label>
+                                <input type="number" id="at-train-ret" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #28a745; font-size: 14px;" oninput="atRecalcTotal()">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="color: #155724; font-size: 13px; font-weight: 600;">Route (optional):</label>
+                            <input type="text" id="at-train-route" placeholder="e.g., Ottawa → Montreal" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #28a745; font-size: 14px;">
+                        </div>
+                        <div style="text-align: right; color: #155724; font-weight: bold;">
+                            🚆 Train Subtotal: <span id="at-train-total">$0.00</span>
+                        </div>
+                    </div>
+
+                    <!-- Bus Section -->
+                    <div id="at-bus-section" style="display: none; background: linear-gradient(135deg, #fce4ec 0%, #f8bbd0 100%); padding: 16px; border-radius: 10px; margin-bottom: 12px; border: 1px solid #e91e63;">
+                        <h5 style="color: #880e4f; margin: 0 0 12px 0;">🚌 Bus</h5>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 10px;">
+                            <div>
+                                <label style="color: #880e4f; font-size: 13px; font-weight: 600;">Departure Bus Cost: $</label>
+                                <input type="number" id="at-bus-dep" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #e91e63; font-size: 14px;" oninput="atRecalcTotal()">
+                            </div>
+                            <div>
+                                <label style="color: #880e4f; font-size: 13px; font-weight: 600;">Return Bus Cost: $</label>
+                                <input type="number" id="at-bus-ret" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #e91e63; font-size: 14px;" oninput="atRecalcTotal()">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="color: #880e4f; font-size: 13px; font-weight: 600;">Route (optional):</label>
+                            <input type="text" id="at-bus-route" placeholder="e.g., Ottawa → Toronto" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #e91e63; font-size: 14px;">
+                        </div>
+                        <div style="text-align: right; color: #880e4f; font-weight: bold;">
+                            🚌 Bus Subtotal: <span id="at-bus-total">$0.00</span>
+                        </div>
+                    </div>
+
+                    <!-- Rental Car Section -->
+                    <div id="at-rental-section" style="display: none; background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%); padding: 16px; border-radius: 10px; margin-bottom: 12px; border: 1px solid #9c27b0;">
+                        <h5 style="color: #4a148c; margin: 0 0 12px 0;">🚙 Rental Car</h5>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 10px;">
+                            <div>
+                                <label style="color: #4a148c; font-size: 13px; font-weight: 600;">Rental Duration (days):</label>
+                                <input type="number" id="at-rental-days" min="1" placeholder="1" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #9c27b0; font-size: 14px;" oninput="atRecalcTotal()">
+                            </div>
+                            <div>
+                                <label style="color: #4a148c; font-size: 13px; font-weight: 600;">Daily Rate: $</label>
+                                <input type="number" id="at-rental-rate" step="0.01" min="0" placeholder="65.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #9c27b0; font-size: 14px;" oninput="atRecalcTotal()">
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 10px;">
+                            <div>
+                                <label style="color: #4a148c; font-size: 13px; font-weight: 600;">Insurance: $</label>
+                                <input type="number" id="at-rental-insurance" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #9c27b0; font-size: 14px;" oninput="atRecalcTotal()">
+                            </div>
+                            <div>
+                                <label style="color: #4a148c; font-size: 13px; font-weight: 600;">Fuel Estimate: $</label>
+                                <input type="number" id="at-rental-fuel" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #9c27b0; font-size: 14px;" oninput="atRecalcTotal()">
+                            </div>
+                        </div>
+                        <div style="text-align: right; color: #4a148c; font-weight: bold;">
+                            🚙 Rental Car Subtotal: <span id="at-rental-total">$0.00</span>
+                        </div>
+                    </div>
+
                     <!-- Transportation Total -->
                     <div style="text-align: right; padding: 10px; background: rgba(23, 162, 184, 0.1); border-radius: 8px; font-weight: bold; color: #0c5460;">
                         🚗 Transportation Total: <span id="at-transport-total" style="font-size: 18px;">$0.00</span>
@@ -3422,7 +3494,7 @@
             });
             
             // Reset totals
-            const totalEls = ['at-vehicle-total', 'at-flight-total', 'at-transport-total'];
+            const totalEls = ['at-vehicle-total', 'at-flight-total', 'at-train-total', 'at-bus-total', 'at-rental-total', 'at-transport-total'];
             totalEls.forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.textContent = '$0.00';
@@ -5457,6 +5529,32 @@
                             const ftEl = document.getElementById('at-flight-total');
                             if (ftEl) ftEl.textContent = `$${subtotal.toFixed(2)}`;
                             break;
+                            
+                        case 'train':
+                            const trainDep = parseFloat(document.getElementById('at-train-dep')?.value || 0);
+                            const trainRet = parseFloat(document.getElementById('at-train-ret')?.value || 0);
+                            subtotal = trainDep + trainRet;
+                            const ttEl = document.getElementById('at-train-total');
+                            if (ttEl) ttEl.textContent = `$${subtotal.toFixed(2)}`;
+                            break;
+                            
+                        case 'bus':
+                            const busDep = parseFloat(document.getElementById('at-bus-dep')?.value || 0);
+                            const busRet = parseFloat(document.getElementById('at-bus-ret')?.value || 0);
+                            subtotal = busDep + busRet;
+                            const btEl = document.getElementById('at-bus-total');
+                            if (btEl) btEl.textContent = `$${subtotal.toFixed(2)}`;
+                            break;
+                            
+                        case 'rental':
+                            const rentalDays = parseFloat(document.getElementById('at-rental-days')?.value || 0);
+                            const rentalRate = parseFloat(document.getElementById('at-rental-rate')?.value || 0);
+                            const rentalInsurance = parseFloat(document.getElementById('at-rental-insurance')?.value || 0);
+                            const rentalFuel = parseFloat(document.getElementById('at-rental-fuel')?.value || 0);
+                            subtotal = (rentalDays * rentalRate) + rentalInsurance + rentalFuel;
+                            const rtEl = document.getElementById('at-rental-total');
+                            if (rtEl) rtEl.textContent = `$${subtotal.toFixed(2)}`;
+                            break;
                     }
                     
                     transportTotal += subtotal;
@@ -5491,6 +5589,28 @@
                                 return: document.getElementById('at-flight-ret')?.value || '',
                                 baggage: document.getElementById('at-flight-bag')?.value || '',
                                 route: document.getElementById('at-flight-route')?.value || ''
+                            };
+                            break;
+                        case 'train':
+                            transportData[mode].data = {
+                                departure: document.getElementById('at-train-dep')?.value || '',
+                                return: document.getElementById('at-train-ret')?.value || '',
+                                route: document.getElementById('at-train-route')?.value || ''
+                            };
+                            break;
+                        case 'bus':
+                            transportData[mode].data = {
+                                departure: document.getElementById('at-bus-dep')?.value || '',
+                                return: document.getElementById('at-bus-ret')?.value || '',
+                                route: document.getElementById('at-bus-route')?.value || ''
+                            };
+                            break;
+                        case 'rental':
+                            transportData[mode].data = {
+                                days: document.getElementById('at-rental-days')?.value || '',
+                                rate: document.getElementById('at-rental-rate')?.value || '',
+                                insurance: document.getElementById('at-rental-insurance')?.value || '',
+                                fuel: document.getElementById('at-rental-fuel')?.value || ''
                             };
                             break;
                     }
