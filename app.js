@@ -1687,11 +1687,21 @@ app.get('/api/settings/variance', requireAuth, (req, res) => {
 app.put('/api/settings/variance', requireAuth, requireRole('admin'), (req, res) => {
     const { variance_pct_threshold, variance_dollar_threshold } = req.body;
     
-    // Validation
+    // Enhanced validation
+    if (!variance_pct_threshold || variance_pct_threshold.toString().trim() === '') {
+        return res.status(400).json({ error: 'Percentage threshold is required' });
+    }
+    if (!variance_dollar_threshold || variance_dollar_threshold.toString().trim() === '') {
+        return res.status(400).json({ error: 'Dollar threshold is required' });
+    }
+    
     const pct = parseFloat(variance_pct_threshold);
     const dollar = parseFloat(variance_dollar_threshold);
-    if (isNaN(pct) || pct <= 0) return res.status(400).json({ error: 'Percentage threshold must be greater than 0' });
-    if (isNaN(dollar) || dollar <= 0) return res.status(400).json({ error: 'Dollar threshold must be greater than 0' });
+    
+    if (isNaN(pct) || !isFinite(pct)) return res.status(400).json({ error: 'Percentage threshold must be a valid number' });
+    if (isNaN(dollar) || !isFinite(dollar)) return res.status(400).json({ error: 'Dollar threshold must be a valid number' });
+    if (pct <= 0 || pct > 1000) return res.status(400).json({ error: 'Percentage threshold must be between 0.1 and 1000' });
+    if (dollar <= 0 || dollar > 100000) return res.status(400).json({ error: 'Dollar threshold must be between $0.01 and $100,000' });
     
     // Get old values for audit
     db.all(`SELECT key, value FROM app_settings WHERE key IN ('variance_pct_threshold', 'variance_dollar_threshold')`, [], (err, oldRows) => {
@@ -3088,35 +3098,123 @@ app.get('/api/trips/:id/variance', requireAuth, (req, res) => {
                     const pctThreshold = parseFloat(settingsMap.variance_pct_threshold || '10');
                     const dollarThreshold = parseFloat(settingsMap.variance_dollar_threshold || '100');
                     
-                    // Calculate actuals by category
-                    let actualMeals = 0, actualLodging = 0, actualTransport = 0, actualOther = 0;
+                    // Parse AT transport details from JSON
+                    let transportDetails = {};
+                    try {
+                        if (at.details) {
+                            const details = JSON.parse(at.details);
+                            transportDetails = details.transport || {};
+                        }
+                    } catch(e) { console.error('Error parsing AT details:', e); }
+                    
+                    // Calculate actuals by granular categories
+                    const actuals = {
+                        meals: 0,
+                        incidentals: 0,
+                        hotel: 0,
+                        kilometric: 0,
+                        flight: 0,
+                        train: 0,
+                        bus: 0,
+                        rental: 0,
+                        other: 0
+                    };
+                    
                     expenses.forEach(e => {
                         const amt = parseFloat(e.amount) || 0;
-                        if (['breakfast', 'lunch', 'dinner', 'incidentals'].includes(e.expense_type)) actualMeals += amt;
-                        else if (e.expense_type === 'hotel') actualLodging += amt;
-                        else if (['vehicle_km', 'transport_flight', 'transport_train', 'transport_bus', 'transport_rental'].includes(e.expense_type)) actualTransport += amt;
-                        else actualOther += amt;
+                        switch(e.expense_type) {
+                            case 'breakfast':
+                            case 'lunch':
+                            case 'dinner':
+                                actuals.meals += amt;
+                                break;
+                            case 'incidentals':
+                                actuals.incidentals += amt;
+                                break;
+                            case 'hotel':
+                                actuals.hotel += amt;
+                                break;
+                            case 'vehicle_km':
+                                actuals.kilometric += amt;
+                                break;
+                            case 'transport_flight':
+                                actuals.flight += amt;
+                                break;
+                            case 'transport_train':
+                                actuals.train += amt;
+                                break;
+                            case 'transport_bus':
+                                actuals.bus += amt;
+                                break;
+                            case 'transport_rental':
+                                actuals.rental += amt;
+                                break;
+                            default:
+                                actuals.other += amt;
+                                break;
+                        }
                     });
-                    const actualTotal = actualMeals + actualLodging + actualTransport + actualOther;
                     
-                    // AT estimates
-                    const estMeals = parseFloat(at.est_meals) || 0;
-                    const estLodging = parseFloat(at.est_lodging) || 0;
-                    const estTransport = parseFloat(at.est_transport) || 0;
-                    const estOther = parseFloat(at.est_other) || 0;
-                    const estTotal = parseFloat(at.est_total) || 0;
+                    // AT estimates by granular categories
+                    const estimates = {
+                        meals: parseFloat(at.est_meals) || 0,
+                        incidentals: 0, // Part of meals typically, but separate for granular view
+                        hotel: parseFloat(at.est_lodging) || 0,
+                        kilometric: 0, // Part of transport, extract from details
+                        flight: (transportDetails.flight && transportDetails.flight.active) ? parseFloat(transportDetails.flight.total) || 0 : 0,
+                        train: (transportDetails.train && transportDetails.train.active) ? parseFloat(transportDetails.train.total) || 0 : 0,
+                        bus: (transportDetails.bus && transportDetails.bus.active) ? parseFloat(transportDetails.bus.total) || 0 : 0,
+                        rental: (transportDetails.rental && transportDetails.rental.active) ? parseFloat(transportDetails.rental.total) || 0 : 0,
+                        other: parseFloat(at.est_other) || 0
+                    };
                     
-                    // Calculate variance for each category
-                    function calcVariance(actual, estimate) {
+                    // Calculate total actuals and estimates
+                    const actualTotal = Object.values(actuals).reduce((sum, val) => sum + val, 0);
+                    const estTotal = Object.values(estimates).reduce((sum, val) => sum + val, 0);
+                    
+                    // Enhanced variance calculation with status logic
+                    function calcVariance(actual, estimate, categoryName = '') {
                         const diff = actual - estimate;
                         const pct = estimate > 0 ? ((diff / estimate) * 100) : (actual > 0 ? 100 : 0);
-                        let status = 'green'; // within threshold
-                        if (Math.abs(pct) > pctThreshold && Math.abs(diff) > dollarThreshold) {
-                            status = 'red'; // both thresholds exceeded
-                        } else if (Math.abs(pct) > pctThreshold || Math.abs(diff) > dollarThreshold) {
-                            status = 'yellow'; // one threshold exceeded
+                        
+                        let status, icon, description;
+                        
+                        if (estimate === 0 && actual > 0) {
+                            // Unplanned category
+                            status = 'unplanned';
+                            icon = '🆕';
+                            description = 'Not in AT';
+                        } else if (estimate > 0 && actual === 0) {
+                            // Category in AT but not claimed
+                            status = 'unclaimed';
+                            icon = '➖';
+                            description = 'Not claimed';
+                        } else if (actual <= estimate) {
+                            // Under or at budget
+                            status = 'green';
+                            icon = '✅';
+                            description = 'Within budget';
+                        } else if (Math.abs(pct) > pctThreshold && Math.abs(diff) > dollarThreshold) {
+                            // Over both thresholds
+                            status = 'red';
+                            icon = '🔴';
+                            description = `Over ${pctThreshold}% AND $${dollarThreshold}`;
+                        } else {
+                            // Over budget but below both thresholds
+                            status = 'yellow';
+                            icon = '⚠️';
+                            description = 'Over budget';
                         }
-                        return { actual, estimate, diff, pct: Math.round(pct * 10) / 10, status };
+                        
+                        return { 
+                            actual, 
+                            estimate, 
+                            diff, 
+                            pct: Math.round(pct * 10) / 10, 
+                            status, 
+                            icon, 
+                            description 
+                        };
                     }
                     
                     res.json({
@@ -3124,11 +3222,16 @@ app.get('/api/trips/:id/variance', requireAuth, (req, res) => {
                         at: { id: at.id, name: at.name, status: at.status },
                         thresholds: { pct: pctThreshold, dollar: dollarThreshold },
                         variance: {
-                            meals: calcVariance(actualMeals, estMeals),
-                            lodging: calcVariance(actualLodging, estLodging),
-                            transport: calcVariance(actualTransport, estTransport),
-                            other: calcVariance(actualOther, estOther),
-                            total: calcVariance(actualTotal, estTotal)
+                            meals: calcVariance(actuals.meals, estimates.meals, 'meals'),
+                            incidentals: calcVariance(actuals.incidentals, estimates.incidentals, 'incidentals'),
+                            hotel: calcVariance(actuals.hotel, estimates.hotel, 'hotel'),
+                            kilometric: calcVariance(actuals.kilometric, estimates.kilometric, 'kilometric'),
+                            flight: calcVariance(actuals.flight, estimates.flight, 'flight'),
+                            train: calcVariance(actuals.train, estimates.train, 'train'),
+                            bus: calcVariance(actuals.bus, estimates.bus, 'bus'),
+                            rental: calcVariance(actuals.rental, estimates.rental, 'rental'),
+                            other: calcVariance(actuals.other, estimates.other, 'other'),
+                            total: calcVariance(actualTotal, estTotal, 'total')
                         }
                     });
                 });

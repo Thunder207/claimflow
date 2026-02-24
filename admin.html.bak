@@ -2903,95 +2903,106 @@ try {
         async function loadVariance(tripId) {
             const container = document.getElementById(`variance-${tripId}`);
             if (!container) return;
+            
+            // Toggle
             if (container.style.display === 'block') { container.style.display = 'none'; return; }
-            container.innerHTML = '<p style="padding:10px;">⏳ Loading variance data...</p>';
+            
+            container.innerHTML = '<p>Loading variance data...</p>';
             container.style.display = 'block';
+            
             try {
                 const resp = await fetch(`/api/trips/${tripId}/variance`, { headers: { 'Authorization': `Bearer ${sessionId}` } });
                 const data = await resp.json();
-                if (!data.variance) { container.innerHTML = '<p style="color: #999; padding: 10px;">No linked AT found for variance comparison.</p>'; return; }
-                container.innerHTML = renderVarianceTable(data);
-            } catch(e) {
-                container.innerHTML = '<p style="color: #dc3545; padding: 10px;">Failed to load variance data.</p>';
-            }
-        }
-
-        function renderVarianceTable(data) {
-            const v = data.variance;
-            const t = data.thresholds;
-            function getStyle(status) {
-                switch(status) {
-                    case 'red': return { color: '#dc3545', bg: '#fff5f5', icon: '🔴' };
-                    case 'yellow': return { color: '#f0ad4e', bg: '#fff8e1', icon: '⚠️' };
-                    case 'green': return { color: '#28a745', bg: '#f0fff0', icon: '✅' };
-                    case 'unplanned': return { color: '#0d6efd', bg: '#e8f0fe', icon: '🆕' };
-                    case 'unclaimed': return { color: '#6c757d', bg: '#f8f9fa', icon: '➖' };
-                    default: return { color: '#28a745', bg: '#f0fff0', icon: '✅' };
+                
+                if (!data.variance) { container.innerHTML = '<p style="color: #999;">No linked AT found for variance comparison.</p>'; return; }
+                
+                const v = data.variance;
+                const t = data.thresholds;
+                
+                function getStatusColor(status) {
+                    switch(status) {
+                        case 'red': return '#dc3545';
+                        case 'yellow': return '#f0ad4e';
+                        case 'green': return '#28a745';
+                        case 'unplanned': return '#fd7e14';
+                        case 'unclaimed': return '#6c757d';
+                        default: return '#28a745';
+                    }
                 }
-            }
-            function rowHtml(cat) {
-                const s = getStyle(cat.status);
-                const sign = cat.diff >= 0 ? '+' : '';
-                let varianceText, pctText;
-                if (cat.status === 'unplanned') { varianceText = '+$' + cat.actual.toFixed(2); pctText = 'NEW'; }
-                else if (cat.status === 'unclaimed') { varianceText = '—'; pctText = 'Not claimed'; }
-                else { varianceText = sign + '$' + cat.diff.toFixed(2); pctText = sign + cat.pct.toFixed(1) + '%'; }
-                const estText = cat.status === 'unplanned' ? '—' : '$' + cat.estimate.toFixed(2);
-                const actText = cat.status === 'unclaimed' ? '$0.00' : '$' + cat.actual.toFixed(2);
-                return `<tr style="background: ${s.bg}; border-bottom: 1px solid #eee;">
-                    <td style="padding: 8px 10px; font-weight: 600;">${cat.icon || s.icon} ${cat.label || ''}</td>
-                    <td style="padding: 8px 10px; text-align: right;">${estText}</td>
-                    <td style="padding: 8px 10px; text-align: right;">${actText}</td>
-                    <td style="padding: 8px 10px; text-align: right; color: ${s.color}; font-weight: bold;">${varianceText}</td>
-                    <td style="padding: 8px 10px; text-align: right; color: ${s.color}; font-weight: bold;">${pctText}</td>
-                    <td style="padding: 8px 10px; text-align: center;">${s.icon}</td>
-                </tr>`;
-            }
-            const catKeys = ['meals', 'incidentals', 'hotel', 'kilometric', 'flight', 'train', 'bus', 'rental', 'other'];
-            const catLabels = { meals: '🍽️ Meals', incidentals: '💼 Incidentals', hotel: '🏨 Hotel', kilometric: '🚗 Kilometric', flight: '✈️ Flight', train: '🚆 Train', bus: '🚌 Bus', rental: '🚙 Rental Car', other: '📦 Other' };
-            let rowsHtml = '';
-            catKeys.forEach(key => {
-                if (v[key] && (v[key].estimate > 0 || v[key].actual > 0)) {
-                    const cat = v[key];
-                    cat.label = cat.label || catLabels[key] || key;
-                    rowsHtml += rowHtml(cat);
+                
+                function getStatusBg(status) {
+                    switch(status) {
+                        case 'red': return '#fff5f5';
+                        case 'yellow': return '#fff8e1';
+                        case 'green': return '#f0fff0';
+                        case 'unplanned': return '#fff3e0';
+                        case 'unclaimed': return '#f8f9fa';
+                        default: return '#f0fff0';
+                    }
                 }
-            });
-            const totalS = getStyle(v.total.status);
-            const totalSign = v.total.diff >= 0 ? '+' : '';
-            return `
-                <div style="background: white; border-radius: 10px; padding: 16px; margin-top: 10px; border: 2px solid #667eea;">
-                    <h4 style="color: #2c3e50; margin-bottom: 8px;">📊 Authorization vs Actual Comparison</h4>
-                    <p style="font-size: 11px; color: #666; margin-bottom: 12px;">
-                        🔴 Over ${t.pct}% AND $${t.dollar} &nbsp; ⚠️ One exceeded &nbsp; ✅ Within budget &nbsp; 🆕 Unplanned &nbsp; ➖ Not claimed
-                    </p>
-                    <div style="overflow-x: auto;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; min-width: 500px;">
-                        <thead>
-                            <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
-                                <th style="padding: 8px 10px; text-align: left;">Category</th>
-                                <th style="padding: 8px 10px; text-align: right;">Authorized</th>
-                                <th style="padding: 8px 10px; text-align: right;">Actual</th>
-                                <th style="padding: 8px 10px; text-align: right;">Variance</th>
-                                <th style="padding: 8px 10px; text-align: right;">%</th>
-                                <th style="padding: 8px 10px; text-align: center;">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${rowsHtml}
-                            <tr style="border-top: 3px solid #2c3e50; background: ${totalS.bg};">
-                                <td style="padding: 10px; font-weight: 800; font-size: 14px;">💰 TOTAL</td>
-                                <td style="padding: 10px; text-align: right; font-weight: 800;">$${v.total.estimate.toFixed(2)}</td>
-                                <td style="padding: 10px; text-align: right; font-weight: 800;">$${v.total.actual.toFixed(2)}</td>
-                                <td style="padding: 10px; text-align: right; font-weight: 800; color: ${totalS.color};">${totalSign}$${v.total.diff.toFixed(2)}</td>
-                                <td style="padding: 10px; text-align: right; font-weight: 800; color: ${totalS.color};">${totalSign}${v.total.pct.toFixed(1)}%</td>
-                                <td style="padding: 10px; text-align: center;">${totalS.icon}</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                
+                function rowHtml(label, emoji, variance, hideIfZero = false) {
+                    if (hideIfZero && variance.actual === 0 && variance.estimate === 0) return '';
+                    
+                    const color = getStatusColor(variance.status);
+                    const bg = getStatusBg(variance.status);
+                    const sign = variance.diff >= 0 ? '+' : '';
+                    const icon = variance.icon || '✅';
+                    
+                    return `<tr style="background: ${bg};">
+                        <td style="padding: 10px; font-weight: 600;">${emoji} ${label}</td>
+                        <td style="padding: 10px; text-align: right;">$${variance.estimate.toFixed(2)}</td>
+                        <td style="padding: 10px; text-align: right;">$${variance.actual.toFixed(2)}</td>
+                        <td style="padding: 10px; text-align: right; color: ${color}; font-weight: bold;">${sign}$${variance.diff.toFixed(2)}</td>
+                        <td style="padding: 10px; text-align: right; color: ${color}; font-weight: bold;">${variance.status === 'unclaimed' || variance.status === 'unplanned' ? 'N/A' : sign + variance.pct.toFixed(1) + '%'}</td>
+                        <td style="padding: 10px; text-align: center;">
+                            <span style="font-size: 16px;" title="${variance.description || ''}">${icon}</span>
+                        </td>
+                    </tr>`;
+                }
+                
+                container.innerHTML = `
+                    <div style="background: white; border-radius: 10px; padding: 16px; margin-top: 10px; border: 2px solid #667eea;">
+                        <h4 style="color: #2c3e50; margin-bottom: 12px;">📊 AT vs Actual Trip Variance (Detailed)</h4>
+                        <p style="font-size: 12px; color: #666; margin-bottom: 12px;">
+                            🔴 Over budget: ${t.pct}% AND $${t.dollar} | ⚠️ Over budget | ✅ Within budget | 🆕 Unplanned | ➖ Not claimed
+                        </p>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                            <thead>
+                                <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                                    <th style="padding: 8px; text-align: left;">Category</th>
+                                    <th style="padding: 8px; text-align: right;">AT Estimate</th>
+                                    <th style="padding: 8px; text-align: right;">Actual</th>
+                                    <th style="padding: 8px; text-align: right;">Variance $</th>
+                                    <th style="padding: 8px; text-align: right;">Variance %</th>
+                                    <th style="padding: 8px; text-align: center;">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rowHtml('Meals', '🍽️', v.meals, true)}
+                                ${rowHtml('Incidentals', '📱', v.incidentals, true)}
+                                ${rowHtml('Hotel', '🏨', v.hotel, true)}
+                                ${rowHtml('Kilometric', '🚗', v.kilometric, true)}
+                                ${rowHtml('Flight', '✈️', v.flight, true)}
+                                ${rowHtml('Train', '🚆', v.train, true)}
+                                ${rowHtml('Bus', '🚌', v.bus, true)}
+                                ${rowHtml('Rental Car', '🚙', v.rental, true)}
+                                ${rowHtml('Other', '📦', v.other, true)}
+                                <tr style="border-top: 3px solid #2c3e50; background: ${getStatusBg(v.total.status)};">
+                                    <td style="padding: 12px; font-weight: 800; font-size: 15px;">💰 TOTAL</td>
+                                    <td style="padding: 12px; text-align: right; font-weight: 800;">$${v.total.estimate.toFixed(2)}</td>
+                                    <td style="padding: 12px; text-align: right; font-weight: 800;">$${v.total.actual.toFixed(2)}</td>
+                                    <td style="padding: 12px; text-align: right; font-weight: 800; color: ${getStatusColor(v.total.status)};">${v.total.diff >= 0 ? '+' : ''}$${v.total.diff.toFixed(2)}</td>
+                                    <td style="padding: 12px; text-align: right; font-weight: 800; color: ${getStatusColor(v.total.status)};">${v.total.diff >= 0 ? '+' : ''}${v.total.pct.toFixed(1)}%</td>
+                                    <td style="padding: 12px; text-align: center; font-size: 18px;">${v.total.icon || '✅'}</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
-                </div>
-            `;
+                `;
+            } catch(e) {
+                container.innerHTML = '<p style="color: #dc3545;">Failed to load variance data.</p>';
+            }
         }
 
         // 💰 SAGE 300 FUNCTIONALITY

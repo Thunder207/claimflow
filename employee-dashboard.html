@@ -1157,6 +1157,11 @@
                 </div>
 
                 <!-- Running Total + Submit -->
+                <!-- Variance View for AT Comparison -->
+                <div id="tdp-variance-view" style="display: none; margin-bottom: 20px;">
+                    <!-- Variance content will be loaded here -->
+                </div>
+                
                 <div style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 20px; border-radius: 12px; text-align: center; border: 2px solid #28a745;">
                     <div style="font-size: 14px; color: #2e7d32; font-weight: 600; margin-bottom: 4px;">💰 Trip Expense Total</div>
                     <div id="tdp-grand-total" style="font-size: 32px; font-weight: bold; color: #28a745; margin-bottom: 16px;">$0.00</div>
@@ -6293,6 +6298,9 @@
             if (grandTotalEl) {
                 grandTotalEl.textContent = `$${total.toFixed(2)}`;
             }
+            
+            // Load variance comparison if trip has linked AT
+            tdpLoadVariance();
         }
 
         function tdpShowSaving(show) {
@@ -6924,6 +6932,139 @@
                 throw error;
             } finally {
                 tdpShowSaving(false);
+            }
+        }
+
+        // Load and display variance comparison for employee
+        async function tdpLoadVariance() {
+            const tripId = tdpState.tripId;
+            if (!tripId) {
+                document.getElementById('tdp-variance-view').style.display = 'none';
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/api/trips/${tripId}/variance`, { 
+                    headers: { 'Authorization': `Bearer ${sessionId}` } 
+                });
+                const data = await resp.json();
+
+                const container = document.getElementById('tdp-variance-view');
+
+                if (!data.variance) {
+                    container.style.display = 'none';
+                    return;
+                }
+
+                const v = data.variance;
+                const t = data.thresholds;
+                
+                function getStatusColor(status) {
+                    switch(status) {
+                        case 'red': return '#dc3545';
+                        case 'yellow': return '#f0ad4e';
+                        case 'green': return '#28a745';
+                        case 'unplanned': return '#fd7e14';
+                        case 'unclaimed': return '#6c757d';
+                        default: return '#28a745';
+                    }
+                }
+                
+                function getStatusBg(status) {
+                    switch(status) {
+                        case 'red': return '#fff5f5';
+                        case 'yellow': return '#fff8e1';
+                        case 'green': return '#f0fff0';
+                        case 'unplanned': return '#fff3e0';
+                        case 'unclaimed': return '#f8f9fa';
+                        default: return '#f0fff0';
+                    }
+                }
+
+                function getAlertMessage() {
+                    const overBudgetCategories = Object.entries(v).filter(([key, variance]) => 
+                        key !== 'total' && (variance.status === 'red' || variance.status === 'yellow')
+                    );
+
+                    if (overBudgetCategories.length === 0) {
+                        return { type: 'success', message: '✅ All categories within authorized budget' };
+                    } else if (overBudgetCategories.some(([key, variance]) => variance.status === 'red')) {
+                        return { type: 'danger', message: `🔴 ${overBudgetCategories.length} category(ies) significantly over budget` };
+                    } else {
+                        return { type: 'warning', message: `⚠️ ${overBudgetCategories.length} category(ies) over authorized amounts` };
+                    }
+                }
+
+                function rowHtml(label, emoji, variance, hideIfZero = false) {
+                    if (hideIfZero && variance.actual === 0 && variance.estimate === 0) return '';
+                    
+                    const color = getStatusColor(variance.status);
+                    const bg = getStatusBg(variance.status);
+                    const sign = variance.diff >= 0 ? '+' : '';
+                    const icon = variance.icon || '✅';
+                    
+                    return `<tr style="background: ${bg};">
+                        <td style="padding: 8px; font-weight: 600; font-size: 13px;">${emoji} ${label}</td>
+                        <td style="padding: 8px; text-align: right; font-size: 13px;">$${variance.estimate.toFixed(2)}</td>
+                        <td style="padding: 8px; text-align: right; font-size: 13px;">$${variance.actual.toFixed(2)}</td>
+                        <td style="padding: 8px; text-align: right; color: ${color}; font-weight: bold; font-size: 13px;">${sign}$${variance.diff.toFixed(2)}</td>
+                        <td style="padding: 8px; text-align: center; font-size: 14px;" title="${variance.description || ''}">${icon}</td>
+                    </tr>`;
+                }
+
+                const alert = getAlertMessage();
+                const alertClass = alert.type === 'success' ? '#d4edda' : alert.type === 'warning' ? '#fff3cd' : '#f8d7da';
+                const alertColor = alert.type === 'success' ? '#155724' : alert.type === 'warning' ? '#856404' : '#721c24';
+
+                container.innerHTML = `
+                    <div style="background: white; border-radius: 12px; padding: 16px; border: 2px solid #667eea; margin-bottom: 20px;">
+                        <h4 style="color: #2c3e50; margin-bottom: 12px; font-size: 16px;">📊 Budget Comparison (Your expenses vs Travel Authorization)</h4>
+                        
+                        <div style="background: ${alertClass}; color: ${alertColor}; padding: 12px; border-radius: 8px; margin-bottom: 12px; font-weight: 600;">
+                            ${alert.message}
+                        </div>
+                        
+                        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                            <thead>
+                                <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                                    <th style="padding: 8px; text-align: left; font-size: 12px;">Category</th>
+                                    <th style="padding: 8px; text-align: right; font-size: 12px;">Authorized</th>
+                                    <th style="padding: 8px; text-align: right; font-size: 12px;">Your Actual</th>
+                                    <th style="padding: 8px; text-align: right; font-size: 12px;">Variance</th>
+                                    <th style="padding: 8px; text-align: center; font-size: 12px;">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rowHtml('Meals', '🍽️', v.meals, true)}
+                                ${rowHtml('Incidentals', '📱', v.incidentals, true)}
+                                ${rowHtml('Hotel', '🏨', v.hotel, true)}
+                                ${rowHtml('Kilometric', '🚗', v.kilometric, true)}
+                                ${rowHtml('Flight', '✈️', v.flight, true)}
+                                ${rowHtml('Train', '🚆', v.train, true)}
+                                ${rowHtml('Bus', '🚌', v.bus, true)}
+                                ${rowHtml('Rental Car', '🚙', v.rental, true)}
+                                ${rowHtml('Other', '📦', v.other, true)}
+                                <tr style="border-top: 2px solid #2c3e50; background: ${getStatusBg(v.total.status)};">
+                                    <td style="padding: 10px; font-weight: 800; font-size: 14px;">💰 TOTAL</td>
+                                    <td style="padding: 10px; text-align: right; font-weight: 800; font-size: 14px;">$${v.total.estimate.toFixed(2)}</td>
+                                    <td style="padding: 10px; text-align: right; font-weight: 800; font-size: 14px;">$${v.total.actual.toFixed(2)}</td>
+                                    <td style="padding: 10px; text-align: right; font-weight: 800; color: ${getStatusColor(v.total.status)}; font-size: 14px;">${v.total.diff >= 0 ? '+' : ''}$${v.total.diff.toFixed(2)}</td>
+                                    <td style="padding: 10px; text-align: center; font-size: 16px;">${v.total.icon || '✅'}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        
+                        <div style="margin-top: 12px; font-size: 11px; color: #666; text-align: center;">
+                            Items flagged when over ${t.pct}% AND over $${t.dollar} • 🔴 Over limit • ⚠️ Over budget • ✅ Within budget • 🆕 Unplanned
+                        </div>
+                    </div>
+                `;
+
+                container.style.display = 'block';
+
+            } catch(e) {
+                console.error('Failed to load variance data:', e);
+                document.getElementById('tdp-variance-view').style.display = 'none';
             }
         }
         
