@@ -3472,48 +3472,52 @@
                     }
                 }
 
-                // 5. Add transportation expenses
-                if (dpState.transport) {
-                    const transportModes = ['flight', 'train', 'bus', 'rental'];
-                    for (const mode of transportModes) {
-                        const modeData = dpState.transport[mode];
-                        if (modeData && modeData.active) {
-                            let amount = 0;
-                            let description = '';
-                            let vendor = '';
-                            
-                            switch(mode) {
-                                case 'flight':
-                                    const flightDep = parseFloat(modeData.data.departure || 0);
-                                    const flightRet = parseFloat(modeData.data.return || 0);
-                                    const flightBag = parseFloat(modeData.data.baggage || 0);
-                                    amount = flightDep + flightRet + flightBag;
-                                    description = `Flight: ${flightDep > 0 ? 'Departure $' + flightDep.toFixed(2) : ''}${flightRet > 0 ? (flightDep > 0 ? ', ' : '') + 'Return $' + flightRet.toFixed(2) : ''}${flightBag > 0 ? ', Baggage $' + flightBag.toFixed(2) : ''}${modeData.data.route ? ' (' + modeData.data.route + ')' : ''}`;
-                                    vendor = 'Flight';
-                                    break;
-                                case 'train':
-                                    const trainDep = parseFloat(modeData.data.departure || 0);
-                                    const trainRet = parseFloat(modeData.data.return || 0);
-                                    amount = trainDep + trainRet;
-                                    description = `Train: ${trainDep > 0 ? 'Departure $' + trainDep.toFixed(2) : ''}${trainRet > 0 ? (trainDep > 0 ? ', ' : '') + 'Return $' + trainRet.toFixed(2) : ''}${modeData.data.route ? ' (' + modeData.data.route + ')' : ''}`;
-                                    vendor = 'Train';
-                                    break;
-                                case 'bus':
-                                    const busDep = parseFloat(modeData.data.departure || 0);
-                                    const busRet = parseFloat(modeData.data.return || 0);
-                                    amount = busDep + busRet;
-                                    description = `Bus: ${busDep > 0 ? 'Departure $' + busDep.toFixed(2) : ''}${busRet > 0 ? (busDep > 0 ? ', ' : '') + 'Return $' + busRet.toFixed(2) : ''}${modeData.data.route ? ' (' + modeData.data.route + ')' : ''}`;
-                                    vendor = 'Bus';
-                                    break;
-                                case 'rental':
-                                    const rentalDays = parseFloat(modeData.data.days || 0);
-                                    const rentalRate = parseFloat(modeData.data.rate || 0);
-                                    const rentalInsurance = parseFloat(modeData.data.insurance || 0);
-                                    const rentalFuel = parseFloat(modeData.data.fuel || 0);
-                                    amount = (rentalDays * rentalRate) + rentalInsurance + rentalFuel;
-                                    description = `Rental Car: ${rentalDays} days @ $${rentalRate.toFixed(2)}/day${rentalInsurance > 0 ? ', Insurance $' + rentalInsurance.toFixed(2) : ''}${rentalFuel > 0 ? ', Fuel $' + rentalFuel.toFixed(2) : ''}`;
-                                    vendor = 'Rental Car';
-                                    break;
+                // 5. Add transportation expenses - read directly from form
+                const transportModes = ['flight', 'train', 'bus', 'rental'];
+                for (const mode of transportModes) {
+                    const button = document.querySelector(`#dp-transport-toggles [data-mode="${mode}"]`);
+                    const isActive = button && button.classList.contains('active');
+                    
+                    if (isActive) {
+                        let amount = 0;
+                        let description = '';
+                        let vendor = '';
+                        
+                        switch(mode) {
+                            case 'flight':
+                                const flightDep = parseFloat(document.getElementById('dp-flight-dep')?.value || 0);
+                                const flightRet = parseFloat(document.getElementById('dp-flight-ret')?.value || 0);
+                                const flightBag = parseFloat(document.getElementById('dp-flight-bag')?.value || 0);
+                                const flightRoute = document.getElementById('dp-flight-route')?.value || '';
+                                amount = flightDep + flightRet + flightBag;
+                                description = `Flight: ${flightDep > 0 ? 'Departure $' + flightDep.toFixed(2) : ''}${flightRet > 0 ? (flightDep > 0 ? ', ' : '') + 'Return $' + flightRet.toFixed(2) : ''}${flightBag > 0 ? ', Baggage $' + flightBag.toFixed(2) : ''}${flightRoute ? ' (' + flightRoute + ')' : ''}`;
+                                vendor = 'Flight';
+                                break;
+                            case 'train':
+                                const trainDep = parseFloat(document.getElementById('dp-train-dep')?.value || 0);
+                                const trainRet = parseFloat(document.getElementById('dp-train-ret')?.value || 0);
+                                const trainRoute = document.getElementById('dp-train-route')?.value || '';
+                                amount = trainDep + trainRet;
+                                description = `Train: ${trainDep > 0 ? 'Departure $' + trainDep.toFixed(2) : ''}${trainRet > 0 ? (trainDep > 0 ? ', ' : '') + 'Return $' + trainRet.toFixed(2) : ''}${trainRoute ? ' (' + trainRoute + ')' : ''}`;
+                                vendor = 'Train';
+                                break;
+                            case 'bus':
+                                const busDep = parseFloat(document.getElementById('dp-bus-dep')?.value || 0);
+                                const busRet = parseFloat(document.getElementById('dp-bus-ret')?.value || 0);
+                                const busRoute = document.getElementById('dp-bus-route')?.value || '';
+                                amount = busDep + busRet;
+                                description = `Bus: ${busDep > 0 ? 'Departure $' + busDep.toFixed(2) : ''}${busRet > 0 ? (busDep > 0 ? ', ' : '') + 'Return $' + busRet.toFixed(2) : ''}${busRoute ? ' (' + busRoute + ')' : ''}`;
+                                vendor = 'Bus';
+                                break;
+                            case 'rental':
+                                const rentalDays = parseFloat(document.getElementById('dp-rental-days')?.value || 0);
+                                const rentalRate = parseFloat(document.getElementById('dp-rental-rate')?.value || 0);
+                                const rentalInsurance = parseFloat(document.getElementById('dp-rental-insurance')?.value || 0);
+                                const rentalFuel = parseFloat(document.getElementById('dp-rental-fuel')?.value || 0);
+                                amount = (rentalDays * rentalRate) + rentalInsurance + rentalFuel;
+                                description = `Rental Car: ${rentalDays} days @ $${rentalRate.toFixed(2)}/day${rentalInsurance > 0 ? ', Insurance $' + rentalInsurance.toFixed(2) : ''}${rentalFuel > 0 ? ', Fuel $' + rentalFuel.toFixed(2) : ''}`;
+                                vendor = 'Rental Car';
+                                break;
                             }
                             
                             if (amount > 0) {
