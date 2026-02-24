@@ -3181,7 +3181,7 @@ app.get('/api/trips/:id/variance', requireAuth, (req, res) => {
                         
                         if (estimate === 0 && actual > 0) {
                             // Unplanned category
-                            status = 'unplanned';
+                            status = 'new';
                             icon = '🆕';
                             description = 'Not in AT';
                         } else if (estimate > 0 && actual === 0) {

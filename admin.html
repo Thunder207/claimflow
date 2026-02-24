@@ -2924,7 +2924,7 @@ try {
                     case 'red': return { color: '#dc3545', bg: '#fff5f5', icon: '🔴' };
                     case 'yellow': return { color: '#f0ad4e', bg: '#fff8e1', icon: '⚠️' };
                     case 'green': return { color: '#28a745', bg: '#f0fff0', icon: '✅' };
-                    case 'unplanned': return { color: '#0d6efd', bg: '#e8f0fe', icon: '🆕' };
+                    case 'new': return { color: '#0d6efd', bg: '#e8f0fe', icon: '🆕' };
                     case 'unclaimed': return { color: '#6c757d', bg: '#f8f9fa', icon: '➖' };
                     default: return { color: '#28a745', bg: '#f0fff0', icon: '✅' };
                 }
@@ -2933,10 +2933,10 @@ try {
                 const s = getStyle(cat.status);
                 const sign = cat.diff >= 0 ? '+' : '';
                 let varianceText, pctText;
-                if (cat.status === 'unplanned') { varianceText = '+$' + cat.actual.toFixed(2); pctText = 'NEW'; }
+                if (cat.status === 'new') { varianceText = '+$' + cat.actual.toFixed(2); pctText = 'NEW'; }
                 else if (cat.status === 'unclaimed') { varianceText = '—'; pctText = 'Not claimed'; }
                 else { varianceText = sign + '$' + cat.diff.toFixed(2); pctText = sign + cat.pct.toFixed(1) + '%'; }
-                const estText = cat.status === 'unplanned' ? '—' : '$' + cat.estimate.toFixed(2);
+                const estText = cat.status === 'new' ? '—' : '$' + cat.estimate.toFixed(2);
                 const actText = cat.status === 'unclaimed' ? '$0.00' : '$' + cat.actual.toFixed(2);
                 return `<tr style="background: ${s.bg}; border-bottom: 1px solid #eee;">
                     <td style="padding: 8px 10px; font-weight: 600;">${cat.icon || s.icon} ${cat.label || ''}</td>

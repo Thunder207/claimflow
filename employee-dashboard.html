@@ -6964,7 +6964,7 @@
                         case 'red': return '#dc3545';
                         case 'yellow': return '#f0ad4e';
                         case 'green': return '#28a745';
-                        case 'unplanned': return '#fd7e14';
+                        case 'new': return '#fd7e14';
                         case 'unclaimed': return '#6c757d';
                         default: return '#28a745';
                     }
@@ -6975,7 +6975,7 @@
                         case 'red': return '#fff5f5';
                         case 'yellow': return '#fff8e1';
                         case 'green': return '#f0fff0';
-                        case 'unplanned': return '#fff3e0';
+                        case 'new': return '#fff3e0';
                         case 'unclaimed': return '#f8f9fa';
                         default: return '#f0fff0';
                     }
@@ -6983,7 +6983,7 @@
 
                 function getAlertMessage() {
                     const overBudgetCategories = Object.entries(v).filter(([key, variance]) => 
-                        key !== 'total' && (variance.status === 'red' || variance.status === 'yellow')
+                        key !== 'total' && (variance.status === 'red' || variance.status === 'yellow' || variance.status === 'new')
                     );
 
                     if (overBudgetCategories.length === 0) {
