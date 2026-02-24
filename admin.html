@@ -1634,9 +1634,13 @@ try {
                         ` : ''}
                         <!-- Expandable Day-by-Day Breakdown -->
                         <div style="padding: 12px 20px; border-bottom: 1px solid #eee;">
-                            <button onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.textContent = this.nextElementSibling.style.display === 'none' ? '📋 View Day-by-Day Breakdown ▼' : '📋 Hide Breakdown ▲';" style="background: none; border: 1px solid #dee2e6; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; color: #495057; width: 100%;">
-                                📋 View Day-by-Day Breakdown ▼
-                            </button>
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
+                                <button onclick="this.parentElement.nextElementSibling.style.display = this.parentElement.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.textContent = this.parentElement.nextElementSibling.style.display === 'none' ? '📋 View Day-by-Day Breakdown ▼' : '📋 Hide Breakdown ▲';" style="background: none; border: 1px solid #dee2e6; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; color: #495057; flex: 1;">
+                                    📋 View Day-by-Day Breakdown ▼
+                                </button>
+                                <button onclick="loadVariance(${group.tripId})" style="background: #667eea; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; cursor: pointer;">📊 View AT vs Actual Variance</button>
+                            </div>
+                            <div id="variance-${group.tripId}" style="display: none; margin-bottom: 10px;"></div>
                             <div style="display: none; margin-top: 12px;">
                                 <div style="display: flex; flex-direction: column; gap: 8px;">
                                     ${dates.map((date, idx) => {
@@ -2763,6 +2767,11 @@ try {
                                 <button onclick="approveTravelAuth(${auth.id})" class="btn btn-success" style="min-height: 44px; padding: 10px 24px; font-size: 15px;">✅ Approve</button>
                                 <button onclick="rejectTravelAuth(${auth.id})" class="btn btn-danger" style="min-height: 44px; padding: 10px 24px; font-size: 15px;">❌ Reject</button>
                             </div>` : ''}
+                            ${auth.status === 'approved' && auth.trip_id ? `
+                            <div style="padding: 16px 20px; background: #f8f9fa; display: flex; gap: 10px; flex-wrap: wrap;">
+                                <button onclick="loadVariance(${auth.trip_id})" style="background: #667eea; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; cursor: pointer;">📊 View AT vs Actual Variance</button>
+                            </div>
+                            <div id="variance-${auth.trip_id}" style="display: none;"></div>` : ''}
                         </div>`;
                 }).join('');
                 
@@ -2888,6 +2897,80 @@ try {
                 }
             } catch (error) {
                 showMessage('error', '❌ Network error. Please try again.');
+            }
+        }
+
+        async function loadVariance(tripId) {
+            const container = document.getElementById(`variance-${tripId}`);
+            if (!container) return;
+            
+            // Toggle
+            if (container.style.display === 'block') { container.style.display = 'none'; return; }
+            
+            container.innerHTML = '<p>Loading variance data...</p>';
+            container.style.display = 'block';
+            
+            try {
+                const resp = await fetch(`/api/trips/${tripId}/variance`, { headers: { 'Authorization': `Bearer ${sessionId}` } });
+                const data = await resp.json();
+                
+                if (!data.variance) { container.innerHTML = '<p style="color: #999;">No linked AT found for variance comparison.</p>'; return; }
+                
+                const v = data.variance;
+                const t = data.thresholds;
+                
+                function rowHtml(label, emoji, variance) {
+                    const color = variance.status === 'red' ? '#dc3545' : variance.status === 'yellow' ? '#f0ad4e' : '#28a745';
+                    const bg = variance.status === 'red' ? '#fff5f5' : variance.status === 'yellow' ? '#fff8e1' : '#f0fff0';
+                    const sign = variance.diff >= 0 ? '+' : '';
+                    return `<tr style="background: ${bg};">
+                        <td style="padding: 10px; font-weight: 600;">${emoji} ${label}</td>
+                        <td style="padding: 10px; text-align: right;">$${variance.estimate.toFixed(2)}</td>
+                        <td style="padding: 10px; text-align: right;">$${variance.actual.toFixed(2)}</td>
+                        <td style="padding: 10px; text-align: right; color: ${color}; font-weight: bold;">${sign}$${variance.diff.toFixed(2)}</td>
+                        <td style="padding: 10px; text-align: right; color: ${color}; font-weight: bold;">${sign}${variance.pct.toFixed(1)}%</td>
+                        <td style="padding: 10px; text-align: center;">
+                            <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: ${color};"></span>
+                        </td>
+                    </tr>`;
+                }
+                
+                container.innerHTML = `
+                    <div style="background: white; border-radius: 10px; padding: 16px; margin-top: 10px; border: 2px solid #667eea;">
+                        <h4 style="color: #2c3e50; margin-bottom: 12px;">📊 AT vs Actual Trip Variance</h4>
+                        <p style="font-size: 12px; color: #666; margin-bottom: 12px;">
+                            🔴 Red = over ${t.pct}% AND over $${t.dollar} | 🟡 Yellow = one exceeded | 🟢 Green = within limits
+                        </p>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                            <thead>
+                                <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                                    <th style="padding: 10px; text-align: left;">Category</th>
+                                    <th style="padding: 10px; text-align: right;">AT Estimate</th>
+                                    <th style="padding: 10px; text-align: right;">Actual</th>
+                                    <th style="padding: 10px; text-align: right;">Variance $</th>
+                                    <th style="padding: 10px; text-align: right;">Variance %</th>
+                                    <th style="padding: 10px; text-align: center;">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rowHtml('Meals', '🍽️', v.meals)}
+                                ${rowHtml('Lodging', '🏨', v.lodging)}
+                                ${rowHtml('Transport', '🚗', v.transport)}
+                                ${rowHtml('Other', '📦', v.other)}
+                                <tr style="border-top: 3px solid #2c3e50; background: ${v.total.status === 'red' ? '#fff5f5' : v.total.status === 'yellow' ? '#fff8e1' : '#f0fff0'};">
+                                    <td style="padding: 12px; font-weight: 800; font-size: 15px;">💰 TOTAL</td>
+                                    <td style="padding: 12px; text-align: right; font-weight: 800;">$${v.total.estimate.toFixed(2)}</td>
+                                    <td style="padding: 12px; text-align: right; font-weight: 800;">$${v.total.actual.toFixed(2)}</td>
+                                    <td style="padding: 12px; text-align: right; font-weight: 800; color: ${v.total.status === 'red' ? '#dc3545' : v.total.status === 'yellow' ? '#f0ad4e' : '#28a745'};">${v.total.diff >= 0 ? '+' : ''}$${v.total.diff.toFixed(2)}</td>
+                                    <td style="padding: 12px; text-align: right; font-weight: 800; color: ${v.total.status === 'red' ? '#dc3545' : v.total.status === 'yellow' ? '#f0ad4e' : '#28a745'};">${v.total.diff >= 0 ? '+' : ''}${v.total.pct.toFixed(1)}%</td>
+                                    <td style="padding: 12px; text-align: center;"><span style="display: inline-block; width: 16px; height: 16px; border-radius: 50%; background: ${v.total.status === 'red' ? '#dc3545' : v.total.status === 'yellow' ? '#f0ad4e' : '#28a745'};"></span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } catch(e) {
+                container.innerHTML = '<p style="color: #dc3545;">Failed to load variance data.</p>';
             }
         }
 
