@@ -3687,6 +3687,65 @@
                 document.getElementById('at-start-date').value = at.start_date || '';
                 document.getElementById('at-end-date').value = at.end_date || '';
                 document.getElementById('at-purpose').value = at.purpose || '';
+                
+                // Load transportation data
+                atResetTransportForm(); // Clear any existing data first
+                
+                if (at.details) {
+                    try {
+                        const details = JSON.parse(at.details);
+                        if (details.transport) {
+                            const transportModes = ['personal', 'flight', 'train', 'bus', 'rental'];
+                            transportModes.forEach(mode => {
+                                const modeData = details.transport[mode];
+                                if (modeData && modeData.active) {
+                                    // Activate the transport button
+                                    const button = document.querySelector(`#at-transport-toggles [data-mode="${mode}"]`);
+                                    if (button) {
+                                        atToggleTransport(mode); // This will show the section and set colors
+                                        
+                                        // Populate the input fields
+                                        switch(mode) {
+                                            case 'personal':
+                                                if (modeData.data.kilometers) {
+                                                    document.getElementById('at-vehicle-km').value = modeData.data.kilometers;
+                                                }
+                                                break;
+                                            case 'flight':
+                                                if (modeData.data.departure) document.getElementById('at-flight-dep').value = modeData.data.departure;
+                                                if (modeData.data.return) document.getElementById('at-flight-ret').value = modeData.data.return;
+                                                if (modeData.data.baggage) document.getElementById('at-flight-bag').value = modeData.data.baggage;
+                                                if (modeData.data.route) document.getElementById('at-flight-route').value = modeData.data.route;
+                                                break;
+                                            case 'train':
+                                                if (modeData.data.departure) document.getElementById('at-train-dep').value = modeData.data.departure;
+                                                if (modeData.data.return) document.getElementById('at-train-ret').value = modeData.data.return;
+                                                if (modeData.data.route) document.getElementById('at-train-route').value = modeData.data.route;
+                                                break;
+                                            case 'bus':
+                                                if (modeData.data.departure) document.getElementById('at-bus-dep').value = modeData.data.departure;
+                                                if (modeData.data.return) document.getElementById('at-bus-ret').value = modeData.data.return;
+                                                if (modeData.data.route) document.getElementById('at-bus-route').value = modeData.data.route;
+                                                break;
+                                            case 'rental':
+                                                if (modeData.data.days) document.getElementById('at-rental-days').value = modeData.data.days;
+                                                if (modeData.data.rate) document.getElementById('at-rental-rate').value = modeData.data.rate;
+                                                if (modeData.data.insurance) document.getElementById('at-rental-insurance').value = modeData.data.insurance;
+                                                if (modeData.data.fuel) document.getElementById('at-rental-fuel').value = modeData.data.fuel;
+                                                break;
+                                        }
+                                    }
+                                }
+                            });
+                            
+                            // Recalculate totals after loading data
+                            atRecalcTotal();
+                        }
+                    } catch (error) {
+                        console.error('Error parsing transport details:', error);
+                    }
+                }
+                
                 const form = document.getElementById('create-at-form');
                 form.onsubmit = (event) => updateTravelAuth(event, atId);
                 document.querySelector('#create-at-modal h3').textContent = '✏️ Edit Authorization to Travel';
@@ -3709,6 +3768,44 @@
             if (!name || !startDate || !endDate) { showTAMessage('error', 'Please fill in all required fields.'); return; }
             if (new Date(startDate) > new Date(endDate)) { showTAMessage('error', 'End date must be after start date.'); return; }
 
+            // Calculate transportation estimate
+            let transportEstimate = 0;
+            const transportData = atGetTransportData();
+            
+            Object.keys(transportData).forEach(mode => {
+                if (transportData[mode].active) {
+                    switch(mode) {
+                        case 'personal':
+                            const km = parseFloat(transportData[mode].data.kilometers || 0);
+                            transportEstimate += km * 0.68;
+                            break;
+                        case 'flight':
+                            const dep = parseFloat(transportData[mode].data.departure || 0);
+                            const ret = parseFloat(transportData[mode].data.return || 0);
+                            const bag = parseFloat(transportData[mode].data.baggage || 0);
+                            transportEstimate += dep + ret + bag;
+                            break;
+                        case 'train':
+                            const trainDep = parseFloat(transportData[mode].data.departure || 0);
+                            const trainRet = parseFloat(transportData[mode].data.return || 0);
+                            transportEstimate += trainDep + trainRet;
+                            break;
+                        case 'bus':
+                            const busDep = parseFloat(transportData[mode].data.departure || 0);
+                            const busRet = parseFloat(transportData[mode].data.return || 0);
+                            transportEstimate += busDep + busRet;
+                            break;
+                        case 'rental':
+                            const rentalDays = parseFloat(transportData[mode].data.days || 0);
+                            const rentalRate = parseFloat(transportData[mode].data.rate || 0);
+                            const rentalInsurance = parseFloat(transportData[mode].data.insurance || 0);
+                            const rentalFuel = parseFloat(transportData[mode].data.fuel || 0);
+                            transportEstimate += (rentalDays * rentalRate) + rentalInsurance + rentalFuel;
+                            break;
+                    }
+                }
+            });
+
             try {
                 const response = await fetch(`/api/travel-auth/${atId}`, {
                     method: 'PUT',
@@ -3716,8 +3813,8 @@
                     body: JSON.stringify({
                         name: sanitizeInput(name), destination: sanitizeInput(destination || ''),
                         start_date: startDate, end_date: endDate, purpose: sanitizeInput(purpose || ''),
-                        est_transport: 0, est_lodging: 0, est_meals: 0, est_other: 0,
-                        details: JSON.stringify({})
+                        est_transport: transportEstimate, est_lodging: 0, est_meals: 0, est_other: 0,
+                        details: JSON.stringify({ transport: transportData })
                     })
                 });
                 const result = await response.json();
