@@ -424,6 +424,25 @@ function initializeDatabase() {
             FOREIGN KEY (employee_id) REFERENCES employees (id),
             FOREIGN KEY (trip_id) REFERENCES trips (id),
             FOREIGN KEY (approver_id) REFERENCES employees (id)
+        )`,
+        
+        // App settings table
+        `CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_by INTEGER,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`,
+
+        // Variance threshold audit log
+        `CREATE TABLE IF NOT EXISTS settings_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            setting_key TEXT NOT NULL,
+            old_value TEXT,
+            new_value TEXT NOT NULL,
+            changed_by INTEGER NOT NULL,
+            changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (changed_by) REFERENCES employees(id)
         )`
     ];
     
@@ -641,6 +660,20 @@ function insertDefaultData() {
             }
         });
     }, 2000);
+    
+    // Seed default variance thresholds
+    db.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('variance_pct_threshold', '10')`, (err) => {
+        if (err && !err.message.includes('UNIQUE constraint failed')) {
+            console.error('❌ Error inserting variance_pct_threshold:', err.message);
+        }
+    });
+    db.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('variance_dollar_threshold', '100')`, (err) => {
+        if (err && !err.message.includes('UNIQUE constraint failed')) {
+            console.error('❌ Error inserting variance_dollar_threshold:', err.message);
+        }
+    });
+    
+    console.log('✅ Default variance threshold settings initialized');
 }
 
 // 🌐 Routes
