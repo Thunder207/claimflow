@@ -6314,9 +6314,8 @@
                 console.log('dpSaveTransport called, selectedAuthId:', selectedAuthId);
                 
                 if (!selectedAuthId) {
-                    console.log('No selectedAuthId available for transport save, selectedAuthId:', selectedAuthId);
-                    showMessage('info', 'Please select a travel authorization first before adding transportation');
-                    return;
+                    console.log('No selectedAuthId available for transport save - silently skipping');
+                    return; // Silently return instead of showing error message
                 }
                 
                 console.log('Saving transport for authId:', selectedAuthId);
@@ -6392,16 +6391,29 @@
                 }
                 dpState.transport = transportData;
                 
-                // Save to localStorage for persistence
+                // Save to localStorage for persistence (with error handling)
                 const stateKey = `dpState_${selectedAuthId}`;
-                localStorage.setItem(stateKey, JSON.stringify(dpState));
-                
-                console.log('Transport saved successfully to localStorage key:', stateKey);
-                showMessage('success', '✅ Transportation data saved');
+                try {
+                    localStorage.setItem(stateKey, JSON.stringify(dpState));
+                    console.log('Transport saved successfully to localStorage key:', stateKey);
+                    // Only show success message if user actually interacted with transport
+                    const hasActiveTransport = Object.values(transportData).some(mode => mode.active);
+                    if (hasActiveTransport) {
+                        showMessage('success', '✅ Transportation data saved');
+                    }
+                } catch (storageError) {
+                    console.warn('LocalStorage save failed:', storageError);
+                    // Don't throw error for localStorage issues - data is still in dpState
+                }
                 
             } catch (error) {
                 console.error('Error saving transport:', error);
-                showMessage('error', 'Failed to save transportation data: ' + error.message);
+                // Only show error for critical issues, not minor ones
+                if (error.message && !error.message.includes('localStorage')) {
+                    showMessage('error', 'Failed to save transportation data: ' + error.message);
+                } else {
+                    console.warn('Non-critical transport save issue:', error);
+                }
             }
         }
 
