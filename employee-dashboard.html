@@ -6924,12 +6924,12 @@
                 return; // Validation failed, don't submit
             }
 
-            // Save transportation data first
+            // Save transportation data (non-blocking - don't stop submission if save fails)
             try {
                 await tdpSaveTrip();
             } catch (error) {
-                showMessage('error', 'Failed to save transportation data');
-                return;
+                console.warn('Trip save skipped (non-critical):', error.message);
+                // Don't return - continue with expense creation which is the important part
             }
 
             // First, create expense records for any enabled meals that don't have DB records yet
@@ -6985,39 +6985,78 @@
                 await tdpDeleteExpense(tdpState.vehicleExpenseId);
             }
 
-            // Handle transportation expenses - create DB records for each active transport mode
-            if (currentTrip && currentTrip.transport) {
-                const modes = ['flight', 'train', 'bus', 'rental'];
+            // Handle transportation expenses - read directly from form DOM
+            const tdpTransportModes = ['flight', 'train', 'bus', 'rental'];
+            for (const mode of tdpTransportModes) {
+                const button = document.querySelector(`#tdp-transport-toggles [data-mode="${mode}"]`);
+                const isActive = button && button.classList.contains('active');
                 
-                for (const mode of modes) {
-                    const modeData = currentTrip.transport[mode];
-                    if (modeData && modeData.active) {
-                        const subtotal = calculateTransportSubtotal(mode);
-                        if (subtotal > 0) {
-                            try {
-                                // Create expense record for this transport mode
-                                const formData = new FormData();
-                                formData.append('expense_type', `transport_${mode}`);
-                                formData.append('date', tdpState.startDate);
-                                formData.append('location', tdpState.destination);
-                                formData.append('amount', subtotal);
-                                formData.append('vendor', getTransportVendor(mode, modeData.data));
-                                formData.append('description', getTransportDescription(mode, modeData.data, subtotal));
-                                formData.append('trip_id', tdpState.tripId);
-                                
-                                const response = await fetch('/api/expenses', {
-                                    method: 'POST',
-                                    headers: { 'Authorization': `Bearer ${sessionId}` },
-                                    body: formData
-                                });
-                                
-                                if (!response.ok) {
-                                    console.error(`Failed to create ${mode} expense`);
-                                }
-                                
-                            } catch (err) {
-                                console.error(`Error creating ${mode} expense:`, err);
+                if (isActive) {
+                    let amount = 0;
+                    let description = '';
+                    let vendor = '';
+                    
+                    switch(mode) {
+                        case 'flight':
+                            const fDep = parseFloat(document.getElementById('tdp-flight-dep')?.value || 0);
+                            const fRet = parseFloat(document.getElementById('tdp-flight-ret')?.value || 0);
+                            const fBag = parseFloat(document.getElementById('tdp-flight-bag')?.value || 0);
+                            const fRoute = document.getElementById('tdp-flight-route')?.value || '';
+                            amount = fDep + fRet + fBag;
+                            description = `Flight: ${fDep > 0 ? 'Departure $' + fDep.toFixed(2) : ''}${fRet > 0 ? (fDep > 0 ? ', ' : '') + 'Return $' + fRet.toFixed(2) : ''}${fBag > 0 ? ', Baggage $' + fBag.toFixed(2) : ''}${fRoute ? ' (' + fRoute + ')' : ''}`;
+                            vendor = fRoute || 'Airline';
+                            break;
+                        case 'train':
+                            const tDep = parseFloat(document.getElementById('tdp-train-dep')?.value || 0);
+                            const tRet = parseFloat(document.getElementById('tdp-train-ret')?.value || 0);
+                            const tRoute = document.getElementById('tdp-train-route')?.value || '';
+                            amount = tDep + tRet;
+                            description = `Train: ${tDep > 0 ? 'Departure $' + tDep.toFixed(2) : ''}${tRet > 0 ? (tDep > 0 ? ', ' : '') + 'Return $' + tRet.toFixed(2) : ''}${tRoute ? ' (' + tRoute + ')' : ''}`;
+                            vendor = tRoute || 'Train Company';
+                            break;
+                        case 'bus':
+                            const bDep = parseFloat(document.getElementById('tdp-bus-dep')?.value || 0);
+                            const bRet = parseFloat(document.getElementById('tdp-bus-ret')?.value || 0);
+                            const bRoute = document.getElementById('tdp-bus-route')?.value || '';
+                            amount = bDep + bRet;
+                            description = `Bus: ${bDep > 0 ? 'Departure $' + bDep.toFixed(2) : ''}${bRet > 0 ? (bDep > 0 ? ', ' : '') + 'Return $' + bRet.toFixed(2) : ''}${bRoute ? ' (' + bRoute + ')' : ''}`;
+                            vendor = bRoute || 'Bus Company';
+                            break;
+                        case 'rental':
+                            const rDays = parseFloat(document.getElementById('tdp-rental-days')?.value || 0);
+                            const rRate = parseFloat(document.getElementById('tdp-rental-rate')?.value || 0);
+                            const rIns = parseFloat(document.getElementById('tdp-rental-insurance')?.value || 0);
+                            const rFuel = parseFloat(document.getElementById('tdp-rental-fuel')?.value || 0);
+                            amount = (rDays * rRate) + rIns + rFuel;
+                            description = `Rental Car: ${rDays} days @ $${rRate.toFixed(2)}/day${rIns > 0 ? ', Insurance $' + rIns.toFixed(2) : ''}${rFuel > 0 ? ', Fuel $' + rFuel.toFixed(2) : ''}`;
+                            vendor = 'Rental Car Company';
+                            break;
+                    }
+                    
+                    if (amount > 0) {
+                        try {
+                            const formData = new FormData();
+                            formData.append('expense_type', `transport_${mode}`);
+                            formData.append('date', tdpState.startDate);
+                            formData.append('location', tdpState.destination);
+                            formData.append('amount', amount);
+                            formData.append('vendor', vendor);
+                            formData.append('description', description);
+                            formData.append('trip_id', tdpState.tripId);
+                            
+                            const response = await fetch('/api/expenses', {
+                                method: 'POST',
+                                headers: { 'Authorization': `Bearer ${sessionId}` },
+                                body: formData
+                            });
+                            
+                            if (!response.ok) {
+                                console.error(`Failed to create ${mode} expense:`, response.status);
+                            } else {
+                                console.log(`✅ ${mode} expense created: $${amount}`);
                             }
+                        } catch (err) {
+                            console.error(`Error creating ${mode} expense:`, err);
                         }
                     }
                 }

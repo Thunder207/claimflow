@@ -977,7 +977,7 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
         }
     
     // CRITICAL FIX: Validate expense type and handle common aliases
-    const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other'];
+    const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other', 'transport', 'transport_flight', 'transport_train', 'transport_bus', 'transport_rental'];
     
     // Handle common expense type aliases
     if (expense_type === 'meals') {
