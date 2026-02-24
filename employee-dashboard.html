@@ -5938,9 +5938,11 @@
                 document.getElementById('tdp-trip-name').textContent = `🧳 ${tdpState.tripName}`;
                 document.getElementById('tdp-trip-dates').textContent = `📅 ${tdpState.startDate} → ${tdpState.endDate}${tdpState.destination ? ` · 📍 ${tdpState.destination}` : ''}`;
 
-                const statusColors = { draft: '#6c757d', pending: '#ffc107', submitted: '#ffc107', approved: '#28a745', rejected: '#dc3545' };
-                const statusEmojis = { draft: '📝', pending: '⏳', submitted: '⏳', approved: '✅', rejected: '❌' };
-                document.getElementById('tdp-status-badge').innerHTML = `<span style="background: ${statusColors[tdpState.tripStatus] || '#6c757d'}22; color: ${statusColors[tdpState.tripStatus] || '#6c757d'}; padding: 3px 10px; border-radius: 12px; font-weight: 600; border: 1px solid ${statusColors[tdpState.tripStatus] || '#6c757d'}">${statusEmojis[tdpState.tripStatus] || '📋'} ${tdpState.tripStatus.toUpperCase()}${!tdpState.canEdit ? ' (read-only)' : ''}</span>`;
+                const statusColors = { draft: '#6c757d', pending: '#ffc107', submitted: '#ffc107', approved: '#28a745', rejected: '#dc3545', active: '#17a2b8' };
+                const statusEmojis = { draft: '📝', pending: '⏳', submitted: '⏳', approved: '✅', rejected: '❌', active: '✏️' };
+                const statusLabels = { draft: 'DRAFT', pending: 'PENDING', submitted: 'SUBMITTED', approved: 'APPROVED', rejected: 'REJECTED', active: 'READY TO EDIT' };
+                const statusLabel = statusLabels[tdpState.tripStatus] || tdpState.tripStatus.toUpperCase();
+                document.getElementById('tdp-status-badge').innerHTML = `<span style="background: ${statusColors[tdpState.tripStatus] || '#6c757d'}22; color: ${statusColors[tdpState.tripStatus] || '#6c757d'}; padding: 3px 10px; border-radius: 12px; font-weight: 600; border: 1px solid ${statusColors[tdpState.tripStatus] || '#6c757d'}">${statusEmojis[tdpState.tripStatus] || '📋'} ${statusLabel}${!tdpState.canEdit ? ' (read-only)' : ''}</span>`;
 
                 // Use expenses from trip response
                 tdpExpenses = Array.isArray(trip.expenses) ? trip.expenses : [];
