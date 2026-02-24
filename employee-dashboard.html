@@ -6341,7 +6341,12 @@
                 button.style.color = colors.color;
                 button.style.borderColor = colors.border;
                 
-                if (section) section.style.display = 'block';
+                if (section) {
+                    section.style.display = 'block';
+                    setTimeout(() => {
+                        section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }, 150);
+                }
             }
             
             // Update transport total
@@ -6518,6 +6523,9 @@
                 button.style.borderColor = '#17a2b8';
                 button.style.color = 'white';
                 section.style.display = 'block';
+                setTimeout(() => {
+                    section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }, 150);
             }
             
             // Handle special case for personal vehicle - show/hide vehicle section
