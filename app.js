@@ -1670,6 +1670,57 @@ app.get('/api/login-audit-log', requireAuth, requireRole('admin'), (req, res) =>
     });
 });
 
+// GET /api/settings/variance — Get variance thresholds (any authenticated user)
+app.get('/api/settings/variance', requireAuth, (req, res) => {
+    db.all(`SELECT key, value FROM app_settings WHERE key IN ('variance_pct_threshold', 'variance_dollar_threshold')`, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Failed to load settings' });
+        const settings = {};
+        rows.forEach(r => { settings[r.key] = r.value; });
+        res.json({
+            variance_pct_threshold: parseFloat(settings.variance_pct_threshold || '10'),
+            variance_dollar_threshold: parseFloat(settings.variance_dollar_threshold || '100')
+        });
+    });
+});
+
+// PUT /api/settings/variance — Update variance thresholds (admin only)
+app.put('/api/settings/variance', requireAuth, requireRole('admin'), (req, res) => {
+    const { variance_pct_threshold, variance_dollar_threshold } = req.body;
+    
+    // Validation
+    const pct = parseFloat(variance_pct_threshold);
+    const dollar = parseFloat(variance_dollar_threshold);
+    if (isNaN(pct) || pct <= 0) return res.status(400).json({ error: 'Percentage threshold must be greater than 0' });
+    if (isNaN(dollar) || dollar <= 0) return res.status(400).json({ error: 'Dollar threshold must be greater than 0' });
+    
+    // Get old values for audit
+    db.all(`SELECT key, value FROM app_settings WHERE key IN ('variance_pct_threshold', 'variance_dollar_threshold')`, [], (err, oldRows) => {
+        const oldSettings = {};
+        if (!err && oldRows) oldRows.forEach(r => { oldSettings[r.key] = r.value; });
+        
+        // Update both settings
+        db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('variance_pct_threshold', ?, ?, CURRENT_TIMESTAMP)`, [String(pct), req.user.employeeId]);
+        db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('variance_dollar_threshold', ?, ?, CURRENT_TIMESTAMP)`, [String(dollar), req.user.employeeId]);
+        
+        // Audit log
+        db.run(`INSERT INTO settings_audit_log (setting_key, old_value, new_value, changed_by) VALUES (?, ?, ?, ?)`,
+            ['variance_thresholds', 
+             `Percentage: ${oldSettings.variance_pct_threshold || '10'}%, Dollar: $${oldSettings.variance_dollar_threshold || '100'}`,
+             `Percentage: ${pct}%, Dollar: $${dollar}`,
+             req.user.employeeId]);
+        
+        res.json({ success: true, message: 'Variance thresholds updated', variance_pct_threshold: pct, variance_dollar_threshold: dollar });
+    });
+});
+
+// GET /api/settings/variance/audit — Get settings audit log (admin only)
+app.get('/api/settings/variance/audit', requireAuth, requireRole('admin'), (req, res) => {
+    db.all(`SELECT sal.*, emp.name as changed_by_name FROM settings_audit_log sal LEFT JOIN employees emp ON sal.changed_by = emp.id ORDER BY sal.changed_at DESC LIMIT 50`, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Failed to load audit log' });
+        res.json(rows || []);
+    });
+});
+
 // CONCUR ENHANCEMENT: Return expense for correction (supervisors only)
 app.post('/api/expenses/:id/return', requireAuth, (req, res) => {
     if (req.user.role !== 'supervisor') {
