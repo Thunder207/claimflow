@@ -3853,7 +3853,7 @@ app.post('/api/travel-auth/:id/expenses', requireAuth, async (req, res) => {
     }
     
     // CRITICAL FIX: Validate expense type for travel auth
-    const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other', 'transport'];
+    const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other', 'transport', 'transport_flight', 'transport_train', 'transport_bus', 'transport_rental'];
     if (!validExpenseTypes.includes(expense_type)) {
         return res.status(400).json({ 
             error: `Invalid expense type "${expense_type}". Valid types: ${validExpenseTypes.join(', ')}`,
