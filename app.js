@@ -3065,6 +3065,78 @@ app.get('/api/trips/:id', requireAuth, (req, res) => {
     });
 });
 
+// GET /api/trips/:id/variance — Compare trip actuals vs AT estimates
+app.get('/api/trips/:id/variance', requireAuth, (req, res) => {
+    const tripId = req.params.id;
+    
+    // Get trip with expenses
+    db.get(`SELECT t.* FROM trips t WHERE t.id = ?`, [tripId], (err, trip) => {
+        if (err || !trip) return res.status(404).json({ error: 'Trip not found' });
+        
+        // Get linked AT
+        db.get(`SELECT * FROM travel_authorizations WHERE trip_id = ? AND status = 'approved'`, [tripId], (atErr, at) => {
+            if (atErr || !at) return res.json({ trip, at: null, variance: null, message: 'No linked AT found' });
+            
+            // Get trip expenses
+            db.all(`SELECT * FROM expenses WHERE trip_id = ? ORDER BY date ASC`, [tripId], (expErr, expenses) => {
+                if (expErr) expenses = [];
+                
+                // Get variance thresholds
+                db.all(`SELECT key, value FROM app_settings WHERE key IN ('variance_pct_threshold', 'variance_dollar_threshold')`, [], (sErr, settings) => {
+                    const settingsMap = {};
+                    if (settings) settings.forEach(s => { settingsMap[s.key] = s.value; });
+                    const pctThreshold = parseFloat(settingsMap.variance_pct_threshold || '10');
+                    const dollarThreshold = parseFloat(settingsMap.variance_dollar_threshold || '100');
+                    
+                    // Calculate actuals by category
+                    let actualMeals = 0, actualLodging = 0, actualTransport = 0, actualOther = 0;
+                    expenses.forEach(e => {
+                        const amt = parseFloat(e.amount) || 0;
+                        if (['breakfast', 'lunch', 'dinner', 'incidentals'].includes(e.expense_type)) actualMeals += amt;
+                        else if (e.expense_type === 'hotel') actualLodging += amt;
+                        else if (['vehicle_km', 'transport_flight', 'transport_train', 'transport_bus', 'transport_rental'].includes(e.expense_type)) actualTransport += amt;
+                        else actualOther += amt;
+                    });
+                    const actualTotal = actualMeals + actualLodging + actualTransport + actualOther;
+                    
+                    // AT estimates
+                    const estMeals = parseFloat(at.est_meals) || 0;
+                    const estLodging = parseFloat(at.est_lodging) || 0;
+                    const estTransport = parseFloat(at.est_transport) || 0;
+                    const estOther = parseFloat(at.est_other) || 0;
+                    const estTotal = parseFloat(at.est_total) || 0;
+                    
+                    // Calculate variance for each category
+                    function calcVariance(actual, estimate) {
+                        const diff = actual - estimate;
+                        const pct = estimate > 0 ? ((diff / estimate) * 100) : (actual > 0 ? 100 : 0);
+                        let status = 'green'; // within threshold
+                        if (Math.abs(pct) > pctThreshold && Math.abs(diff) > dollarThreshold) {
+                            status = 'red'; // both thresholds exceeded
+                        } else if (Math.abs(pct) > pctThreshold || Math.abs(diff) > dollarThreshold) {
+                            status = 'yellow'; // one threshold exceeded
+                        }
+                        return { actual, estimate, diff, pct: Math.round(pct * 10) / 10, status };
+                    }
+                    
+                    res.json({
+                        trip: { id: trip.id, name: trip.trip_name, status: trip.status },
+                        at: { id: at.id, name: at.name, status: at.status },
+                        thresholds: { pct: pctThreshold, dollar: dollarThreshold },
+                        variance: {
+                            meals: calcVariance(actualMeals, estMeals),
+                            lodging: calcVariance(actualLodging, estLodging),
+                            transport: calcVariance(actualTransport, estTransport),
+                            other: calcVariance(actualOther, estOther),
+                            total: calcVariance(actualTotal, estTotal)
+                        }
+                    });
+                });
+            });
+        });
+    });
+});
+
 // Submit trip for approval
 app.post('/api/trips/:id/submit', requireAuth, (req, res) => {
     const tripId = req.params.id;
