@@ -2960,10 +2960,22 @@ app.get('/api/trips/:id', requireAuth, (req, res) => {
             // Calculate total
             const total = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
             
-            res.json({
-                ...trip,
-                expenses: expenses,
-                calculated_total: total
+            // After getting trip and expenses, also get linked AT transport data
+            const atQuery = `SELECT details FROM travel_authorizations WHERE trip_id = ? AND status = 'approved'`;
+            db.get(atQuery, [tripId], (atErr, at) => {
+                let transport = null;
+                if (!atErr && at && at.details) {
+                    try {
+                        const details = JSON.parse(at.details);
+                        transport = details.transport || null;
+                    } catch(e) {}
+                }
+                res.json({
+                    ...trip,
+                    expenses: expenses,
+                    calculated_total: total,
+                    transport: transport  // Include AT transport data
+                });
             });
         });
     });
