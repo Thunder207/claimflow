@@ -3087,6 +3087,73 @@
             dpState.canEdit = canEdit;
             dpState.destination = destination;
 
+            // Pre-populate transportation data from authorization
+            if (authDetails && authDetails.success && authDetails.authorization && authDetails.authorization.details) {
+                try {
+                    const details = JSON.parse(authDetails.authorization.details);
+                    if (details.transport && canEdit) {
+                        // Clear any existing transport selections first
+                        const existingButtons = document.querySelectorAll('#dp-transport-toggles .transport-toggle.active');
+                        existingButtons.forEach(btn => {
+                            const mode = btn.getAttribute('data-mode');
+                            if (mode) dpToggleTransport(mode); // This will deactivate it
+                        });
+                        
+                        // Pre-populate from authorization transport data
+                        const transportModes = ['personal', 'flight', 'train', 'bus', 'rental'];
+                        transportModes.forEach(mode => {
+                            const modeData = details.transport[mode];
+                            if (modeData && modeData.active) {
+                                // Activate the transport button
+                                const button = document.querySelector(`#dp-transport-toggles [data-mode="${mode}"]`);
+                                if (button && !button.classList.contains('active')) {
+                                    dpToggleTransport(mode); // This will activate it and show section
+                                }
+                                
+                                // Populate the input fields with AT data
+                                setTimeout(() => { // Allow section to appear first
+                                    switch(mode) {
+                                        case 'personal':
+                                            if (modeData.data.kilometers) {
+                                                document.getElementById('dp-vehicle-km').value = modeData.data.kilometers;
+                                            }
+                                            break;
+                                        case 'flight':
+                                            if (modeData.data.departure) document.getElementById('dp-flight-dep').value = modeData.data.departure;
+                                            if (modeData.data.return) document.getElementById('dp-flight-ret').value = modeData.data.return;
+                                            if (modeData.data.baggage) document.getElementById('dp-flight-bag').value = modeData.data.baggage;
+                                            if (modeData.data.route) document.getElementById('dp-flight-route').value = modeData.data.route;
+                                            break;
+                                        case 'train':
+                                            if (modeData.data.departure) document.getElementById('dp-train-dep').value = modeData.data.departure;
+                                            if (modeData.data.return) document.getElementById('dp-train-ret').value = modeData.data.return;
+                                            if (modeData.data.route) document.getElementById('dp-train-route').value = modeData.data.route;
+                                            break;
+                                        case 'bus':
+                                            if (modeData.data.departure) document.getElementById('dp-bus-dep').value = modeData.data.departure;
+                                            if (modeData.data.return) document.getElementById('dp-bus-ret').value = modeData.data.return;
+                                            if (modeData.data.route) document.getElementById('dp-bus-route').value = modeData.data.route;
+                                            break;
+                                        case 'rental':
+                                            if (modeData.data.days) document.getElementById('dp-rental-days').value = modeData.data.days;
+                                            if (modeData.data.rate) document.getElementById('dp-rental-rate').value = modeData.data.rate;
+                                            if (modeData.data.insurance) document.getElementById('dp-rental-insurance').value = modeData.data.insurance;
+                                            if (modeData.data.fuel) document.getElementById('dp-rental-fuel').value = modeData.data.fuel;
+                                            break;
+                                    }
+                                    
+                                    // Trigger recalculation and save after populating
+                                    dpRecalcTotal();
+                                    dpSaveTransport();
+                                }, 100);
+                            }
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error parsing transport details for pre-population:', error);
+                }
+            }
+
             // Update header
             document.getElementById('dp-trip-name').textContent = `✈️ ${tripName || 'Travel Authorization'}`;
             document.getElementById('dp-trip-dates').textContent = `📅 ${startDate} → ${endDate}${destination ? ` · 📍 ${destination}` : ''}`;
