@@ -3466,7 +3466,7 @@
         // Submit Day Planner - delete all existing, then add ON items
         async function dpSubmitForApproval() {
             if (!selectedAuthId) return;
-            // No confirm dialog - submit directly on button click
+            if (!confirm('Submit this Travel Authorization for approval? Your supervisor will review it.')) return;
 
             const submitBtn = document.querySelector('#dp-submit-section button');
             submitBtn.disabled = true;
@@ -6918,6 +6918,7 @@
         
         async function tdpSubmitTrip() {
             if (!tdpState.tripId) return;
+            if (!confirm('Submit this trip for approval? All expenses will be sent to your supervisor.')) return;
 
             // Validate transportation before submission
             if (!validateTransportation()) {
