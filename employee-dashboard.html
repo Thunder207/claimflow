@@ -3611,9 +3611,10 @@
                 });
                 const result = await response.json();
                 if (result.success) {
-                    showTAMessage('success', 'Authorization submitted for approval! ✅');
+                    showTAMessage('success', '✅ Successfully submitted for approval!');
                     await loadTravelAuths();
                     handleAuthSelection();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                 } else {
                     showTAMessage('error', result.error || 'Failed to submit');
                 }
@@ -7090,11 +7091,12 @@
                 });
                 const result = await resp.json();
                 if (result.success) {
-                    showMessage('success', '✅ Trip submitted for approval!');
+                    showMessage('success', '✅ Successfully submitted for approval!');
                     tdpState.canEdit = false;
                     tdpState.tripStatus = 'submitted';
                     tdpRenderCards();
                     document.getElementById('tdp-submit-section').style.display = 'none';
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                     document.getElementById('tdp-vehicle-km').disabled = true;
                     // Refresh status badge
                     document.getElementById('tdp-status-badge').innerHTML = '<span style="background: #ffc10722; color: #ffc107; padding: 3px 10px; border-radius: 12px; font-weight: 600; border: 1px solid #ffc107">⏳ SUBMITTED (read-only)</span>';
