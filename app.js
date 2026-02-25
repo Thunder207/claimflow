@@ -2935,9 +2935,11 @@ app.get('/api/trips', requireAuth, (req, res) => {
     const query = `
         SELECT t.*, 
                COUNT(e.id) as expense_count,
-               SUM(e.amount) as calculated_total
+               SUM(e.amount) as calculated_total,
+               ta.id as auth_id
         FROM trips t
         LEFT JOIN expenses e ON t.id = e.trip_id
+        LEFT JOIN travel_authorizations ta ON ta.trip_id = t.id AND ta.status = 'approved'
         WHERE t.employee_id = ?
         GROUP BY t.id
         ORDER BY t.created_at DESC
