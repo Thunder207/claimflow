@@ -3087,7 +3087,11 @@ app.get('/api/trips/:id/variance', requireAuth, (req, res) => {
         db.get(`SELECT * FROM travel_authorizations WHERE trip_id = ? AND status = 'approved'`, [tripId], (atErr, at) => {
             if (atErr || !at) return res.json({ trip, at: null, variance: null, message: 'No linked AT found' });
             
-            // Get trip expenses
+            // Get AT expenses (the authorized amounts)
+            db.all(`SELECT * FROM expenses WHERE travel_auth_id = ? ORDER BY date ASC`, [at.id], (atExpErr, atExpenses) => {
+                if (atExpErr) atExpenses = [];
+            
+            // Get trip expenses (the actual amounts)
             db.all(`SELECT * FROM expenses WHERE trip_id = ? ORDER BY date ASC`, [tripId], (expErr, expenses) => {
                 if (expErr) expenses = [];
                 
@@ -3155,18 +3159,53 @@ app.get('/api/trips/:id/variance', requireAuth, (req, res) => {
                         }
                     });
                     
-                    // AT estimates by granular categories
+                    // AT estimates by granular categories — computed from AT's actual expenses
                     const estimates = {
-                        meals: parseFloat(at.est_meals) || 0,
-                        incidentals: 0, // Part of meals typically, but separate for granular view
-                        hotel: parseFloat(at.est_lodging) || 0,
-                        kilometric: 0, // Part of transport, extract from details
-                        flight: (transportDetails.flight && transportDetails.flight.active) ? parseFloat(transportDetails.flight.total) || 0 : 0,
-                        train: (transportDetails.train && transportDetails.train.active) ? parseFloat(transportDetails.train.total) || 0 : 0,
-                        bus: (transportDetails.bus && transportDetails.bus.active) ? parseFloat(transportDetails.bus.total) || 0 : 0,
-                        rental: (transportDetails.rental && transportDetails.rental.active) ? parseFloat(transportDetails.rental.total) || 0 : 0,
-                        other: parseFloat(at.est_other) || 0
+                        meals: 0,
+                        incidentals: 0,
+                        hotel: 0,
+                        kilometric: 0,
+                        flight: 0,
+                        train: 0,
+                        bus: 0,
+                        rental: 0,
+                        other: 0
                     };
+                    
+                    atExpenses.forEach(e => {
+                        const amt = parseFloat(e.amount) || 0;
+                        switch(e.expense_type) {
+                            case 'breakfast':
+                            case 'lunch':
+                            case 'dinner':
+                                estimates.meals += amt;
+                                break;
+                            case 'incidentals':
+                                estimates.incidentals += amt;
+                                break;
+                            case 'hotel':
+                                estimates.hotel += amt;
+                                break;
+                            case 'vehicle_km':
+                                estimates.kilometric += amt;
+                                break;
+                            case 'transport_flight':
+                                estimates.flight += amt;
+                                break;
+                            case 'transport_train':
+                                estimates.train += amt;
+                                break;
+                            case 'transport_bus':
+                                estimates.bus += amt;
+                                break;
+                            case 'transport_rental':
+                                estimates.rental += amt;
+                                break;
+                            default:
+                                estimates.other += amt;
+                                break;
+                        }
+                    });
                     
                     // Calculate total actuals and estimates
                     const actualTotal = Object.values(actuals).reduce((sum, val) => sum + val, 0);
@@ -3236,6 +3275,7 @@ app.get('/api/trips/:id/variance', requireAuth, (req, res) => {
                     });
                 });
             });
+            }); // close atExpenses query
         });
     });
 });
@@ -4293,7 +4333,7 @@ function updateAuthTotals(atId) {
         let est_transport = 0, est_lodging = 0, est_meals = 0, est_other = 0;
         (expenses || []).forEach(e => {
             const amt = parseFloat(e.amount) || 0;
-            if (e.expense_type === 'vehicle_km') est_transport += amt;
+            if (e.expense_type === 'vehicle_km' || e.expense_type.startsWith('transport_')) est_transport += amt;
             else if (e.expense_type === 'hotel') est_lodging += amt;
             else if (['breakfast', 'lunch', 'dinner', 'incidentals'].includes(e.expense_type)) est_meals += amt;
             else est_other += amt;
