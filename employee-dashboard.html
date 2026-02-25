@@ -3062,8 +3062,8 @@
             infoDiv.style.border = `1px solid ${statusColors[status]}`;
             
             let estimatesHtml = '';
-            if (authDetails && authDetails.success) {
-                const auth = authDetails.authorization;
+            if (authDetails && authDetails.id) {
+                const auth = authDetails;
                 const estTransport = parseFloat(auth.est_transport || 0);
                 const estLodging = parseFloat(auth.est_lodging || 0);
                 const estMeals = parseFloat(auth.est_meals || 0);
@@ -3093,9 +3093,9 @@
             dpState.destination = destination;
 
             // Pre-populate transportation data from authorization
-            if (authDetails && authDetails.success && authDetails.authorization && authDetails.authorization.details) {
+            if (authDetails && authDetails.id && authDetails.details) {
                 try {
-                    const details = JSON.parse(authDetails.authorization.details);
+                    const details = JSON.parse(authDetails.details);
                     if (details.transport) {
                         // Clear any existing transport selections first
                         const existingButtons = document.querySelectorAll('#dp-transport-toggles .transport-toggle.active');
