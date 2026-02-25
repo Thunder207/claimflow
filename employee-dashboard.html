@@ -3096,7 +3096,7 @@
             if (authDetails && authDetails.success && authDetails.authorization && authDetails.authorization.details) {
                 try {
                     const details = JSON.parse(authDetails.authorization.details);
-                    if (details.transport && canEdit) {
+                    if (details.transport) {
                         // Clear any existing transport selections first
                         const existingButtons = document.querySelectorAll('#dp-transport-toggles .transport-toggle.active');
                         existingButtons.forEach(btn => {
