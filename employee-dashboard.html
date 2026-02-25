@@ -6946,6 +6946,7 @@
             }
 
             try {
+                // Fetch AT estimates + thresholds from server, but compute actuals client-side from tdpState
                 const resp = await fetch(`/api/trips/${tripId}/variance`, { 
                     headers: { 'Authorization': `Bearer ${sessionId}` } 
                 });
@@ -6958,8 +6959,94 @@
                     return;
                 }
 
-                const v = data.variance;
                 const t = data.thresholds;
+                
+                // --- COMPUTE ACTUALS CLIENT-SIDE FROM tdpState ---
+                const clientActuals = { meals: 0, incidentals: 0, hotel: 0, kilometric: 0, flight: 0, train: 0, bus: 0, rental: 0, other: 0 };
+                
+                // Per diems + hotel from tdpState.days
+                if (tdpState.days) {
+                    tdpState.days.forEach(day => {
+                        if (day.perDiem) {
+                            if (day.perDiem.breakfast) clientActuals.meals += parseFloat(DP_RATES?.breakfast?.rate || 23.45);
+                            if (day.perDiem.lunch) clientActuals.meals += parseFloat(DP_RATES?.lunch?.rate || 29.75);
+                            if (day.perDiem.dinner) clientActuals.meals += parseFloat(DP_RATES?.dinner?.rate || 47.05);
+                            if (day.perDiem.incidentals) clientActuals.incidentals += parseFloat(DP_RATES?.incidentals?.rate || 17.30);
+                        }
+                        if (day.showHotel && day.hotelOn) {
+                            clientActuals.hotel += parseFloat(day.hotelRate || 150);
+                        }
+                    });
+                }
+                
+                // Vehicle km
+                if (tdpState.vehicleKm > 0) {
+                    clientActuals.kilometric = tdpState.vehicleKm * (DP_VEHICLE_RATE || 0.68);
+                }
+                
+                // Transport modes from DOM
+                const transportModes = ['flight', 'train', 'bus', 'rental'];
+                transportModes.forEach(mode => {
+                    const btn = document.querySelector(`#tdp-transport-toggles [data-mode="${mode}"]`);
+                    if (btn && btn.classList.contains('active')) {
+                        let amt = 0;
+                        switch(mode) {
+                            case 'flight':
+                                amt += parseFloat(document.getElementById('tdp-flight-dep')?.value || 0);
+                                amt += parseFloat(document.getElementById('tdp-flight-ret')?.value || 0);
+                                amt += parseFloat(document.getElementById('tdp-flight-bag')?.value || 0);
+                                break;
+                            case 'train':
+                                amt += parseFloat(document.getElementById('tdp-train-dep')?.value || 0);
+                                amt += parseFloat(document.getElementById('tdp-train-ret')?.value || 0);
+                                break;
+                            case 'bus':
+                                amt += parseFloat(document.getElementById('tdp-bus-dep')?.value || 0);
+                                amt += parseFloat(document.getElementById('tdp-bus-ret')?.value || 0);
+                                break;
+                            case 'rental':
+                                const days = parseFloat(document.getElementById('tdp-rental-days')?.value || 0);
+                                const rate = parseFloat(document.getElementById('tdp-rental-rate')?.value || 0);
+                                const ins = parseFloat(document.getElementById('tdp-rental-insurance')?.value || 0);
+                                const fuel = parseFloat(document.getElementById('tdp-rental-fuel')?.value || 0);
+                                amt = (days * rate) + ins + fuel;
+                                break;
+                        }
+                        clientActuals[mode] = amt;
+                    }
+                });
+                
+                // Other expenses
+                if (tdpState.otherExpenses) {
+                    tdpState.otherExpenses.forEach(o => { clientActuals.other += parseFloat(o.amount) || 0; });
+                }
+                
+                // Get AT estimates from server response
+                const serverV = data.variance;
+                const pctThreshold = t.pct;
+                const dollarThreshold = t.dollar;
+                
+                // Rebuild variance with client-side actuals but server-side estimates
+                function calcVar(actual, estimate) {
+                    const diff = actual - estimate;
+                    const pct = estimate > 0 ? ((diff / estimate) * 100) : (actual > 0 ? 100 : 0);
+                    let status, icon, description;
+                    if (estimate === 0 && actual > 0) { status = 'new'; icon = '🆕'; description = 'Not in AT'; }
+                    else if (estimate > 0 && actual === 0) { status = 'unclaimed'; icon = '➖'; description = 'Not claimed'; }
+                    else if (actual <= estimate) { status = 'green'; icon = '✅'; description = 'Within budget'; }
+                    else if (Math.abs(pct) > pctThreshold && Math.abs(diff) > dollarThreshold) { status = 'red'; icon = '🔴'; description = `Over ${pctThreshold}% AND $${dollarThreshold}`; }
+                    else { status = 'yellow'; icon = '⚠️'; description = 'Over budget'; }
+                    return { actual, estimate, diff, pct: Math.round(pct * 10) / 10, status, icon, description };
+                }
+                
+                const categories = ['meals', 'incidentals', 'hotel', 'kilometric', 'flight', 'train', 'bus', 'rental', 'other'];
+                const v = {};
+                categories.forEach(cat => {
+                    v[cat] = calcVar(clientActuals[cat], serverV[cat]?.estimate || 0);
+                });
+                const totalActual = Object.values(clientActuals).reduce((s, val) => s + val, 0);
+                const totalEstimate = categories.reduce((s, cat) => s + (serverV[cat]?.estimate || 0), 0);
+                v.total = calcVar(totalActual, totalEstimate);
                 
                 function getStatusColor(status) {
                     switch(status) {
