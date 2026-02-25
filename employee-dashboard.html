@@ -3611,6 +3611,56 @@
                         }
                     }
 
+                // 5b. Update AT details with current transport data so it carries over to trip
+                const dpTransportData = {};
+                const dpModes = ['personal', 'flight', 'train', 'bus', 'rental'];
+                dpModes.forEach(mode => {
+                    const button = document.querySelector(`#dp-transport-toggles [data-mode="${mode}"]`);
+                    if (button && button.classList.contains('active')) {
+                        dpTransportData[mode] = { active: true, data: {}, total: 0 };
+                        switch(mode) {
+                            case 'personal':
+                                dpTransportData[mode].data = { kilometers: document.getElementById('dp-vehicle-km')?.value || '' };
+                                dpTransportData[mode].total = dpState.vehicleKm * DP_VEHICLE_RATE;
+                                break;
+                            case 'flight':
+                                const fd = parseFloat(document.getElementById('dp-flight-dep')?.value || 0);
+                                const fr = parseFloat(document.getElementById('dp-flight-ret')?.value || 0);
+                                const fb = parseFloat(document.getElementById('dp-flight-bag')?.value || 0);
+                                dpTransportData[mode].data = { departure: fd || '', return: fr || '', baggage: fb || '', route: document.getElementById('dp-flight-route')?.value || '' };
+                                dpTransportData[mode].total = fd + fr + fb;
+                                break;
+                            case 'train':
+                                const td = parseFloat(document.getElementById('dp-train-dep')?.value || 0);
+                                const tr = parseFloat(document.getElementById('dp-train-ret')?.value || 0);
+                                dpTransportData[mode].data = { departure: td || '', return: tr || '', route: document.getElementById('dp-train-route')?.value || '' };
+                                dpTransportData[mode].total = td + tr;
+                                break;
+                            case 'bus':
+                                const bd = parseFloat(document.getElementById('dp-bus-dep')?.value || 0);
+                                const br2 = parseFloat(document.getElementById('dp-bus-ret')?.value || 0);
+                                dpTransportData[mode].data = { departure: bd || '', return: br2 || '', route: document.getElementById('dp-bus-route')?.value || '' };
+                                dpTransportData[mode].total = bd + br2;
+                                break;
+                            case 'rental':
+                                const rd = parseFloat(document.getElementById('dp-rental-days')?.value || 0);
+                                const rr = parseFloat(document.getElementById('dp-rental-rate')?.value || 0);
+                                const ri = parseFloat(document.getElementById('dp-rental-insurance')?.value || 0);
+                                const rf = parseFloat(document.getElementById('dp-rental-fuel')?.value || 0);
+                                dpTransportData[mode].data = { days: rd || '', rate: rr || '', insurance: ri || '', fuel: rf || '' };
+                                dpTransportData[mode].total = (rd * rr) + ri + rf;
+                                break;
+                        }
+                    }
+                });
+                
+                // Update AT details with transport data
+                await fetch(`/api/travel-auth/${selectedAuthId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                    body: JSON.stringify({ details: JSON.stringify({ transport: dpTransportData }) })
+                });
+
                 // 6. Submit for approval
                 const response = await fetch(`/api/travel-auth/${selectedAuthId}/submit`, {
                     method: 'PUT',
