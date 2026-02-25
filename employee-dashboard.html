@@ -3161,6 +3161,20 @@
                     console.error('Error parsing transport details for pre-population:', error);
                 }
             }
+
+            // Lock transport section when AT is not editable (approved/pending)
+            if (!canEdit) {
+                // Disable all transport toggle buttons
+                document.querySelectorAll('#dp-transport-toggles .transport-toggle').forEach(btn => {
+                    btn.disabled = true;
+                    btn.style.cursor = 'not-allowed';
+                    btn.style.opacity = '0.7';
+                });
+                // Disable all transport input fields
+                document.querySelectorAll('#dp-transport-section input').forEach(inp => {
+                    inp.disabled = true;
+                });
+            }
         }
 
         // Load expenses for selected auth, then render day planner
