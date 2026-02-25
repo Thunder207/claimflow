@@ -7014,25 +7014,46 @@
                 const resp = await fetch(`/api/trips/${tripId}/variance`, { headers: { 'Authorization': `Bearer ${sessionId}` } });
                 if (!resp.ok) { container.innerHTML = '<div style="color:#dc3545; padding:8px;">Could not load variance data.</div>'; return; }
                 const data = await resp.json();
-                const cats = data.categories || [];
-                const overCount = cats.filter(c => c.status === 'over').length;
+                if (!data.variance) { container.innerHTML = '<div style="color:#888; padding:8px;">No linked Travel Authorization found for variance comparison.</div>'; return; }
+                
+                const v = data.variance;
+                const categoryDefs = [
+                    { key: 'meals', label: '🍽️ Meals' },
+                    { key: 'incidentals', label: '🧾 Incidentals' },
+                    { key: 'hotel', label: '🏨 Hotel' },
+                    { key: 'kilometric', label: '🚗 Kilometric' },
+                    { key: 'flight', label: '✈️ Flight' },
+                    { key: 'train', label: '🚂 Train' },
+                    { key: 'bus', label: '🚌 Bus' },
+                    { key: 'rental', label: '🚙 Rental' },
+                    { key: 'other', label: '📦 Other' }
+                ];
+                
+                // Filter to only categories with data
+                const cats = categoryDefs.filter(c => {
+                    const cat = v[c.key];
+                    return cat && (cat.actual > 0 || cat.estimate > 0);
+                });
+                
+                const redCount = cats.filter(c => v[c.key].status === 'red').length;
+                
                 let html = `<div style="background: linear-gradient(135deg, #f8f0ff 0%, #eee5ff 100%); border-radius: 10px; padding: 16px; border: 1px solid #d1c4e9;">`;
                 html += `<div style="font-weight:bold; margin-bottom:10px; color:#4a148c;">📊 Budget Comparison (AT vs Actual)</div>`;
-                if (overCount > 0) html += `<div style="color:#dc3545; font-size:13px; margin-bottom:8px;">🔴 ${overCount} category(ies) significantly over budget</div>`;
+                if (redCount > 0) html += `<div style="color:#dc3545; font-size:13px; margin-bottom:8px;">🔴 ${redCount} category(ies) significantly over budget</div>`;
                 html += `<table style="width:100%; border-collapse:collapse; font-size:13px;">`;
                 html += `<tr style="border-bottom:2px solid #d1c4e9;"><th style="text-align:left; padding:6px;">Category</th><th style="text-align:right; padding:6px;">Authorized</th><th style="text-align:right; padding:6px;">Actual</th><th style="text-align:right; padding:6px;">Variance</th><th style="text-align:center; padding:6px;">Status</th></tr>`;
+                
                 cats.forEach(c => {
-                    const icon = c.status === 'over' ? '🔴' : c.status === 'warning' ? '⚠️' : c.status === 'new' ? '🆕' : c.status === 'not_claimed' ? '➖' : '✅';
-                    const varColor = c.variance > 0 ? '#dc3545' : c.variance < 0 ? '#28a745' : '#666';
-                    const varSign = c.variance > 0 ? '+' : '';
-                    html += `<tr style="border-bottom:1px solid #e8e0f0;"><td style="padding:6px;">${c.icon || ''} ${c.label}</td><td style="text-align:right; padding:6px;">$${(c.estimate||0).toFixed(2)}</td><td style="text-align:right; padding:6px;">$${(c.actual||0).toFixed(2)}</td><td style="text-align:right; padding:6px; color:${varColor};">${varSign}$${(c.variance||0).toFixed(2)}</td><td style="text-align:center; padding:6px;">${icon}</td></tr>`;
+                    const cat = v[c.key];
+                    const varColor = cat.diff > 0 ? '#dc3545' : cat.diff < 0 ? '#28a745' : '#666';
+                    const varSign = cat.diff > 0 ? '+' : '';
+                    html += `<tr style="border-bottom:1px solid #e8e0f0;"><td style="padding:6px;">${c.label}</td><td style="text-align:right; padding:6px;">$${cat.estimate.toFixed(2)}</td><td style="text-align:right; padding:6px;">$${cat.actual.toFixed(2)}</td><td style="text-align:right; padding:6px; color:${varColor};">${varSign}$${cat.diff.toFixed(2)}</td><td style="text-align:center; padding:6px;">${cat.icon}</td></tr>`;
                 });
+                
                 // Total row
-                const totEst = cats.reduce((s,c) => s + (c.estimate||0), 0);
-                const totAct = cats.reduce((s,c) => s + (c.actual||0), 0);
-                const totVar = totAct - totEst;
-                const totColor = totVar > 0 ? '#dc3545' : totVar < 0 ? '#28a745' : '#666';
-                html += `<tr style="border-top:2px solid #d1c4e9; font-weight:bold;"><td style="padding:6px;">💰 TOTAL</td><td style="text-align:right; padding:6px;">$${totEst.toFixed(2)}</td><td style="text-align:right; padding:6px; color:${totColor};">$${totAct.toFixed(2)}</td><td style="text-align:right; padding:6px; color:${totColor};">${totVar>0?'+':''}$${totVar.toFixed(2)}</td><td></td></tr>`;
+                const tot = v.total || {};
+                const totColor = (tot.diff || 0) > 0 ? '#dc3545' : (tot.diff || 0) < 0 ? '#28a745' : '#666';
+                html += `<tr style="border-top:2px solid #d1c4e9; font-weight:bold;"><td style="padding:6px;">💰 TOTAL</td><td style="text-align:right; padding:6px;">$${(tot.estimate||0).toFixed(2)}</td><td style="text-align:right; padding:6px; color:${totColor};">$${(tot.actual||0).toFixed(2)}</td><td style="text-align:right; padding:6px; color:${totColor};">${(tot.diff||0)>0?'+':''}$${(tot.diff||0).toFixed(2)}</td><td style="text-align:center;">${tot.icon||''}</td></tr>`;
                 html += `</table>`;
                 html += `<div style="font-size:11px; color:#888; margin-top:8px;">🔴 Over limit · ⚠️ Over budget · ✅ Within budget · 🆕 Unplanned · ➖ Not claimed</div>`;
                 html += `</div>`;

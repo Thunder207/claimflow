@@ -2939,7 +2939,7 @@ app.get('/api/trips', requireAuth, (req, res) => {
                ta.id as auth_id
         FROM trips t
         LEFT JOIN expenses e ON t.id = e.trip_id
-        LEFT JOIN travel_authorizations ta ON ta.trip_id = t.id AND ta.status = 'approved'
+        LEFT JOIN travel_authorizations ta ON ta.trip_id = t.id
         WHERE t.employee_id = ?
         GROUP BY t.id
         ORDER BY t.created_at DESC
@@ -3086,7 +3086,7 @@ app.get('/api/trips/:id/variance', requireAuth, (req, res) => {
         if (err || !trip) return res.status(404).json({ error: 'Trip not found' });
         
         // Get linked AT
-        db.get(`SELECT * FROM travel_authorizations WHERE trip_id = ? AND status = 'approved'`, [tripId], (atErr, at) => {
+        db.get(`SELECT * FROM travel_authorizations WHERE trip_id = ?`, [tripId], (atErr, at) => {
             if (atErr || !at) return res.json({ trip, at: null, variance: null, message: 'No linked AT found' });
             
             // Get AT expenses (the authorized amounts)
