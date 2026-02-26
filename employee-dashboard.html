@@ -1006,6 +1006,32 @@
                     ⏳ Saving...
                 </div>
 
+                <!-- 🏨 Hotel Summary Card -->
+                <div id="tdp-hotel-summary-card" style="display: none; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #ffc107;">
+                    <h4 style="color: #856404; margin: 0 0 12px 0;">🏨 Hotel / Accommodation</h4>
+                    <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin-bottom: 12px;">
+                        <div style="flex: 1; min-width: 150px;">
+                            <label style="font-size: 13px; font-weight: 600; color: #856404; display: block; margin-bottom: 4px;">Nightly Rate: $</label>
+                            <input type="number" id="tdp-hotel-nightly-rate" min="0" step="0.01" placeholder="0.00" oninput="tdpHotelSummaryChanged()" style="width: 100%; padding: 10px; border: 2px solid #ffc107; border-radius: 8px; font-size: 16px; font-weight: 600;">
+                        </div>
+                        <div style="min-width: 80px; text-align: center;">
+                            <label style="font-size: 13px; font-weight: 600; color: #856404; display: block; margin-bottom: 4px;">Nights</label>
+                            <div id="tdp-hotel-nights-count" style="font-size: 24px; font-weight: bold; color: #856404;">0</div>
+                        </div>
+                        <div style="flex: 1; min-width: 150px;">
+                            <label style="font-size: 13px; font-weight: 600; color: #856404; display: block; margin-bottom: 4px;">Total Hotel Cost</label>
+                            <div id="tdp-hotel-summary-total" style="font-size: 24px; font-weight: bold; color: #28a745;">$0.00</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: #856404; font-weight: 600;">
+                            <input type="checkbox" id="tdp-hotel-same-rate" checked onchange="tdpHotelModeChanged()" style="width: 18px; height: 18px; accent-color: #ffc107;">
+                            Same rate every night
+                        </label>
+                        <span style="font-size: 12px; color: #999;">Uncheck to set different rates per night</span>
+                    </div>
+                </div>
+
                 <!-- Day Cards Container -->
                 <div id="tdp-day-cards" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;"></div>
 
@@ -1250,6 +1276,32 @@
                 </div>
 
                 <!-- Day Cards Container -->
+                <!-- 🏨 Hotel Summary Card (AT) -->
+                <div id="dp-hotel-summary-card" style="display: none; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #ffc107;">
+                    <h4 style="color: #856404; margin: 0 0 12px 0;">🏨 Hotel / Accommodation</h4>
+                    <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin-bottom: 12px;">
+                        <div style="flex: 1; min-width: 150px;">
+                            <label style="font-size: 13px; font-weight: 600; color: #856404; display: block; margin-bottom: 4px;">Nightly Rate: $</label>
+                            <input type="number" id="dp-hotel-nightly-rate" min="0" step="0.01" placeholder="0.00" oninput="dpHotelSummaryChanged()" style="width: 100%; padding: 10px; border: 2px solid #ffc107; border-radius: 8px; font-size: 16px; font-weight: 600;">
+                        </div>
+                        <div style="min-width: 80px; text-align: center;">
+                            <label style="font-size: 13px; font-weight: 600; color: #856404; display: block; margin-bottom: 4px;">Nights</label>
+                            <div id="dp-hotel-nights-count" style="font-size: 24px; font-weight: bold; color: #856404;">0</div>
+                        </div>
+                        <div style="flex: 1; min-width: 150px;">
+                            <label style="font-size: 13px; font-weight: 600; color: #856404; display: block; margin-bottom: 4px;">Total Hotel Cost</label>
+                            <div id="dp-hotel-summary-total" style="font-size: 24px; font-weight: bold; color: #28a745;">$0.00</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: #856404; font-weight: 600;">
+                            <input type="checkbox" id="dp-hotel-same-rate" checked onchange="dpHotelModeChanged()" style="width: 18px; height: 18px; accent-color: #ffc107;">
+                            Same rate every night
+                        </label>
+                        <span style="font-size: 12px; color: #999;">Uncheck to set different rates per night</span>
+                    </div>
+                </div>
+
                 <div id="dp-day-cards" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;"></div>
 
                 <!-- 🚗 SMART TRANSPORTATION SECTION -->
@@ -3354,6 +3406,9 @@
 
             // Render other expenses
             dpRenderOtherExpenses();
+            
+            // Update hotel summary card
+            dpUpdateHotelSummary();
         }
 
         function dpToggle(dayIdx, type) {
@@ -3371,6 +3426,7 @@
         function dpUpdateHotelRate(dayIdx, value) {
             dpState.days[dayIdx].hotelRate = parseFloat(value) || 0;
             dpRecalcTotal();
+            dpUpdateHotelSummary();
         }
 
         function dpRecalcTotal() {
@@ -6198,6 +6254,9 @@
             // Show/hide receipt section
             document.getElementById('tdp-receipts-section').style.display = hasHotel ? 'block' : 'none';
             if (hasHotel) tdpRenderReceipts();
+            
+            // Update hotel summary card
+            tdpUpdateHotelSummary();
         }
 
         function tdpRenderReceipts() {
@@ -6357,10 +6416,221 @@
             tdpShowSaving(false);
         }
 
+        // ========== HOTEL SUMMARY CARD FUNCTIONS (Trip - tdp) ==========
+        function tdpUpdateHotelSummary() {
+            const hotelDays = tdpState.days.filter(d => d.showHotel);
+            const card = document.getElementById('tdp-hotel-summary-card');
+            if (!card) return;
+            
+            // Show/hide card based on whether there are hotel nights
+            card.style.display = hotelDays.length > 0 ? 'block' : 'none';
+            
+            // Update night count
+            const nightsEl = document.getElementById('tdp-hotel-nights-count');
+            if (nightsEl) nightsEl.textContent = hotelDays.filter(d => d.hotelOn).length;
+            
+            // Update total
+            const hotelOnDays = hotelDays.filter(d => d.hotelOn);
+            const total = hotelOnDays.reduce((s, d) => s + d.hotelRate, 0);
+            const totalEl = document.getElementById('tdp-hotel-summary-total');
+            if (totalEl) totalEl.textContent = '$' + total.toFixed(2);
+            
+            // If same-rate mode and nightly rate input is empty, populate from first day
+            const sameRate = document.getElementById('tdp-hotel-same-rate');
+            const rateInput = document.getElementById('tdp-hotel-nightly-rate');
+            if (sameRate && sameRate.checked && rateInput && !rateInput.value && hotelOnDays.length > 0) {
+                rateInput.value = hotelOnDays[0].hotelRate.toFixed(2);
+            }
+            
+            // Disable nightly rate input if not editable
+            if (rateInput) rateInput.disabled = !tdpState.canEdit;
+            if (sameRate) sameRate.disabled = !tdpState.canEdit;
+            
+            // Grey out per-night inputs in same-rate mode
+            tdpSetDayCardHotelMode();
+        }
+        
+        function tdpHotelSummaryChanged() {
+            const sameRate = document.getElementById('tdp-hotel-same-rate');
+            if (!sameRate || !sameRate.checked) return;
+            
+            const rateInput = document.getElementById('tdp-hotel-nightly-rate');
+            const rate = parseFloat(rateInput?.value) || 0;
+            
+            // Apply to all hotel days
+            const rateInputs = document.querySelectorAll('#tdp-day-cards .dp-hotel-rate-input');
+            let rateIdx = 0;
+            tdpState.days.forEach((day, i) => {
+                if (day.showHotel && day.hotelOn) {
+                    day.hotelRate = rate;
+                    if (rateInputs[rateIdx]) rateInputs[rateIdx].value = rate.toFixed(2);
+                    rateIdx++;
+                    // Save to server
+                    if (day.hotelExpenseId && tdpState.canEdit) {
+                        fetch(`/api/expenses/${day.hotelExpenseId}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                            body: JSON.stringify({ amount: rate })
+                        }).catch(err => console.error('Hotel rate save error:', err));
+                    }
+                }
+            });
+            
+            tdpRecalcTotal();
+        }
+        
+        function tdpHotelModeChanged() {
+            const sameRate = document.getElementById('tdp-hotel-same-rate');
+            const rateInput = document.getElementById('tdp-hotel-nightly-rate');
+            
+            if (sameRate && sameRate.checked) {
+                // Switching TO same-rate mode
+                const hotelDays = tdpState.days.filter(d => d.showHotel && d.hotelOn);
+                const rates = hotelDays.map(d => d.hotelRate);
+                const allSame = rates.every(r => r === rates[0]);
+                
+                if (!allSame && rates.length > 0) {
+                    showConfirmModal('Apply a single rate to all nights?<br>This will overwrite your per-night amounts.', () => {
+                        if (rateInput) rateInput.disabled = false;
+                        tdpHotelSummaryChanged();
+                        tdpSetDayCardHotelMode();
+                    });
+                    // If they cancel, revert checkbox
+                    const origOnCancel = () => { sameRate.checked = false; };
+                    // Override modal cancel
+                    const modal = document.getElementById('confirm-modal');
+                    if (modal) {
+                        const noBtn = modal.querySelector('.confirm-no');
+                        if (noBtn) noBtn.onclick = () => { modal.style.display = 'none'; origOnCancel(); };
+                    }
+                    return;
+                }
+                if (rateInput) rateInput.disabled = false;
+            } else {
+                // Switching TO different-rates mode
+                if (rateInput) rateInput.disabled = true;
+            }
+            tdpSetDayCardHotelMode();
+        }
+        
+        function tdpSetDayCardHotelMode() {
+            const sameRate = document.getElementById('tdp-hotel-same-rate');
+            const isSameMode = sameRate ? sameRate.checked : true;
+            const canEdit = tdpState.canEdit;
+            
+            document.querySelectorAll('#tdp-day-cards .dp-hotel-rate-input').forEach(input => {
+                if (isSameMode) {
+                    input.disabled = true;
+                    input.style.opacity = '0.6';
+                    input.style.background = '#f5f5f5';
+                } else {
+                    input.disabled = !canEdit;
+                    input.style.opacity = '1';
+                    input.style.background = 'white';
+                }
+            });
+        }
+
+        // ========== HOTEL SUMMARY CARD FUNCTIONS (AT - dp) ==========
+        function dpUpdateHotelSummary() {
+            const hotelDays = dpState.days.filter(d => d.showHotel);
+            const card = document.getElementById('dp-hotel-summary-card');
+            if (!card) return;
+            
+            card.style.display = hotelDays.length > 0 ? 'block' : 'none';
+            
+            const nightsEl = document.getElementById('dp-hotel-nights-count');
+            if (nightsEl) nightsEl.textContent = hotelDays.filter(d => d.hotelOn).length;
+            
+            const hotelOnDays = hotelDays.filter(d => d.hotelOn);
+            const total = hotelOnDays.reduce((s, d) => s + d.hotelRate, 0);
+            const totalEl = document.getElementById('dp-hotel-summary-total');
+            if (totalEl) totalEl.textContent = '$' + total.toFixed(2);
+            
+            const sameRate = document.getElementById('dp-hotel-same-rate');
+            const rateInput = document.getElementById('dp-hotel-nightly-rate');
+            if (sameRate && sameRate.checked && rateInput && !rateInput.value && hotelOnDays.length > 0) {
+                rateInput.value = hotelOnDays[0].hotelRate.toFixed(2);
+            }
+            
+            if (rateInput) rateInput.disabled = !dpState.canEdit;
+            if (sameRate) sameRate.disabled = !dpState.canEdit;
+            
+            dpSetDayCardHotelMode();
+        }
+        
+        function dpHotelSummaryChanged() {
+            const sameRate = document.getElementById('dp-hotel-same-rate');
+            if (!sameRate || !sameRate.checked) return;
+            
+            const rateInput = document.getElementById('dp-hotel-nightly-rate');
+            const rate = parseFloat(rateInput?.value) || 0;
+            
+            const rateInputs = document.querySelectorAll('#dp-day-cards .dp-hotel-rate-input');
+            let rateIdx = 0;
+            dpState.days.forEach((day, i) => {
+                if (day.showHotel && day.hotelOn) {
+                    day.hotelRate = rate;
+                    if (rateInputs[rateIdx]) rateInputs[rateIdx].value = rate.toFixed(2);
+                    rateIdx++;
+                }
+            });
+            
+            dpRecalcTotal();
+        }
+        
+        function dpHotelModeChanged() {
+            const sameRate = document.getElementById('dp-hotel-same-rate');
+            const rateInput = document.getElementById('dp-hotel-nightly-rate');
+            
+            if (sameRate && sameRate.checked) {
+                const hotelDays = dpState.days.filter(d => d.showHotel && d.hotelOn);
+                const rates = hotelDays.map(d => d.hotelRate);
+                const allSame = rates.every(r => r === rates[0]);
+                
+                if (!allSame && rates.length > 0) {
+                    showConfirmModal('Apply a single rate to all nights?<br>This will overwrite your per-night amounts.', () => {
+                        if (rateInput) rateInput.disabled = false;
+                        dpHotelSummaryChanged();
+                        dpSetDayCardHotelMode();
+                    });
+                    const modal = document.getElementById('confirm-modal');
+                    if (modal) {
+                        const noBtn = modal.querySelector('.confirm-no');
+                        if (noBtn) noBtn.onclick = () => { modal.style.display = 'none'; sameRate.checked = false; };
+                    }
+                    return;
+                }
+                if (rateInput) rateInput.disabled = false;
+            } else {
+                if (rateInput) rateInput.disabled = true;
+            }
+            dpSetDayCardHotelMode();
+        }
+        
+        function dpSetDayCardHotelMode() {
+            const sameRate = document.getElementById('dp-hotel-same-rate');
+            const isSameMode = sameRate ? sameRate.checked : true;
+            const canEdit = dpState.canEdit;
+            
+            document.querySelectorAll('#dp-day-cards .dp-hotel-rate-input').forEach(input => {
+                if (isSameMode) {
+                    input.disabled = true;
+                    input.style.opacity = '0.6';
+                    input.style.background = '#f5f5f5';
+                } else {
+                    input.disabled = !canEdit;
+                    input.style.opacity = '1';
+                    input.style.background = 'white';
+                }
+            });
+        }
+
         async function tdpUpdateHotelRate(dayIdx, value) {
             const day = tdpState.days[dayIdx];
             day.hotelRate = parseFloat(value) || 0;
             tdpRecalcTotal();
+            tdpUpdateHotelSummary();
 
             // Update on server if expense exists
             if (day.hotelExpenseId && tdpState.canEdit) {
