@@ -2929,6 +2929,10 @@ try {
                     default: return { color: '#28a745', bg: '#f0fff0', icon: '✅' };
                 }
             }
+            function countLabel(count, unit) {
+                if (!count) return '';
+                return `<span style="font-size:11px; color:#888; font-weight:normal;">${count} ${unit}${count !== 1 ? 's' : ''}</span>`;
+            }
             function rowHtml(cat) {
                 const s = getStyle(cat.status);
                 const sign = cat.diff >= 0 ? '+' : '';
@@ -2939,7 +2943,7 @@ try {
                 const estText = cat.status === 'new' ? '—' : '$' + cat.estimate.toFixed(2);
                 const actText = cat.status === 'unclaimed' ? '$0.00' : '$' + cat.actual.toFixed(2);
                 return `<tr style="background: ${s.bg}; border-bottom: 1px solid #eee;">
-                    <td style="padding: 8px 10px; font-weight: 600;">${cat.icon || s.icon} ${cat.label || ''}</td>
+                    <td style="padding: 8px 10px;"><span style="font-weight: 600;">${cat.label || ''}</span><br>${cat.claimsLabel || ''}</td>
                     <td style="padding: 8px 10px; text-align: right;">${estText}</td>
                     <td style="padding: 8px 10px; text-align: right;">${actText}</td>
                     <td style="padding: 8px 10px; text-align: right; color: ${s.color}; font-weight: bold;">${varianceText}</td>
@@ -2947,18 +2951,32 @@ try {
                     <td style="padding: 8px 10px; text-align: center;">${s.icon}</td>
                 </tr>`;
             }
-            const catKeys = ['meals', 'incidentals', 'hotel', 'kilometric', 'flight', 'train', 'bus', 'rental', 'other'];
-            const catLabels = { meals: '🍽️ Meals', incidentals: '💼 Incidentals', hotel: '🏨 Hotel', kilometric: '🚗 Kilometric', flight: '✈️ Flight', train: '🚆 Train', bus: '🚌 Bus', rental: '🚙 Rental Car', other: '📦 Other' };
+            const catDefs = [
+                { key: 'breakfast', label: '🥐 Breakfast', unit: 'claim' },
+                { key: 'lunch', label: '🥗 Lunch', unit: 'claim' },
+                { key: 'dinner', label: '🍽️ Dinner', unit: 'claim' },
+                { key: 'incidentals', label: '📱 Incidentals', unit: 'claim' },
+                { key: 'hotel', label: '🏨 Hotel', unit: 'night' },
+                { key: 'kilometric', label: '🚗 Kilometric', unit: 'claim' },
+                { key: 'flight', label: '✈️ Flight', unit: 'claim' },
+                { key: 'train', label: '🚆 Train', unit: 'claim' },
+                { key: 'bus', label: '🚌 Bus', unit: 'claim' },
+                { key: 'rental', label: '🚙 Rental Car', unit: 'claim' },
+                { key: 'other', label: '📦 Other', unit: 'claim' }
+            ];
             let rowsHtml = '';
-            catKeys.forEach(key => {
-                if (v[key] && (v[key].estimate > 0 || v[key].actual > 0)) {
-                    const cat = v[key];
-                    cat.label = cat.label || catLabels[key] || key;
+            catDefs.forEach(def => {
+                const cat = v[def.key];
+                if (cat && (cat.estimate > 0 || cat.actual > 0)) {
+                    cat.label = def.label;
+                    const cnt = Math.max(cat.actualCount || 0, cat.estimateCount || 0);
+                    cat.claimsLabel = cnt > 0 ? countLabel(cnt, def.unit) : '';
                     rowsHtml += rowHtml(cat);
                 }
             });
             const totalS = getStyle(v.total.status);
             const totalSign = v.total.diff >= 0 ? '+' : '';
+            const totalCount = v.total.actualCount || 0;
             return `
                 <div style="background: white; border-radius: 10px; padding: 16px; margin-top: 10px; border: 2px solid #667eea;">
                     <h4 style="color: #2c3e50; margin-bottom: 8px;">📊 Authorization vs Actual Comparison</h4>
@@ -2980,7 +2998,7 @@ try {
                         <tbody>
                             ${rowsHtml}
                             <tr style="border-top: 3px solid #2c3e50; background: ${totalS.bg};">
-                                <td style="padding: 10px; font-weight: 800; font-size: 14px;">💰 TOTAL</td>
+                                <td style="padding: 10px;"><span style="font-weight: 800; font-size: 14px;">💰 TOTAL</span><br><span style="font-size:11px; color:#888;">${totalCount} claims</span></td>
                                 <td style="padding: 10px; text-align: right; font-weight: 800;">$${v.total.estimate.toFixed(2)}</td>
                                 <td style="padding: 10px; text-align: right; font-weight: 800;">$${v.total.actual.toFixed(2)}</td>
                                 <td style="padding: 10px; text-align: right; font-weight: 800; color: ${totalS.color};">${totalSign}$${v.total.diff.toFixed(2)}</td>

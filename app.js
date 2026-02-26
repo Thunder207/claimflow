@@ -3113,103 +3113,41 @@ app.get('/api/trips/:id/variance', requireAuth, (req, res) => {
                         }
                     } catch(e) { console.error('Error parsing AT details:', e); }
                     
-                    // Calculate actuals by granular categories
-                    const actuals = {
-                        meals: 0,
-                        incidentals: 0,
-                        hotel: 0,
-                        kilometric: 0,
-                        flight: 0,
-                        train: 0,
-                        bus: 0,
-                        rental: 0,
-                        other: 0
-                    };
+                    // Calculate actuals by granular categories (meals split into B/L/D)
+                    const cats = ['breakfast','lunch','dinner','incidentals','hotel','kilometric','flight','train','bus','rental','other'];
+                    const actuals = {}; const actualCounts = {};
+                    const estimates = {}; const estimateCounts = {};
+                    cats.forEach(c => { actuals[c] = 0; actualCounts[c] = 0; estimates[c] = 0; estimateCounts[c] = 0; });
+                    
+                    function categorize(expType) {
+                        switch(expType) {
+                            case 'breakfast': return 'breakfast';
+                            case 'lunch': return 'lunch';
+                            case 'dinner': return 'dinner';
+                            case 'incidentals': return 'incidentals';
+                            case 'hotel': return 'hotel';
+                            case 'vehicle_km': return 'kilometric';
+                            case 'transport_flight': return 'flight';
+                            case 'transport_train': return 'train';
+                            case 'transport_bus': return 'bus';
+                            case 'transport_rental': return 'rental';
+                            default: return 'other';
+                        }
+                    }
                     
                     expenses.forEach(e => {
-                        const amt = parseFloat(e.amount) || 0;
-                        switch(e.expense_type) {
-                            case 'breakfast':
-                            case 'lunch':
-                            case 'dinner':
-                                actuals.meals += amt;
-                                break;
-                            case 'incidentals':
-                                actuals.incidentals += amt;
-                                break;
-                            case 'hotel':
-                                actuals.hotel += amt;
-                                break;
-                            case 'vehicle_km':
-                                actuals.kilometric += amt;
-                                break;
-                            case 'transport_flight':
-                                actuals.flight += amt;
-                                break;
-                            case 'transport_train':
-                                actuals.train += amt;
-                                break;
-                            case 'transport_bus':
-                                actuals.bus += amt;
-                                break;
-                            case 'transport_rental':
-                                actuals.rental += amt;
-                                break;
-                            default:
-                                actuals.other += amt;
-                                break;
-                        }
+                        const cat = categorize(e.expense_type);
+                        actuals[cat] += parseFloat(e.amount) || 0;
+                        actualCounts[cat]++;
                     });
-                    
-                    // AT estimates by granular categories — computed from AT's actual expenses
-                    const estimates = {
-                        meals: 0,
-                        incidentals: 0,
-                        hotel: 0,
-                        kilometric: 0,
-                        flight: 0,
-                        train: 0,
-                        bus: 0,
-                        rental: 0,
-                        other: 0
-                    };
                     
                     atExpenses.forEach(e => {
-                        const amt = parseFloat(e.amount) || 0;
-                        switch(e.expense_type) {
-                            case 'breakfast':
-                            case 'lunch':
-                            case 'dinner':
-                                estimates.meals += amt;
-                                break;
-                            case 'incidentals':
-                                estimates.incidentals += amt;
-                                break;
-                            case 'hotel':
-                                estimates.hotel += amt;
-                                break;
-                            case 'vehicle_km':
-                                estimates.kilometric += amt;
-                                break;
-                            case 'transport_flight':
-                                estimates.flight += amt;
-                                break;
-                            case 'transport_train':
-                                estimates.train += amt;
-                                break;
-                            case 'transport_bus':
-                                estimates.bus += amt;
-                                break;
-                            case 'transport_rental':
-                                estimates.rental += amt;
-                                break;
-                            default:
-                                estimates.other += amt;
-                                break;
-                        }
+                        const cat = categorize(e.expense_type);
+                        estimates[cat] += parseFloat(e.amount) || 0;
+                        estimateCounts[cat]++;
                     });
                     
-                    // Calculate total actuals and estimates
+                    // Calculate totals
                     const actualTotal = Object.values(actuals).reduce((sum, val) => sum + val, 0);
                     const estTotal = Object.values(estimates).reduce((sum, val) => sum + val, 0);
                     
@@ -3258,22 +3196,23 @@ app.get('/api/trips/:id/variance', requireAuth, (req, res) => {
                         };
                     }
                     
+                    // Build variance with counts
+                    const variance = {};
+                    cats.forEach(c => {
+                        const v = calcVariance(actuals[c], estimates[c], c);
+                        v.actualCount = actualCounts[c];
+                        v.estimateCount = estimateCounts[c];
+                        variance[c] = v;
+                    });
+                    variance.total = calcVariance(actualTotal, estTotal, 'total');
+                    variance.total.actualCount = expenses.length;
+                    variance.total.estimateCount = atExpenses.length;
+                    
                     res.json({
                         trip: { id: trip.id, name: trip.trip_name, status: trip.status },
                         at: { id: at.id, name: at.name, status: at.status },
                         thresholds: { pct: pctThreshold, dollar: dollarThreshold },
-                        variance: {
-                            meals: calcVariance(actuals.meals, estimates.meals, 'meals'),
-                            incidentals: calcVariance(actuals.incidentals, estimates.incidentals, 'incidentals'),
-                            hotel: calcVariance(actuals.hotel, estimates.hotel, 'hotel'),
-                            kilometric: calcVariance(actuals.kilometric, estimates.kilometric, 'kilometric'),
-                            flight: calcVariance(actuals.flight, estimates.flight, 'flight'),
-                            train: calcVariance(actuals.train, estimates.train, 'train'),
-                            bus: calcVariance(actuals.bus, estimates.bus, 'bus'),
-                            rental: calcVariance(actuals.rental, estimates.rental, 'rental'),
-                            other: calcVariance(actuals.other, estimates.other, 'other'),
-                            total: calcVariance(actualTotal, estTotal, 'total')
-                        }
+                        variance
                     });
                 });
             });

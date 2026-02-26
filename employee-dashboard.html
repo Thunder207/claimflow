@@ -7074,15 +7074,17 @@
                 
                 const v = data.variance;
                 const categoryDefs = [
-                    { key: 'meals', label: '🍽️ Meals' },
-                    { key: 'incidentals', label: '🧾 Incidentals' },
-                    { key: 'hotel', label: '🏨 Hotel' },
-                    { key: 'kilometric', label: '🚗 Kilometric' },
-                    { key: 'flight', label: '✈️ Flight' },
-                    { key: 'train', label: '🚂 Train' },
-                    { key: 'bus', label: '🚌 Bus' },
-                    { key: 'rental', label: '🚙 Rental' },
-                    { key: 'other', label: '📦 Other' }
+                    { key: 'breakfast', label: '🥐 Breakfast', unit: 'claim' },
+                    { key: 'lunch', label: '🥗 Lunch', unit: 'claim' },
+                    { key: 'dinner', label: '🍽️ Dinner', unit: 'claim' },
+                    { key: 'incidentals', label: '📱 Incidentals', unit: 'claim' },
+                    { key: 'hotel', label: '🏨 Hotel', unit: 'night' },
+                    { key: 'kilometric', label: '🚗 Kilometric', unit: 'claim' },
+                    { key: 'flight', label: '✈️ Flight', unit: 'claim' },
+                    { key: 'train', label: '🚂 Train', unit: 'claim' },
+                    { key: 'bus', label: '🚌 Bus', unit: 'claim' },
+                    { key: 'rental', label: '🚙 Rental', unit: 'claim' },
+                    { key: 'other', label: '📦 Other', unit: 'claim' }
                 ];
                 
                 // Filter to only categories with data
@@ -7103,13 +7105,16 @@
                     const cat = v[c.key];
                     const varColor = cat.diff > 0 ? '#dc3545' : cat.diff < 0 ? '#28a745' : '#666';
                     const varSign = cat.diff > 0 ? '+' : '';
-                    html += `<tr style="border-bottom:1px solid #e8e0f0;"><td style="padding:6px;">${c.label}</td><td style="text-align:right; padding:6px;">$${cat.estimate.toFixed(2)}</td><td style="text-align:right; padding:6px;">$${cat.actual.toFixed(2)}</td><td style="text-align:right; padding:6px; color:${varColor};">${varSign}$${cat.diff.toFixed(2)}</td><td style="text-align:center; padding:6px;">${cat.icon}</td></tr>`;
+                    const cnt = Math.max(cat.actualCount || 0, cat.estimateCount || 0);
+                    const cntLabel = cnt > 0 ? `<br><span style="font-size:11px; color:#888; font-weight:normal;">${cnt} ${c.unit}${cnt !== 1 ? 's' : ''}</span>` : '';
+                    html += `<tr style="border-bottom:1px solid #e8e0f0;"><td style="padding:6px;">${c.label}${cntLabel}</td><td style="text-align:right; padding:6px;">$${cat.estimate.toFixed(2)}</td><td style="text-align:right; padding:6px;">$${cat.actual.toFixed(2)}</td><td style="text-align:right; padding:6px; color:${varColor};">${varSign}$${cat.diff.toFixed(2)}</td><td style="text-align:center; padding:6px;">${cat.icon}</td></tr>`;
                 });
                 
                 // Total row
                 const tot = v.total || {};
                 const totColor = (tot.diff || 0) > 0 ? '#dc3545' : (tot.diff || 0) < 0 ? '#28a745' : '#666';
-                html += `<tr style="border-top:2px solid #d1c4e9; font-weight:bold;"><td style="padding:6px;">💰 TOTAL</td><td style="text-align:right; padding:6px;">$${(tot.estimate||0).toFixed(2)}</td><td style="text-align:right; padding:6px; color:${totColor};">$${(tot.actual||0).toFixed(2)}</td><td style="text-align:right; padding:6px; color:${totColor};">${(tot.diff||0)>0?'+':''}$${(tot.diff||0).toFixed(2)}</td><td style="text-align:center;">${tot.icon||''}</td></tr>`;
+                const totalCnt = tot.actualCount || 0;
+                html += `<tr style="border-top:2px solid #d1c4e9; font-weight:bold;"><td style="padding:6px;">💰 TOTAL<br><span style="font-size:11px; color:#888; font-weight:normal;">${totalCnt} claims</span></td><td style="text-align:right; padding:6px;">$${(tot.estimate||0).toFixed(2)}</td><td style="text-align:right; padding:6px; color:${totColor};">$${(tot.actual||0).toFixed(2)}</td><td style="text-align:right; padding:6px; color:${totColor};">${(tot.diff||0)>0?'+':''}$${(tot.diff||0).toFixed(2)}</td><td style="text-align:center;">${tot.icon||''}</td></tr>`;
                 html += `</table>`;
                 html += `<div style="font-size:11px; color:#888; margin-top:8px;">🔴 Over limit · ⚠️ Over budget · ✅ Within budget · 🆕 Unplanned · ➖ Not claimed</div>`;
                 html += `</div>`;
@@ -7143,20 +7148,22 @@
 
                 const t = data.thresholds;
                 
-                // --- COMPUTE ACTUALS CLIENT-SIDE FROM tdpState ---
-                const clientActuals = { meals: 0, incidentals: 0, hotel: 0, kilometric: 0, flight: 0, train: 0, bus: 0, rental: 0, other: 0 };
+                // --- COMPUTE ACTUALS CLIENT-SIDE FROM tdpState (meals split into B/L/D) ---
+                const clientActuals = { breakfast: 0, lunch: 0, dinner: 0, incidentals: 0, hotel: 0, kilometric: 0, flight: 0, train: 0, bus: 0, rental: 0, other: 0 };
+                const clientCounts = { breakfast: 0, lunch: 0, dinner: 0, incidentals: 0, hotel: 0, kilometric: 0, flight: 0, train: 0, bus: 0, rental: 0, other: 0 };
                 
                 // Per diems + hotel from tdpState.days
                 if (tdpState.days) {
                     tdpState.days.forEach(day => {
                         if (day.perDiem) {
-                            if (day.perDiem.breakfast) clientActuals.meals += parseFloat(DP_RATES?.breakfast?.rate || 23.45);
-                            if (day.perDiem.lunch) clientActuals.meals += parseFloat(DP_RATES?.lunch?.rate || 29.75);
-                            if (day.perDiem.dinner) clientActuals.meals += parseFloat(DP_RATES?.dinner?.rate || 47.05);
-                            if (day.perDiem.incidentals) clientActuals.incidentals += parseFloat(DP_RATES?.incidentals?.rate || 17.30);
+                            if (day.perDiem.breakfast) { clientActuals.breakfast += parseFloat(DP_RATES?.breakfast?.rate || 23.45); clientCounts.breakfast++; }
+                            if (day.perDiem.lunch) { clientActuals.lunch += parseFloat(DP_RATES?.lunch?.rate || 29.75); clientCounts.lunch++; }
+                            if (day.perDiem.dinner) { clientActuals.dinner += parseFloat(DP_RATES?.dinner?.rate || 47.05); clientCounts.dinner++; }
+                            if (day.perDiem.incidentals) { clientActuals.incidentals += parseFloat(DP_RATES?.incidentals?.rate || 17.30); clientCounts.incidentals++; }
                         }
                         if (day.showHotel && day.hotelOn) {
                             clientActuals.hotel += parseFloat(day.hotelRate || 150);
+                            clientCounts.hotel++;
                         }
                     });
                 }
@@ -7195,12 +7202,13 @@
                                 break;
                         }
                         clientActuals[mode] = amt;
+                        if (amt > 0) clientCounts[mode] = 1;
                     }
                 });
                 
                 // Other expenses
                 if (tdpState.otherExpenses) {
-                    tdpState.otherExpenses.forEach(o => { clientActuals.other += parseFloat(o.amount) || 0; });
+                    tdpState.otherExpenses.forEach(o => { clientActuals.other += parseFloat(o.amount) || 0; clientCounts.other++; });
                 }
                 
                 // Get AT estimates from server response
@@ -7221,10 +7229,12 @@
                     return { actual, estimate, diff, pct: Math.round(pct * 10) / 10, status, icon, description };
                 }
                 
-                const categories = ['meals', 'incidentals', 'hotel', 'kilometric', 'flight', 'train', 'bus', 'rental', 'other'];
+                const categories = ['breakfast', 'lunch', 'dinner', 'incidentals', 'hotel', 'kilometric', 'flight', 'train', 'bus', 'rental', 'other'];
                 const v = {};
                 categories.forEach(cat => {
                     v[cat] = calcVar(clientActuals[cat], serverV[cat]?.estimate || 0);
+                    v[cat].actualCount = clientCounts[cat] || 0;
+                    v[cat].estimateCount = serverV[cat]?.estimateCount || 0;
                 });
                 const totalActual = Object.values(clientActuals).reduce((s, val) => s + val, 0);
                 const totalEstimate = categories.reduce((s, cat) => s + (serverV[cat]?.estimate || 0), 0);
@@ -7266,16 +7276,18 @@
                     }
                 }
 
-                function rowHtml(label, emoji, variance, hideIfZero = false) {
+                function rowHtml(label, emoji, variance, unit, hideIfZero = false) {
                     if (hideIfZero && variance.actual === 0 && variance.estimate === 0) return '';
                     
                     const color = getStatusColor(variance.status);
                     const bg = getStatusBg(variance.status);
                     const sign = variance.diff >= 0 ? '+' : '';
                     const icon = variance.icon || '✅';
+                    const cnt = Math.max(variance.actualCount || 0, variance.estimateCount || 0);
+                    const cntLabel = cnt > 0 ? `<span style="font-size:11px; color:#888; font-weight:normal;">${cnt} ${unit || 'claim'}${cnt !== 1 ? 's' : ''}</span>` : '';
                     
                     return `<tr style="background: ${bg};">
-                        <td style="padding: 8px; font-weight: 600; font-size: 13px;">${emoji} ${label}</td>
+                        <td style="padding: 8px;"><span style="font-weight: 600; font-size: 13px;">${emoji} ${label}</span><br>${cntLabel}</td>
                         <td style="padding: 8px; text-align: right; font-size: 13px;">$${variance.estimate.toFixed(2)}</td>
                         <td style="padding: 8px; text-align: right; font-size: 13px;">$${variance.actual.toFixed(2)}</td>
                         <td style="padding: 8px; text-align: right; color: ${color}; font-weight: bold; font-size: 13px;">${sign}$${variance.diff.toFixed(2)}</td>
@@ -7306,15 +7318,17 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                ${rowHtml('Meals', '🍽️', v.meals, true)}
-                                ${rowHtml('Incidentals', '📱', v.incidentals, true)}
-                                ${rowHtml('Hotel', '🏨', v.hotel, true)}
-                                ${rowHtml('Kilometric', '🚗', v.kilometric, true)}
-                                ${rowHtml('Flight', '✈️', v.flight, true)}
-                                ${rowHtml('Train', '🚆', v.train, true)}
-                                ${rowHtml('Bus', '🚌', v.bus, true)}
-                                ${rowHtml('Rental Car', '🚙', v.rental, true)}
-                                ${rowHtml('Other', '📦', v.other, true)}
+                                ${rowHtml('Breakfast', '🥐', v.breakfast, 'claim', true)}
+                                ${rowHtml('Lunch', '🥗', v.lunch, 'claim', true)}
+                                ${rowHtml('Dinner', '🍽️', v.dinner, 'claim', true)}
+                                ${rowHtml('Incidentals', '📱', v.incidentals, 'claim', true)}
+                                ${rowHtml('Hotel', '🏨', v.hotel, 'night', true)}
+                                ${rowHtml('Kilometric', '🚗', v.kilometric, 'claim', true)}
+                                ${rowHtml('Flight', '✈️', v.flight, 'claim', true)}
+                                ${rowHtml('Train', '🚆', v.train, 'claim', true)}
+                                ${rowHtml('Bus', '🚌', v.bus, 'claim', true)}
+                                ${rowHtml('Rental Car', '🚙', v.rental, 'claim', true)}
+                                ${rowHtml('Other', '📦', v.other, 'claim', true)}
                                 <tr style="border-top: 2px solid #2c3e50; background: ${getStatusBg(v.total.status)};">
                                     <td style="padding: 10px; font-weight: 800; font-size: 14px;">💰 TOTAL</td>
                                     <td style="padding: 10px; text-align: right; font-weight: 800; font-size: 14px;">$${v.total.estimate.toFixed(2)}</td>
