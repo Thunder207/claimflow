@@ -1151,9 +1151,19 @@
 
                 <!-- Hotel Receipts Section -->
                 <div id="tdp-receipts-section" style="display: none; background: linear-gradient(135deg, #fce4ec 0%, #f8bbd0 100%); padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #e91e63;">
-                    <h4 style="color: #880e4f; margin: 0 0 12px 0;">📷 Hotel Receipts</h4>
-                    <p style="color: #880e4f; font-size: 13px; margin-bottom: 12px;">Upload receipts for each hotel night. Required for hotel expense claims.</p>
-                    <div id="tdp-receipt-list"></div>
+                    <h4 style="color: #880e4f; margin: 0 0 12px 0;">🏨 Hotel Receipt</h4>
+                    <p style="color: #880e4f; font-size: 13px; margin-bottom: 12px;">Upload your hotel receipt and enter the total. Cost will be automatically divided across your hotel nights.</p>
+                    <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 12px;">
+                        <div style="flex: 1; min-width: 200px;">
+                            <label style="font-size: 13px; font-weight: 600; color: #880e4f; display: block; margin-bottom: 4px;">Total Hotel Cost: $</label>
+                            <input type="number" id="tdp-hotel-total-input" min="0" step="0.01" placeholder="e.g., 900.00" oninput="tdpDistributeHotelCost()" style="width: 100%; padding: 10px; border: 2px solid #e91e63; border-radius: 8px; font-size: 16px; font-weight: 600;">
+                        </div>
+                        <div style="flex: 1; min-width: 200px;">
+                            <label style="font-size: 13px; font-weight: 600; color: #880e4f; display: block; margin-bottom: 4px;">📷 Hotel Receipt</label>
+                            <input type="file" id="tdp-hotel-receipt-file" accept="image/*,application/pdf" capture="environment" style="width: 100%; padding: 8px; background: white; border: 2px solid #e91e63; border-radius: 8px; font-size: 13px;">
+                        </div>
+                    </div>
+                    <div id="tdp-hotel-summary" style="background: white; border-radius: 8px; padding: 12px; font-size: 14px; color: #880e4f;"></div>
                 </div>
 
                 <!-- Running Total + Submit -->
@@ -6191,18 +6201,64 @@
         }
 
         function tdpRenderReceipts() {
-            const list = document.getElementById('tdp-receipt-list');
             const hotelDays = tdpState.days.filter(d => d.showHotel && d.hotelOn);
-            if (hotelDays.length === 0) { list.innerHTML = ''; return; }
-            let html = '';
-            hotelDays.forEach((day, i) => {
-                html += `<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px; padding: 8px; background: white; border-radius: 8px;">
-                    <span style="font-weight: 600; color: #880e4f; min-width: 80px;">🏨 ${day.monthDay}</span>
-                    <span style="color: #666; font-size: 13px;">$${day.hotelRate.toFixed(2)}</span>
-                    <input type="file" accept="image/*" capture="environment" style="flex: 1; font-size: 13px;" id="tdp-receipt-${day.date}" ${tdpState.canEdit ? '' : 'disabled'}>
-                </div>`;
+            const summary = document.getElementById('tdp-hotel-summary');
+            const totalInput = document.getElementById('tdp-hotel-total-input');
+            const fileInput = document.getElementById('tdp-hotel-receipt-file');
+            if (!summary) return;
+            if (hotelDays.length === 0) { summary.innerHTML = ''; return; }
+            
+            // Auto-fill total from current per-night rates if input is empty
+            if (totalInput && !totalInput.value) {
+                const currentTotal = hotelDays.reduce((s, d) => s + d.hotelRate, 0);
+                if (currentTotal > 0) totalInput.value = currentTotal.toFixed(2);
+            }
+            
+            // Disable inputs if not editable
+            if (totalInput) totalInput.disabled = !tdpState.canEdit;
+            if (fileInput) fileInput.disabled = !tdpState.canEdit;
+            
+            // Show summary
+            const perNight = hotelDays.length > 0 ? hotelDays[0].hotelRate : 0;
+            const total = hotelDays.reduce((s, d) => s + d.hotelRate, 0);
+            let html = `<strong>${hotelDays.length} night${hotelDays.length !== 1 ? 's' : ''}</strong> @ <strong>$${perNight.toFixed(2)}/night</strong> = <strong>$${total.toFixed(2)}</strong>`;
+            html += `<div style="margin-top: 6px; font-size: 12px; color: #999;">`;
+            html += hotelDays.map(d => `${d.monthDay}: $${d.hotelRate.toFixed(2)}`).join(' · ');
+            html += `</div>`;
+            summary.innerHTML = html;
+        }
+
+        function tdpDistributeHotelCost() {
+            const totalInput = document.getElementById('tdp-hotel-total-input');
+            if (!totalInput) return;
+            const totalCost = parseFloat(totalInput.value) || 0;
+            const hotelDays = tdpState.days.filter(d => d.showHotel && d.hotelOn);
+            if (hotelDays.length === 0) return;
+            
+            const perNight = Math.round((totalCost / hotelDays.length) * 100) / 100;
+            
+            // Update each hotel day's rate in state and DOM
+            const rateInputs = document.querySelectorAll('.dp-hotel-rate-input');
+            let rateIdx = 0;
+            tdpState.days.forEach((day, i) => {
+                if (day.showHotel && day.hotelOn) {
+                    day.hotelRate = perNight;
+                    if (rateInputs[rateIdx]) rateInputs[rateIdx].value = perNight.toFixed(2);
+                    rateIdx++;
+                }
             });
-            list.innerHTML = html;
+            
+            // Recalculate total and update receipt summary
+            tdpRecalcTotal();
+            tdpRenderReceipts();
+            
+            // Auto-save each hotel expense with new rate
+            hotelDays.forEach(day => {
+                if (day.hotelExpenseId) {
+                    const dayIdx = tdpState.days.indexOf(day);
+                    tdpUpdateHotelRate(dayIdx, perNight);
+                }
+            });
         }
 
         async function tdpToggle(dayIdx, type) {
