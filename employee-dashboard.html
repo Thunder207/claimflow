@@ -6223,6 +6223,26 @@
                 tdpUpdateHotelSectionVisibility();
             }
 
+            // Always ensure at least one hotel entry exists so the section is visible
+            if (tdpHotels.length === 0) {
+                const days = tdpState.days || [];
+                const tripStart = days.length > 0 ? days[0].date : '';
+                const tripEnd = days.length > 0 ? days[days.length - 1].date : '';
+                // Pre-fill check-in as trip start, check-out as trip end (last day = return, no hotel)
+                tdpHotels.push({
+                    id: ++tdpHotelIdCounter,
+                    name: '',
+                    city: tdpState.destination || '',
+                    checkin: tripStart,
+                    checkout: tripEnd,
+                    total: 0,
+                    receiptFile: null,
+                    receiptName: ''
+                });
+                tdpRenderHotels();
+                tdpUpdateHotelSectionVisibility();
+            }
+
             tdpRenderCards();
             tdpRecalcTotal();
         }
@@ -6252,7 +6272,7 @@
                     </div>`;
                 }
 
-                if (day.showHotel && day.hotelSourceIdx !== null && day.hotelSourceIdx !== undefined) {
+                if (day.showHotel) {
                     const on = day.hotelOn;
                     if (on) hasHotel = true;
                     const cls = on ? 'on' : 'off';
