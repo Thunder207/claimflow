@@ -1635,7 +1635,7 @@ try {
                         <!-- Expandable Day-by-Day Breakdown -->
                         <div style="padding: 12px 20px; border-bottom: 1px solid #eee;">
                             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
-                                <button onclick="this.parentElement.nextElementSibling.style.display = this.parentElement.nextElementSibling.style.display === 'none' ? 'block' : 'none'; this.textContent = this.parentElement.nextElementSibling.style.display === 'none' ? '📋 View Day-by-Day Breakdown ▼' : '📋 Hide Breakdown ▲';" style="background: none; border: 1px solid #dee2e6; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; color: #495057; flex: 1;">
+                                <button onclick="var bd=this.parentElement.nextElementSibling.nextElementSibling; bd.style.display = bd.style.display === 'none' ? 'block' : 'none'; this.textContent = bd.style.display === 'none' ? '📋 View Day-by-Day Breakdown ▼' : '📋 Hide Breakdown ▲';" style="background: none; border: 1px solid #dee2e6; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; color: #495057; flex: 1;">
                                     📋 View Day-by-Day Breakdown ▼
                                 </button>
                                 <button onclick="loadVariance(${group.tripId})" style="background: #667eea; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; cursor: pointer;">📊 View AT vs Actual Variance</button>
