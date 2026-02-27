@@ -8,6 +8,8 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const NJCRatesService = require('./njc-rates-service');
+const PDFDocument = require('pdfkit');
+const nodemailer = require('nodemailer');
 
 // Simple password hashing (in production, use bcrypt)
 function hashPassword(password) {
@@ -435,6 +437,25 @@ function initializeDatabase() {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )`,
 
+        // Expense report sequence for reference numbers
+        `CREATE TABLE IF NOT EXISTS expense_report_sequence (
+            year INTEGER PRIMARY KEY,
+            last_number INTEGER DEFAULT 0
+        )`,
+
+        // Email log for expense report distribution
+        `CREATE TABLE IF NOT EXISTS email_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trip_id INTEGER,
+            ref_number TEXT,
+            recipient_type TEXT,
+            recipient_email TEXT,
+            subject TEXT,
+            status TEXT,
+            error_message TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`,
+
         // Variance threshold audit log
         `CREATE TABLE IF NOT EXISTS settings_audit_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -547,6 +568,23 @@ function insertDefaultData() {
         db.run(`ALTER TABLE trips ADD COLUMN justification TEXT DEFAULT NULL`, (err) => {
             if (err && !err.message.includes('duplicate column')) {
                 console.error('❌ Error adding justification column:', err.message);
+            }
+        });
+
+        // PDF Report columns on trips table
+        db.run(`ALTER TABLE trips ADD COLUMN pdf_report BLOB DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding pdf_report column:', err.message);
+            }
+        });
+        db.run(`ALTER TABLE trips ADD COLUMN report_ref TEXT DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding report_ref column:', err.message);
+            }
+        });
+        db.run(`ALTER TABLE trips ADD COLUMN report_generated_at TEXT DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding report_generated_at column:', err.message);
             }
         });
     }
@@ -4785,6 +4823,621 @@ app.post('/api/employees/:id/resend-invite', requireAuth, requireRole('admin'), 
             });
         }
     );
+});
+
+// ============================================
+// PDF EXPENSE REPORT GENERATION
+// ============================================
+
+// Generate next reference number
+function generateRefNumber(db) {
+    return new Promise((resolve, reject) => {
+        const year = new Date().getFullYear();
+        db.run(`INSERT OR IGNORE INTO expense_report_sequence (year, last_number) VALUES (?, 0)`, [year], (err) => {
+            if (err) return reject(err);
+            db.run(`UPDATE expense_report_sequence SET last_number = last_number + 1 WHERE year = ?`, [year], function(err) {
+                if (err) return reject(err);
+                db.get(`SELECT last_number FROM expense_report_sequence WHERE year = ?`, [year], (err, row) => {
+                    if (err) return reject(err);
+                    const ref = `EXP-${year}-${String(row.last_number).padStart(5, '0')}`;
+                    resolve(ref);
+                });
+            });
+        });
+    });
+}
+
+// Generate PDF expense report
+function generateExpenseReportPDF(tripId, db) {
+    return new Promise((resolve, reject) => {
+        // Fetch all needed data
+        const tripQuery = `
+            SELECT t.*, emp.name as employee_name, emp.email as employee_email, emp.employee_number,
+                   emp.department, emp.position,
+                   sup.name as supervisor_name, sup.email as supervisor_email
+            FROM trips t
+            JOIN employees emp ON t.employee_id = emp.id
+            LEFT JOIN employees sup ON emp.supervisor_id = sup.id
+            WHERE t.id = ?
+        `;
+
+        db.get(tripQuery, [tripId], (err, trip) => {
+            if (err || !trip) return reject(err || new Error('Trip not found'));
+
+            // Get AT record
+            db.get(`SELECT * FROM travel_authorizations WHERE trip_id = ?`, [tripId], (err, at) => {
+                if (err) return reject(err);
+
+                // Get AT expenses (estimates)
+                const atExpQuery = at ? `SELECT * FROM expenses WHERE travel_auth_id = ? ORDER BY date ASC` : null;
+                const atExpParams = at ? [at.id] : [];
+
+                const fetchAtExp = at ? new Promise((res, rej) => {
+                    db.all(atExpQuery, atExpParams, (e, rows) => e ? rej(e) : res(rows || []));
+                }) : Promise.resolve([]);
+
+                // Get trip expenses (actuals)
+                const fetchTripExp = new Promise((res, rej) => {
+                    db.all(`SELECT * FROM expenses WHERE trip_id = ? ORDER BY date ASC`, [tripId], (e, rows) => e ? rej(e) : res(rows || []));
+                });
+
+                // Get variance thresholds
+                const fetchSettings = new Promise((res, rej) => {
+                    db.all(`SELECT key, value FROM app_settings WHERE key IN ('variance_pct_threshold', 'variance_dollar_threshold')`, [], (e, rows) => {
+                        if (e) return rej(e);
+                        const s = {};
+                        (rows || []).forEach(r => { s[r.key] = r.value; });
+                        res(s);
+                    });
+                });
+
+                Promise.all([fetchAtExp, fetchTripExp, fetchSettings]).then(([atExpenses, tripExpenses, settings]) => {
+                    const pctThreshold = parseFloat(settings.variance_pct_threshold || '10');
+                    const dollarThreshold = parseFloat(settings.variance_dollar_threshold || '100');
+                    const refNumber = trip.report_ref || 'PENDING';
+
+                    // Create PDF
+                    const doc = new PDFDocument({ size: 'LETTER', margins: { top: 50, bottom: 60, left: 50, right: 50 } });
+                    const buffers = [];
+                    doc.on('data', chunk => buffers.push(chunk));
+                    doc.on('end', () => resolve(Buffer.concat(buffers)));
+
+                    let pageNum = 0;
+                    const pageWidth = 612 - 100; // margins
+
+                    function addFooter() {
+                        pageNum++;
+                        doc.save();
+                        doc.fontSize(8).fillColor('#999999')
+                            .text(`${refNumber}`, 50, 752, { width: pageWidth, align: 'left' })
+                            .text(`Page ${pageNum}`, 50, 752, { width: pageWidth, align: 'right' });
+                        doc.restore();
+                    }
+
+                    function drawLine(y) {
+                        doc.moveTo(50, y).lineTo(562, y).strokeColor('#cccccc').lineWidth(0.5).stroke();
+                    }
+
+                    // ========= PAGE 1: COVER/SUMMARY =========
+                    addFooter();
+                    doc.fontSize(22).fillColor('#1a237e').text('EXPENSE REPORT', { align: 'center' });
+                    doc.moveDown(0.3);
+                    doc.fontSize(10).fillColor('#666666').text('Government Employee Expense Tracker — ClaimFlow', { align: 'center' });
+                    doc.moveDown(1);
+                    drawLine(doc.y);
+                    doc.moveDown(0.5);
+
+                    doc.fontSize(11).fillColor('#000000');
+                    const summaryData = [
+                        ['Reference Number', refNumber],
+                        ['Employee Name', trip.employee_name || 'N/A'],
+                        ['Employee Number', trip.employee_number || 'N/A'],
+                        ['Department', trip.department || 'N/A'],
+                        ['Position', trip.position || 'N/A'],
+                        ['Trip Name', trip.trip_name || 'N/A'],
+                        ['Destination', trip.destination || 'N/A'],
+                        ['Travel Dates', `${trip.start_date} to ${trip.end_date}`],
+                        ['Purpose', trip.purpose || 'N/A'],
+                    ];
+
+                    summaryData.forEach(([label, value]) => {
+                        doc.font('Helvetica-Bold').text(`${label}: `, { continued: true });
+                        doc.font('Helvetica').text(value);
+                        doc.moveDown(0.2);
+                    });
+
+                    doc.moveDown(0.5);
+                    drawLine(doc.y);
+                    doc.moveDown(0.5);
+
+                    // Financial Summary
+                    const atTotal = at ? parseFloat(at.est_total || 0) : 0;
+                    const actualTotal = tripExpenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+                    const variance = actualTotal - atTotal;
+
+                    doc.fontSize(14).fillColor('#1a237e').text('Financial Summary');
+                    doc.moveDown(0.3);
+                    doc.fontSize(11).fillColor('#000000');
+                    doc.font('Helvetica-Bold').text(`Authorized Total: `, { continued: true });
+                    doc.font('Helvetica').text(`$${atTotal.toFixed(2)}`);
+                    doc.font('Helvetica-Bold').text(`Actual Total: `, { continued: true });
+                    doc.font('Helvetica').text(`$${actualTotal.toFixed(2)}`);
+                    doc.font('Helvetica-Bold').text(`Variance: `, { continued: true });
+                    const varColor = variance > 0 ? '#dc3545' : '#28a745';
+                    doc.font('Helvetica').fillColor(varColor).text(`${variance >= 0 ? '+' : ''}$${variance.toFixed(2)}`);
+                    doc.fillColor('#000000');
+
+                    doc.moveDown(0.5);
+                    drawLine(doc.y);
+                    doc.moveDown(0.5);
+
+                    // Approval chain summary
+                    doc.fontSize(14).fillColor('#1a237e').text('Approval Summary');
+                    doc.moveDown(0.3);
+                    doc.fontSize(11).fillColor('#000000');
+                    if (trip.submitted_at) {
+                        doc.font('Helvetica-Bold').text('Submitted: ', { continued: true });
+                        doc.font('Helvetica').text(trip.submitted_at);
+                    }
+                    if (trip.approved_at) {
+                        doc.font('Helvetica-Bold').text('Approved: ', { continued: true });
+                        doc.font('Helvetica').text(`${trip.approved_at} by ${trip.approved_by || 'Supervisor'}`);
+                    }
+
+                    // ========= PAGE 2: AT DETAILS =========
+                    doc.addPage();
+                    addFooter();
+                    doc.fontSize(16).fillColor('#1a237e').text('Authorization to Travel — Estimated Expenses');
+                    doc.moveDown(0.5);
+
+                    if (at && atExpenses.length > 0) {
+                        // Table header
+                        const colWidths = [80, 120, 100, 80, 130];
+                        const headers = ['Date', 'Type', 'Location', 'Amount', 'Description'];
+                        let tableY = doc.y;
+
+                        doc.fontSize(9).font('Helvetica-Bold').fillColor('#333333');
+                        let xPos = 50;
+                        headers.forEach((h, i) => {
+                            doc.text(h, xPos, tableY, { width: colWidths[i] });
+                            xPos += colWidths[i];
+                        });
+                        tableY += 15;
+                        drawLine(tableY);
+                        tableY += 5;
+
+                        doc.font('Helvetica').fontSize(8).fillColor('#000000');
+                        atExpenses.forEach(exp => {
+                            if (tableY > 700) { doc.addPage(); addFooter(); tableY = 50; }
+                            xPos = 50;
+                            const vals = [exp.date, exp.meal_name || exp.expense_type, exp.location || '', `$${parseFloat(exp.amount).toFixed(2)}`, (exp.description || '').substring(0, 40)];
+                            vals.forEach((v, i) => {
+                                doc.text(v, xPos, tableY, { width: colWidths[i] });
+                                xPos += colWidths[i];
+                            });
+                            tableY += 14;
+                        });
+
+                        drawLine(tableY);
+                        tableY += 5;
+                        doc.font('Helvetica-Bold').fontSize(10);
+                        doc.text(`Total Estimated: $${atTotal.toFixed(2)}`, 50, tableY);
+                    } else {
+                        doc.fontSize(11).fillColor('#666666').text('No Authorization to Travel record linked to this trip.');
+                    }
+
+                    // ========= PAGE 3: ACTUAL TRIP EXPENSES =========
+                    doc.addPage();
+                    addFooter();
+                    doc.fontSize(16).fillColor('#1a237e').text('Actual Trip Expenses');
+                    doc.moveDown(0.5);
+
+                    if (tripExpenses.length > 0) {
+                        const colWidths3 = [70, 100, 90, 70, 80, 100];
+                        const headers3 = ['Date', 'Type', 'Location', 'Amount', 'Vendor', 'Description'];
+                        let tableY = doc.y;
+
+                        doc.fontSize(9).font('Helvetica-Bold').fillColor('#333333');
+                        let xPos = 50;
+                        headers3.forEach((h, i) => {
+                            doc.text(h, xPos, tableY, { width: colWidths3[i] });
+                            xPos += colWidths3[i];
+                        });
+                        tableY += 15;
+                        drawLine(tableY);
+                        tableY += 5;
+
+                        doc.font('Helvetica').fontSize(8).fillColor('#000000');
+                        tripExpenses.forEach(exp => {
+                            if (tableY > 700) { doc.addPage(); addFooter(); tableY = 50; }
+                            xPos = 50;
+                            const vals = [exp.date, exp.meal_name || exp.expense_type, exp.location || '', `$${parseFloat(exp.amount).toFixed(2)}`, (exp.vendor || '').substring(0, 20), (exp.description || '').substring(0, 30)];
+                            vals.forEach((v, i) => {
+                                doc.text(v, xPos, tableY, { width: colWidths3[i] });
+                                xPos += colWidths3[i];
+                            });
+                            tableY += 14;
+                        });
+
+                        drawLine(tableY);
+                        tableY += 5;
+                        doc.font('Helvetica-Bold').fontSize(10);
+                        doc.text(`Total Actual: $${actualTotal.toFixed(2)}`, 50, tableY);
+                    } else {
+                        doc.fontSize(11).fillColor('#666666').text('No expenses recorded for this trip.');
+                    }
+
+                    // ========= PAGE 4: VARIANCE COMPARISON =========
+                    doc.addPage();
+                    addFooter();
+                    doc.fontSize(16).fillColor('#1a237e').text('Variance Comparison — Authorized vs Actual');
+                    doc.moveDown(0.3);
+                    doc.fontSize(9).fillColor('#666666').text(`Thresholds: >${pctThreshold}% AND >$${dollarThreshold}`);
+                    doc.moveDown(0.5);
+
+                    // Build variance by category
+                    const cats = ['breakfast','lunch','dinner','incidentals','hotel','vehicle_km','transport_flight','transport_train','transport_bus','transport_rental','other'];
+                    const catLabels = { breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', incidentals:'Incidentals', hotel:'Hotel', vehicle_km:'Kilometric', transport_flight:'Flight', transport_train:'Train', transport_bus:'Bus', transport_rental:'Rental Car', other:'Other' };
+                    const estByCat = {}, actByCat = {};
+                    cats.forEach(c => { estByCat[c] = 0; actByCat[c] = 0; });
+                    atExpenses.forEach(e => { const c = cats.includes(e.expense_type) ? e.expense_type : 'other'; estByCat[c] += parseFloat(e.amount || 0); });
+                    tripExpenses.forEach(e => { const c = cats.includes(e.expense_type) ? e.expense_type : 'other'; actByCat[c] += parseFloat(e.amount || 0); });
+
+                    const varColWidths = [100, 80, 80, 80, 60, 60];
+                    const varHeaders = ['Category', 'Authorized', 'Actual', 'Variance ($)', '%', 'Status'];
+                    let vY = doc.y;
+                    doc.fontSize(9).font('Helvetica-Bold').fillColor('#333333');
+                    let vX = 50;
+                    varHeaders.forEach((h, i) => { doc.text(h, vX, vY, { width: varColWidths[i] }); vX += varColWidths[i]; });
+                    vY += 15;
+                    drawLine(vY);
+                    vY += 5;
+
+                    doc.font('Helvetica').fontSize(8).fillColor('#000000');
+                    cats.forEach(cat => {
+                        const est = estByCat[cat], act = actByCat[cat];
+                        if (est === 0 && act === 0) return;
+                        if (vY > 700) { doc.addPage(); addFooter(); vY = 50; }
+                        const diff = act - est;
+                        const pct = est > 0 ? ((diff / est) * 100).toFixed(1) : (act > 0 ? '100.0' : '0.0');
+                        let status = '✅';
+                        if (est === 0 && act > 0) status = 'NEW';
+                        else if (act > est && Math.abs(parseFloat(pct)) > pctThreshold && Math.abs(diff) > dollarThreshold) status = '🔴';
+                        else if (act > est) status = '⚠️';
+
+                        vX = 50;
+                        const vals = [catLabels[cat] || cat, `$${est.toFixed(2)}`, `$${act.toFixed(2)}`, `${diff >= 0 ? '+' : ''}$${diff.toFixed(2)}`, `${pct}%`, status];
+                        vals.forEach((v, i) => { doc.text(v, vX, vY, { width: varColWidths[i] }); vX += varColWidths[i]; });
+                        vY += 14;
+                    });
+
+                    // Total row
+                    drawLine(vY);
+                    vY += 5;
+                    doc.font('Helvetica-Bold').fontSize(9);
+                    vX = 50;
+                    const totalDiff = actualTotal - atTotal;
+                    const totalPct = atTotal > 0 ? ((totalDiff / atTotal) * 100).toFixed(1) : '0.0';
+                    const totVals = ['TOTAL', `$${atTotal.toFixed(2)}`, `$${actualTotal.toFixed(2)}`, `${totalDiff >= 0 ? '+' : ''}$${totalDiff.toFixed(2)}`, `${totalPct}%`, ''];
+                    totVals.forEach((v, i) => { doc.text(v, vX, vY, { width: varColWidths[i] }); vX += varColWidths[i]; });
+
+                    // Justification
+                    if (trip.justification) {
+                        doc.moveDown(1.5);
+                        doc.fontSize(12).fillColor('#856404').font('Helvetica-Bold').text('Employee Justification for Budget Overage:');
+                        doc.moveDown(0.3);
+                        doc.fontSize(10).fillColor('#333333').font('Helvetica-Oblique').text(trip.justification);
+                    }
+
+                    // ========= PAGE 5: APPROVAL CHAIN =========
+                    doc.addPage();
+                    addFooter();
+                    doc.fontSize(16).fillColor('#1a237e').text('Approval Chain & Signatures');
+                    doc.moveDown(1);
+
+                    doc.fontSize(11).fillColor('#000000').font('Helvetica');
+                    const chainItems = [
+                        ['Trip Created', trip.created_at || 'N/A'],
+                        ['Trip Submitted', trip.submitted_at || 'N/A'],
+                        ['Trip Approved', trip.approved_at ? `${trip.approved_at} by ${trip.approved_by || 'Supervisor'}` : 'N/A'],
+                        ['Report Generated', new Date().toISOString()],
+                    ];
+                    if (at) {
+                        chainItems.splice(1, 0, ['AT Submitted', at.created_at || 'N/A']);
+                        chainItems.splice(2, 0, ['AT Approved', at.approved_at || 'N/A']);
+                    }
+
+                    chainItems.forEach(([label, value]) => {
+                        doc.font('Helvetica-Bold').text(`${label}: `, { continued: true });
+                        doc.font('Helvetica').text(value);
+                        doc.moveDown(0.3);
+                    });
+
+                    doc.moveDown(2);
+                    drawLine(doc.y);
+                    doc.moveDown(1);
+
+                    // Signature lines
+                    doc.fontSize(10).fillColor('#000000');
+                    const sigY = doc.y;
+                    doc.text('_________________________________', 50, sigY);
+                    doc.text(`Employee: ${trip.employee_name}`, 50, sigY + 15);
+                    doc.text('_________________________________', 320, sigY);
+                    doc.text(`Supervisor: ${trip.supervisor_name || 'N/A'}`, 320, sigY + 15);
+
+                    doc.moveDown(4);
+                    doc.fontSize(8).fillColor('#999999').text(`This report was auto-generated by ClaimFlow on ${new Date().toISOString()}. Reference: ${refNumber}`, { align: 'center' });
+
+                    doc.end();
+                }).catch(reject);
+            });
+        });
+    });
+}
+
+// Send expense report emails
+async function sendExpenseReportEmail(tripId, db) {
+    try {
+        // Get SMTP settings
+        const smtpSettings = await new Promise((resolve, reject) => {
+            db.all(`SELECT key, value FROM app_settings WHERE key IN ('smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'audit_email')`, [], (e, rows) => {
+                if (e) return reject(e);
+                const s = {};
+                (rows || []).forEach(r => { s[r.key] = r.value; });
+                resolve(s);
+            });
+        });
+
+        if (!smtpSettings.smtp_host) {
+            console.log('📧 SMTP not configured — skipping email sending for trip', tripId);
+            return;
+        }
+
+        const transporter = nodemailer.createTransport({
+            host: smtpSettings.smtp_host,
+            port: parseInt(smtpSettings.smtp_port || '587'),
+            secure: (smtpSettings.smtp_port === '465'),
+            auth: { user: smtpSettings.smtp_user, pass: smtpSettings.smtp_pass }
+        });
+
+        // Get trip data
+        const trip = await new Promise((res, rej) => {
+            db.get(`SELECT t.*, emp.name as employee_name, emp.email as employee_email,
+                           sup.name as supervisor_name, sup.email as supervisor_email
+                    FROM trips t
+                    JOIN employees emp ON t.employee_id = emp.id
+                    LEFT JOIN employees sup ON emp.supervisor_id = sup.id
+                    WHERE t.id = ?`, [tripId], (e, r) => e ? rej(e) : res(r));
+        });
+
+        if (!trip || !trip.pdf_report) return;
+
+        const recipients = [];
+        if (trip.employee_email) recipients.push({ type: 'employee', email: trip.employee_email, name: trip.employee_name });
+        if (trip.supervisor_email) recipients.push({ type: 'supervisor', email: trip.supervisor_email, name: trip.supervisor_name });
+        if (smtpSettings.audit_email) recipients.push({ type: 'audit', email: smtpSettings.audit_email, name: 'Audit/Finance' });
+
+        for (const recip of recipients) {
+            try {
+                await transporter.sendMail({
+                    from: smtpSettings.smtp_from || smtpSettings.smtp_user,
+                    to: recip.email,
+                    subject: `Expense Report ${trip.report_ref} — ${trip.trip_name}`,
+                    text: `Dear ${recip.name},\n\nPlease find attached the expense report for trip "${trip.trip_name}" (${trip.start_date} to ${trip.end_date}).\n\nReference: ${trip.report_ref}\nTotal: $${parseFloat(trip.total_amount || 0).toFixed(2)}\n\nThis is an automated message from ClaimFlow.`,
+                    attachments: [{
+                        filename: `${trip.report_ref}.pdf`,
+                        content: trip.pdf_report
+                    }]
+                });
+
+                db.run(`INSERT INTO email_log (trip_id, ref_number, recipient_type, recipient_email, subject, status) VALUES (?, ?, ?, ?, ?, 'sent')`,
+                    [tripId, trip.report_ref, recip.type, recip.email, `Expense Report ${trip.report_ref}`]);
+
+            } catch (emailErr) {
+                console.error(`❌ Failed to send email to ${recip.email}:`, emailErr.message);
+                db.run(`INSERT INTO email_log (trip_id, ref_number, recipient_type, recipient_email, subject, status, error_message) VALUES (?, ?, ?, ?, ?, 'failed', ?)`,
+                    [tripId, trip.report_ref, recip.type, recip.email, `Expense Report ${trip.report_ref}`, emailErr.message]);
+            }
+        }
+    } catch (err) {
+        console.error('❌ Email sending error:', err.message);
+    }
+}
+
+// ============================================
+// TRIP APPROVAL ENDPOINT (with PDF generation)
+// ============================================
+app.post('/api/trips/:id/approve', requireAuth, requireRole('supervisor'), (req, res) => {
+    const tripId = req.params.id;
+    const { comment } = req.body;
+
+    // Verify trip exists and is submitted, and belongs to supervisor's direct report
+    db.get(`SELECT t.*, emp.supervisor_id FROM trips t JOIN employees emp ON t.employee_id = emp.id WHERE t.id = ?`, [tripId], (err, trip) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!trip) return res.status(404).json({ error: 'Trip not found' });
+        if (trip.status !== 'submitted') return res.status(400).json({ error: 'Trip is not in submitted status' });
+        if (trip.supervisor_id !== req.user.employeeId) {
+            return res.status(403).json({ error: 'You can only approve trips from your direct reports' });
+        }
+
+        // Get supervisor name
+        db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err, sup) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            const approverName = sup ? sup.name : 'Supervisor';
+
+            // Calculate total
+            db.get(`SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE trip_id = ?`, [tripId], (err, totRow) => {
+                const totalAmount = totRow ? totRow.total : 0;
+
+                // Update trip status
+                db.run(`UPDATE trips SET status = 'approved', approved_by = ?, approved_at = CURRENT_TIMESTAMP, approval_comment = ?, total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                    [approverName, comment || '', totalAmount, tripId], function(err) {
+                        if (err) return res.status(500).json({ error: 'Failed to approve trip' });
+
+                        // Notify employee
+                        createNotification(trip.employee_id, 'trip_approved', `Your trip "${trip.trip_name}" has been approved by ${approverName}.`);
+
+                        // Return success immediately — PDF generation happens async
+                        res.json({ success: true, message: 'Trip approved successfully!' });
+
+                        // Async: Generate PDF report (non-blocking)
+                        (async () => {
+                            try {
+                                const refNumber = await generateRefNumber(db);
+                                // Store ref first so PDF can use it
+                                await new Promise((res, rej) => {
+                                    db.run(`UPDATE trips SET report_ref = ? WHERE id = ?`, [refNumber, tripId], e => e ? rej(e) : res());
+                                });
+
+                                const pdfBuffer = await generateExpenseReportPDF(tripId, db);
+                                const now = new Date().toISOString();
+
+                                await new Promise((res, rej) => {
+                                    db.run(`UPDATE trips SET pdf_report = ?, report_generated_at = ? WHERE id = ?`,
+                                        [pdfBuffer, now, tripId], e => e ? rej(e) : res());
+                                });
+
+                                console.log(`✅ PDF report generated for trip #${tripId} (${refNumber})`);
+
+                                // Send emails (best-effort)
+                                sendExpenseReportEmail(tripId, db).catch(e => console.error('❌ Email error:', e.message));
+
+                            } catch (pdfErr) {
+                                console.error(`❌ PDF generation failed for trip #${tripId}:`, pdfErr.message);
+                                // PDF failure does NOT block approval
+                            }
+                        })();
+                    });
+            });
+        });
+    });
+});
+
+// Download PDF report
+app.get('/api/trips/:id/report', (req, res, next) => {
+    if (req.query.token && !req.headers.authorization) {
+        req.headers.authorization = `Bearer ${req.query.token}`;
+    }
+    requireAuth(req, res, next);
+}, (req, res) => {
+    const tripId = req.params.id;
+    db.get(`SELECT pdf_report, report_ref FROM trips WHERE id = ?`, [tripId], (err, trip) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!trip || !trip.pdf_report) return res.status(404).json({ error: 'No PDF report found for this trip' });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${trip.report_ref || 'report'}.pdf"`);
+        res.send(trip.pdf_report);
+    });
+});
+
+// Regenerate PDF report for already-approved trip
+app.post('/api/trips/:id/report/regenerate', requireAuth, (req, res) => {
+    const tripId = req.params.id;
+    db.get(`SELECT * FROM trips WHERE id = ?`, [tripId], async (err, trip) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!trip) return res.status(404).json({ error: 'Trip not found' });
+        if (trip.status !== 'approved') return res.status(400).json({ error: 'Trip must be approved to generate report' });
+
+        try {
+            // Generate ref if missing
+            let refNumber = trip.report_ref;
+            if (!refNumber) {
+                refNumber = await generateRefNumber(db);
+                await new Promise((res, rej) => {
+                    db.run(`UPDATE trips SET report_ref = ? WHERE id = ?`, [refNumber, tripId], e => e ? rej(e) : res());
+                });
+            }
+
+            const pdfBuffer = await generateExpenseReportPDF(tripId, db);
+            const now = new Date().toISOString();
+
+            db.run(`UPDATE trips SET pdf_report = ?, report_generated_at = ? WHERE id = ?`,
+                [pdfBuffer, now, tripId], (err) => {
+                    if (err) return res.status(500).json({ error: 'Failed to save PDF' });
+                    res.json({ success: true, message: 'PDF report regenerated!', ref: refNumber });
+
+                    // Send emails
+                    sendExpenseReportEmail(tripId, db).catch(e => console.error('❌ Email error:', e.message));
+                });
+        } catch (pdfErr) {
+            console.error('❌ PDF regeneration error:', pdfErr);
+            res.status(500).json({ error: 'PDF generation failed: ' + pdfErr.message });
+        }
+    });
+});
+
+// Email log endpoint
+app.get('/api/admin/email-log', requireAuth, requireRole('admin'), (req, res) => {
+    const { status } = req.query;
+    let query = `SELECT * FROM email_log`;
+    let params = [];
+    if (status) { query += ` WHERE status = ?`; params.push(status); }
+    query += ` ORDER BY created_at DESC LIMIT 200`;
+    db.all(query, params, (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Failed to fetch email log' });
+        res.json(rows || []);
+    });
+});
+
+// Audit email settings endpoints
+app.get('/api/settings/audit-email', requireAuth, requireRole('admin'), (req, res) => {
+    db.get(`SELECT value FROM app_settings WHERE key = 'audit_email'`, (err, row) => {
+        res.json({ audit_email: row ? row.value : '' });
+    });
+});
+
+app.put('/api/settings/audit-email', requireAuth, requireRole('admin'), (req, res) => {
+    const { audit_email } = req.body;
+    if (audit_email && !validateEmail(audit_email)) {
+        return res.status(400).json({ error: 'Invalid email format' });
+    }
+    // Get old value for audit
+    db.get(`SELECT value FROM app_settings WHERE key = 'audit_email'`, (err, old) => {
+        db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('audit_email', ?, ?, CURRENT_TIMESTAMP)`,
+            [audit_email || '', req.user.employeeId], (err) => {
+                if (err) return res.status(500).json({ error: 'Failed to save' });
+                // Audit log
+                db.run(`INSERT INTO settings_audit_log (setting_key, old_value, new_value, changed_by) VALUES (?, ?, ?, ?)`,
+                    ['audit_email', old ? old.value : '', audit_email || '', req.user.employeeId]);
+                res.json({ success: true, message: 'Audit email updated' });
+            });
+    });
+});
+
+// SMTP settings endpoints
+app.get('/api/settings/smtp', requireAuth, requireRole('admin'), (req, res) => {
+    db.all(`SELECT key, value FROM app_settings WHERE key LIKE 'smtp_%'`, (err, rows) => {
+        const s = {};
+        (rows || []).forEach(r => { s[r.key] = r.key === 'smtp_pass' ? '••••••' : r.value; });
+        res.json(s);
+    });
+});
+
+app.put('/api/settings/smtp', requireAuth, requireRole('admin'), (req, res) => {
+    const keys = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from'];
+    const updates = [];
+    keys.forEach(key => {
+        if (req.body[key] !== undefined && req.body[key] !== '••••••') {
+            updates.push(new Promise((resolve, reject) => {
+                db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+                    [key, req.body[key], req.user.employeeId], e => e ? reject(e) : resolve());
+            }));
+        }
+    });
+    Promise.all(updates).then(() => {
+        res.json({ success: true, message: 'SMTP settings saved' });
+    }).catch(err => {
+        res.status(500).json({ error: 'Failed to save SMTP settings' });
+    });
+});
+
+// Get trip report info (for frontend — without the blob)
+app.get('/api/trips/:id/report-info', requireAuth, (req, res) => {
+    db.get(`SELECT report_ref, report_generated_at, CASE WHEN pdf_report IS NOT NULL THEN 1 ELSE 0 END as has_pdf FROM trips WHERE id = ?`, [req.params.id], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row) return res.status(404).json({ error: 'Trip not found' });
+        res.json(row);
+    });
 });
 
 // 🚀 Start server

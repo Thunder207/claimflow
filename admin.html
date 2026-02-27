@@ -1041,6 +1041,39 @@ try {
                     <div id="variance-audit-log" style="font-size: 13px; color: #495057;">Loading...</div>
                 </div>
             </div>
+
+            <!-- Audit Email Settings -->
+            <div style="margin-top: 40px; border-top: 2px solid #eee; padding-top: 30px;">
+                <div class="section-header">📧 Audit Email Settings</div>
+                <div style="max-width: 600px; margin: 0 auto;">
+                    <div id="audit-email-warning" style="display:none; background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 12px; margin-bottom: 16px; color: #856404; font-weight: 600;">
+                        ⚠️ Audit email not configured — PDF reports will not be sent to finance/audit.
+                    </div>
+                    <label style="font-weight: 600; color: #2c3e50; margin-bottom: 8px; display: block;">Finance/Audit Email Address:</label>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="email" id="audit-email-input" placeholder="finance@company.com" style="flex: 1; padding: 10px; border: 2px solid #667eea; border-radius: 8px; font-size: 15px;">
+                        <button onclick="saveAuditEmail()" style="background: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;">💾 Save</button>
+                    </div>
+                    <p style="font-size: 12px; color: #888; margin-top: 8px;">Expense report PDFs will be emailed to this address when trips are approved.</p>
+                </div>
+            </div>
+
+            <!-- Email Log -->
+            <div style="margin-top: 40px; border-top: 2px solid #eee; padding-top: 30px;">
+                <div class="section-header">📬 Email Log</div>
+                <div style="margin-bottom: 16px; display: flex; gap: 10px; align-items: center;">
+                    <label style="font-weight: 600;">Filter:</label>
+                    <select id="email-log-filter" onchange="loadEmailLog()" style="padding: 8px 12px; border: 1px solid #dee2e6; border-radius: 6px;">
+                        <option value="">All</option>
+                        <option value="sent">Sent</option>
+                        <option value="failed">Failed</option>
+                    </select>
+                    <button onclick="loadEmailLog()" style="background: #667eea; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">🔄 Refresh</button>
+                </div>
+                <div id="email-log-table" style="font-size: 13px;">
+                    <p style="color:#999; text-align:center; padding:20px;">Click Refresh to load email log.</p>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1279,6 +1312,8 @@ try {
                 loadNJCRatesData();
             } else if (tabName === 'settings') {
                 loadVarianceSettings();
+                loadAuditEmailSettings();
+                loadEmailLog();
             }
         }
 
@@ -1378,7 +1413,7 @@ try {
                             ${pendingExps.length > 0 && currentUserRole === 'supervisor' ? `
                             <!-- Bulk Actions -->
                             <div style="padding: 12px 20px; background: #fff8e1; border-bottom: 1px solid #eee; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                                <button class="btn btn-success" onclick="bulkApproveTrip([${pendingIds.join(',')}])" style="font-size: 15px; padding: 8px 20px;">
+                                <button class="btn btn-success" onclick="bulkApproveTrip([${pendingIds.join(',')}], ${group.tripId})" style="font-size: 15px; padding: 8px 20px;">
                                     ✅ Approve All ${pendingExps.length} Expenses
                                 </button>
                                 <button class="btn btn-danger" onclick="bulkRejectTrip([${pendingIds.join(',')}])" style="font-size: 13px; padding: 6px 14px;">
@@ -1386,6 +1421,8 @@ try {
                                 </button>
                             </div>
                             ` : ''}
+                            <!-- Download Report Button (for approved trips) -->
+                            <div id="report-section-${group.tripId}" style="display: none;"></div>
                             <!-- Expense Breakdown Table -->
                             <div style="padding: 12px 20px;">
                                 <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
@@ -1624,7 +1661,7 @@ try {
                         ${pendingExps.length > 0 && currentUserRole === 'supervisor' ? `
                         <!-- Bulk Actions -->
                         <div style="padding: 12px 20px; background: #fff8e1; border-bottom: 1px solid #eee; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                            <button class="btn btn-success" onclick="bulkApproveTrip([${pendingIds.join(',')}])" style="font-size: 15px; padding: 8px 20px;">
+                            <button class="btn btn-success" onclick="bulkApproveTrip([${pendingIds.join(',')}], ${group.tripId})" style="font-size: 15px; padding: 8px 20px;">
                                 ✅ Approve All ${pendingExps.length} Expenses
                             </button>
                             <button class="btn btn-danger" onclick="bulkRejectTrip([${pendingIds.join(',')}])" style="font-size: 13px; padding: 6px 14px;">
@@ -1632,6 +1669,8 @@ try {
                             </button>
                         </div>
                         ` : ''}
+                        <!-- Download Report Button (for approved trips) -->
+                        <div id="report-section-${group.tripId}" style="display: none;"></div>
                         <!-- Expandable Day-by-Day Breakdown -->
                         <div style="padding: 12px 20px; border-bottom: 1px solid #eee;">
                             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
@@ -2360,7 +2399,7 @@ try {
             }
         }
 
-        async function bulkApproveTrip(expenseIds) {
+        async function bulkApproveTrip(expenseIds, tripId) {
             let success = 0, fail = 0;
             for (const id of expenseIds) {
                 try {
@@ -2372,7 +2411,17 @@ try {
                     if (r.ok) success++; else fail++;
                 } catch(e) { fail++; }
             }
-            showMessage('success', `✅ ${success} expenses approved${fail > 0 ? `, ❌ ${fail} failed` : ''}`);
+            // Also approve the trip itself (triggers PDF generation)
+            if (tripId) {
+                try {
+                    await fetch(`/api/trips/${tripId}/approve`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                        body: JSON.stringify({ comment: 'All expenses approved' })
+                    });
+                } catch(e) { console.error('Trip approval error:', e); }
+            }
+            showMessage('success', `✅ ${success} expenses approved${fail > 0 ? `, ❌ ${fail} failed` : ''}. PDF report is being generated...`);
             loadExpensesWithSearch();
         }
 
@@ -4146,6 +4195,137 @@ try {
             } catch(e) { 
                 document.getElementById('variance-audit-log').innerHTML = '<p style="color:#999;">Unable to load audit log.</p>'; 
             }
+        }
+
+        // ============================================
+        // PDF REPORT DOWNLOAD & ADMIN SECTIONS
+        // ============================================
+
+        // Check and show report download button for approved trips
+        async function checkTripReport(tripId) {
+            try {
+                const resp = await fetch(`/api/trips/${tripId}/report-info`, { headers: { 'Authorization': `Bearer ${sessionId}` } });
+                const info = await resp.json();
+                const container = document.getElementById(`report-section-${tripId}`);
+                if (!container) return;
+
+                if (info.has_pdf) {
+                    container.style.display = 'block';
+                    container.innerHTML = `
+                        <div style="background: #e8f5e9; border: 1px solid #28a745; padding: 12px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                            <span style="font-weight: 600; color: #1b5e20;">✅ APPROVED — Report Ready</span>
+                            <button onclick="window.open('/api/trips/${tripId}/report?token=${sessionId}', '_blank')" style="padding: 8px 20px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;">📄 Download PDF</button>
+                            <span style="font-size: 12px; color: #666;">Ref: ${info.report_ref || 'N/A'} | Generated: ${info.report_generated_at ? new Date(info.report_generated_at).toLocaleDateString() : 'N/A'}</span>
+                        </div>`;
+                } else if (info.report_ref === null) {
+                    // Approved but no PDF yet — offer regenerate
+                    container.style.display = 'block';
+                    container.innerHTML = `
+                        <div style="background: #fff3cd; border: 1px solid #ffc107; padding: 12px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                            <span style="font-weight: 600; color: #856404;">⚠️ Approved — No PDF report</span>
+                            <button onclick="regenerateReport(${tripId})" style="padding: 8px 20px; background: #ffc107; color: #212529; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;">📄 Generate Report</button>
+                        </div>`;
+                }
+            } catch(e) { /* ignore */ }
+        }
+
+        async function regenerateReport(tripId) {
+            try {
+                const resp = await fetch(`/api/trips/${tripId}/report/regenerate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` }
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    showMessage('success', `✅ PDF generated! Ref: ${data.ref}`);
+                    checkTripReport(tripId);
+                } else {
+                    showMessage('danger', data.error || 'Failed to generate report');
+                }
+            } catch(e) { showMessage('danger', 'Network error'); }
+        }
+
+        // Hook into expense loading to check reports for approved trips
+        const origLoadExpenses = window.loadExpensesForRole;
+        // Observe DOM changes to detect trip cards and check reports
+        const reportObserver = new MutationObserver(() => {
+            document.querySelectorAll('[id^="report-section-"]').forEach(el => {
+                const tripId = el.id.replace('report-section-', '');
+                if (tripId && !el.dataset.checked) {
+                    el.dataset.checked = '1';
+                    checkTripReport(tripId);
+                }
+            });
+        });
+        reportObserver.observe(document.body, { childList: true, subtree: true });
+
+        // ============================================
+        // AUDIT EMAIL & EMAIL LOG (Admin sections)
+        // ============================================
+
+        async function loadAuditEmailSettings() {
+            if (currentUserRole !== 'admin') return;
+            try {
+                const resp = await fetch('/api/settings/audit-email', { headers: { 'Authorization': `Bearer ${sessionId}` } });
+                const data = await resp.json();
+                const input = document.getElementById('audit-email-input');
+                if (input) input.value = data.audit_email || '';
+                const warn = document.getElementById('audit-email-warning');
+                if (warn) warn.style.display = data.audit_email ? 'none' : 'block';
+            } catch(e) {}
+        }
+
+        async function saveAuditEmail() {
+            const email = document.getElementById('audit-email-input').value.trim();
+            try {
+                const resp = await fetch('/api/settings/audit-email', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                    body: JSON.stringify({ audit_email: email })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    showMessage('success', '✅ Audit email updated');
+                    loadAuditEmailSettings();
+                } else {
+                    showMessage('danger', data.error || 'Failed');
+                }
+            } catch(e) { showMessage('danger', 'Network error'); }
+        }
+
+        async function loadEmailLog() {
+            if (currentUserRole !== 'admin') return;
+            const filter = document.getElementById('email-log-filter')?.value || '';
+            try {
+                const url = filter ? `/api/admin/email-log?status=${filter}` : '/api/admin/email-log';
+                const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${sessionId}` } });
+                const rows = await resp.json();
+                const container = document.getElementById('email-log-table');
+                if (!container) return;
+                if (!rows || rows.length === 0) {
+                    container.innerHTML = '<p style="color:#999; text-align:center; padding:20px;">No email records found.</p>';
+                    return;
+                }
+                container.innerHTML = `
+                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                        <thead><tr style="background:#f8f9fa; border-bottom:2px solid #dee2e6;">
+                            <th style="padding:8px; text-align:left;">Date</th>
+                            <th style="padding:8px; text-align:left;">Reference</th>
+                            <th style="padding:8px; text-align:left;">Type</th>
+                            <th style="padding:8px; text-align:left;">Email</th>
+                            <th style="padding:8px; text-align:center;">Status</th>
+                        </tr></thead>
+                        <tbody>${rows.map(r => `
+                            <tr style="border-bottom:1px solid #eee;">
+                                <td style="padding:6px 8px;">${new Date(r.created_at).toLocaleString()}</td>
+                                <td style="padding:6px 8px; font-family:monospace;">${r.ref_number || ''}</td>
+                                <td style="padding:6px 8px;">${r.recipient_type || ''}</td>
+                                <td style="padding:6px 8px;">${r.recipient_email || ''}</td>
+                                <td style="padding:6px 8px; text-align:center;"><span style="padding:2px 8px; border-radius:12px; font-size:12px; font-weight:600; ${r.status === 'sent' ? 'background:#d4edda; color:#155724;' : 'background:#f8d7da; color:#721c24;'}">${r.status}</span>${r.error_message ? `<br><small style="color:#dc3545;">${r.error_message}</small>` : ''}</td>
+                            </tr>
+                        `).join('')}</tbody>
+                    </table>`;
+            } catch(e) { console.error('Email log error:', e); }
         }
 
     </script>

@@ -4811,6 +4811,7 @@
                             </div>
                             <div>${statusBadge}</div>
                         </div>
+                        ${status === 'approved' ? `<div id="tdp-report-section-${trip.id}" style="margin-top: 12px;"></div>` : ''}
                         ${showVarianceBtn ? `<div id="trip-variance-${trip.id}" style="display:none; margin-top: 12px; padding-top: 12px; border-top: 1px solid #dee2e6;"></div>` : ''}
                     </div>
                 `;
@@ -7423,6 +7424,64 @@
                 tdpShowSaving(false);
             }
         }
+
+        // Toggle variance view on My Trips cards (submitted/approved trips)
+        // ============================================
+        // PDF REPORT DOWNLOAD FOR EMPLOYEES
+        // ============================================
+        async function checkTripReportEmployee(tripId) {
+            try {
+                const resp = await fetch(`/api/trips/${tripId}/report-info`, { headers: { 'Authorization': `Bearer ${sessionId}` } });
+                const info = await resp.json();
+                const container = document.getElementById(`tdp-report-section-${tripId}`);
+                if (!container) return;
+
+                if (info.has_pdf) {
+                    container.innerHTML = `
+                        <div style="background: #e8f5e9; border: 1px solid #28a745; border-radius: 12px; padding: 16px; text-align: center;">
+                            <div style="font-size: 16px; font-weight: 600; color: #1b5e20; margin-bottom: 8px;">✅ APPROVED — Ready for Payment</div>
+                            <div style="margin-bottom: 8px;">
+                                <button onclick="window.open('/api/trips/${tripId}/report?token=${sessionId}', '_blank')" style="padding: 10px 24px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer;">📄 Download Expense Report (PDF)</button>
+                            </div>
+                            <div style="font-size: 13px; color: #666;">Ref: ${info.report_ref || 'N/A'} | Generated: ${info.report_generated_at ? new Date(info.report_generated_at).toLocaleDateString() : 'N/A'}</div>
+                        </div>`;
+                } else {
+                    container.innerHTML = `
+                        <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 12px; padding: 16px; text-align: center;">
+                            <div style="font-size: 14px; font-weight: 600; color: #856404; margin-bottom: 8px;">✅ Approved — Report not yet generated</div>
+                            <button onclick="regenerateReportEmployee(${tripId})" style="padding: 8px 20px; background: #ffc107; color: #212529; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;">📄 Generate Expense Report</button>
+                        </div>`;
+                }
+            } catch(e) { /* ignore */ }
+        }
+
+        async function regenerateReportEmployee(tripId) {
+            try {
+                const resp = await fetch(`/api/trips/${tripId}/report/regenerate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` }
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    showNotification('✅ PDF generated! Ref: ' + data.ref, 'success');
+                    checkTripReportEmployee(tripId);
+                } else {
+                    showNotification(data.error || 'Failed to generate report', 'error');
+                }
+            } catch(e) { showNotification('Network error', 'error'); }
+        }
+
+        // Auto-check reports for approved trips
+        const reportObserverEmp = new MutationObserver(() => {
+            document.querySelectorAll('[id^="tdp-report-section-"]').forEach(el => {
+                const tripId = el.id.replace('tdp-report-section-', '');
+                if (tripId && !el.dataset.checked) {
+                    el.dataset.checked = '1';
+                    checkTripReportEmployee(tripId);
+                }
+            });
+        });
+        reportObserverEmp.observe(document.body, { childList: true, subtree: true });
 
         // Toggle variance view on My Trips cards (submitted/approved trips)
         async function toggleTripVariance(tripId) {
