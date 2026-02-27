@@ -3009,6 +3009,11 @@ try {
                     </table>
                     </div>
                 </div>
+                ${data.trip && data.trip.justification ? `
+                <div style="background: #FFF8E1; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin-top: 12px;">
+                    <div style="color: #856404; font-weight: 600; margin-bottom: 8px;">⚠️ Employee Justification for Budget Overage</div>
+                    <div style="background: white; border-radius: 6px; padding: 12px; font-style: italic; color: #333; border: 1px solid #e0e0e0;">${data.trip.justification.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+                </div>` : ''}
             `;
         }
 

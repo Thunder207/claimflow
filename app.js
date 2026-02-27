@@ -273,6 +273,7 @@ function initializeDatabase() {
             status TEXT DEFAULT 'draft',
             total_amount DECIMAL(10,2) DEFAULT 0.00,
             submitted_at DATETIME,
+            justification TEXT DEFAULT NULL,
             approved_by TEXT,
             approved_at DATETIME,
             approval_comment TEXT,
@@ -540,6 +541,12 @@ function insertDefaultData() {
         db.run(`ALTER TABLE expenses ADD COLUMN travel_auth_id INTEGER REFERENCES travel_authorizations(id)`, (err) => {
             if (err && !err.message.includes('duplicate column')) {
                 console.error('❌ Error adding travel_auth_id column:', err.message);
+            }
+        });
+        
+        db.run(`ALTER TABLE trips ADD COLUMN justification TEXT DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding justification column:', err.message);
             }
         });
     }
@@ -3209,7 +3216,7 @@ app.get('/api/trips/:id/variance', requireAuth, (req, res) => {
                     variance.total.estimateCount = atExpenses.length;
                     
                     res.json({
-                        trip: { id: trip.id, name: trip.trip_name, status: trip.status },
+                        trip: { id: trip.id, name: trip.trip_name, status: trip.status, justification: trip.justification || null },
                         at: { id: at.id, name: at.name, status: at.status },
                         thresholds: { pct: pctThreshold, dollar: dollarThreshold },
                         variance
@@ -3275,13 +3282,14 @@ app.post('/api/trips/:id/submit', requireAuth, (req, res) => {
             }
             
             // Update trip status and link to AT if not already linked
+            const justification = req.body && req.body.justification ? req.body.justification : null;
             const updateQuery = `
                 UPDATE trips 
-                SET status = 'submitted', submitted_at = CURRENT_TIMESTAMP
+                SET status = 'submitted', submitted_at = CURRENT_TIMESTAMP, justification = ?
                 WHERE id = ?
             `;
             
-            db.run(updateQuery, [tripId], function(err) {
+            db.run(updateQuery, [justification, tripId], function(err) {
                 if (err) {
                     console.error('❌ Error submitting trip:', err);
                     return res.status(500).json({ error: 'Failed to submit trip' });

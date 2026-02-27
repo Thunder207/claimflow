@@ -1168,6 +1168,15 @@
                     <!-- Variance content will be loaded here -->
                 </div>
                 
+                <div id="tdp-justification-section" style="display: none; background: #FFF8E1; border: 2px solid #ffc107; border-radius: 12px; padding: 20px; margin-bottom: 16px;">
+                    <div style="color: #856404; font-weight: 600; font-size: 15px; margin-bottom: 12px;">
+                        ⚠️ <span id="tdp-justification-message"></span>
+                    </div>
+                    <div style="margin-bottom: 8px; color: #856404; font-size: 14px;">Please explain the reason for the overage:</div>
+                    <textarea id="tdp-justification-text" rows="4" maxlength="1000" placeholder="Please explain why your trip expenses exceeded the authorized amount. Include specific reasons for the major overages (e.g., flight rebooking, hotel rate increase, unplanned expenses)." style="width: 100%; padding: 12px; border: 2px solid #ffc107; border-radius: 8px; font-size: 14px; resize: vertical; box-sizing: border-box;" oninput="tdpCheckJustification()"></textarea>
+                    <div id="tdp-justification-counter" style="font-size: 12px; color: #999; margin-top: 4px;">0 / 20 minimum characters</div>
+                </div>
+
                 <div style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 20px; border-radius: 12px; text-align: center; border: 2px solid #28a745;">
                     <div style="font-size: 14px; color: #2e7d32; font-weight: 600; margin-bottom: 4px;">💰 Trip Expense Total</div>
                     <div id="tdp-grand-total" style="font-size: 32px; font-weight: bold; color: #28a745; margin-bottom: 16px;">$0.00</div>
@@ -7507,6 +7516,9 @@
 
                 const t = data.thresholds;
                 
+                // Cache for justification check
+                window._tdpLastVarianceData = data;
+                
                 // --- COMPUTE ACTUALS CLIENT-SIDE FROM tdpState (meals split into B/L/D) ---
                 const clientActuals = { breakfast: 0, lunch: 0, dinner: 0, incidentals: 0, hotel: 0, kilometric: 0, flight: 0, train: 0, bus: 0, rental: 0, other: 0 };
                 const clientCounts = { breakfast: 0, lunch: 0, dinner: 0, incidentals: 0, hotel: 0, kilometric: 0, flight: 0, train: 0, bus: 0, rental: 0, other: 0 };
@@ -7705,6 +7717,9 @@
                 `;
 
                 container.style.display = 'block';
+                
+                // Check if justification is needed based on total overage
+                tdpCheckVarianceJustification();
 
             } catch(e) {
                 console.error('Failed to load variance data:', e);
@@ -7712,6 +7727,98 @@
             }
         }
         
+        // Track whether justification is currently required
+        let tdpJustificationRequired = false;
+
+        function tdpCheckVarianceJustification() {
+            const section = document.getElementById('tdp-justification-section');
+            const submitBtn = document.getElementById('btn-submit-trip');
+            if (!section) return;
+
+            // Get current totals from the variance data cached during tdpLoadVariance
+            if (!window._tdpLastVarianceData) {
+                section.style.display = 'none';
+                tdpJustificationRequired = false;
+                return;
+            }
+
+            const data = window._tdpLastVarianceData;
+            const pctThreshold = data.thresholds.pct;
+
+            // Compute client-side actuals (same as tdpLoadVariance)
+            const clientActuals = { breakfast: 0, lunch: 0, dinner: 0, incidentals: 0, hotel: 0, kilometric: 0, flight: 0, train: 0, bus: 0, rental: 0, other: 0 };
+            if (tdpState.days) {
+                tdpState.days.forEach(day => {
+                    if (day.perDiem) {
+                        if (day.perDiem.breakfast) clientActuals.breakfast += parseFloat(DP_RATES?.breakfast?.rate || 23.45);
+                        if (day.perDiem.lunch) clientActuals.lunch += parseFloat(DP_RATES?.lunch?.rate || 29.75);
+                        if (day.perDiem.dinner) clientActuals.dinner += parseFloat(DP_RATES?.dinner?.rate || 47.05);
+                        if (day.perDiem.incidentals) clientActuals.incidentals += parseFloat(DP_RATES?.incidentals?.rate || 17.30);
+                    }
+                    if (day.showHotel && day.hotelOn) clientActuals.hotel += parseFloat(day.hotelRate || 150);
+                });
+            }
+            if (tdpState.vehicleKm > 0) clientActuals.kilometric = tdpState.vehicleKm * (DP_VEHICLE_RATE || 0.68);
+            ['flight', 'train', 'bus', 'rental'].forEach(mode => {
+                const btn = document.querySelector(`#tdp-transport-toggles [data-mode="${mode}"]`);
+                if (btn && btn.classList.contains('active')) {
+                    let amt = 0;
+                    switch(mode) {
+                        case 'flight': amt += parseFloat(document.getElementById('tdp-flight-dep')?.value||0) + parseFloat(document.getElementById('tdp-flight-ret')?.value||0) + parseFloat(document.getElementById('tdp-flight-bag')?.value||0); break;
+                        case 'train': amt += parseFloat(document.getElementById('tdp-train-dep')?.value||0) + parseFloat(document.getElementById('tdp-train-ret')?.value||0); break;
+                        case 'bus': amt += parseFloat(document.getElementById('tdp-bus-dep')?.value||0) + parseFloat(document.getElementById('tdp-bus-ret')?.value||0); break;
+                        case 'rental': amt = (parseFloat(document.getElementById('tdp-rental-days')?.value||0) * parseFloat(document.getElementById('tdp-rental-rate')?.value||0)) + parseFloat(document.getElementById('tdp-rental-insurance')?.value||0) + parseFloat(document.getElementById('tdp-rental-fuel')?.value||0); break;
+                    }
+                    clientActuals[mode] = amt;
+                }
+            });
+            if (tdpState.otherExpenses) tdpState.otherExpenses.forEach(o => { clientActuals.other += parseFloat(o.amount) || 0; });
+
+            const actualTotal = Object.values(clientActuals).reduce((s, v) => s + v, 0);
+            const serverV = data.variance;
+            const categories = ['breakfast','lunch','dinner','incidentals','hotel','kilometric','flight','train','bus','rental','other'];
+            const authorizedTotal = categories.reduce((s, cat) => s + (serverV[cat]?.estimate || 0), 0);
+
+            if (authorizedTotal <= 0) {
+                section.style.display = 'none';
+                tdpJustificationRequired = false;
+                if (submitBtn) submitBtn.disabled = false;
+                return;
+            }
+
+            const overagePct = ((actualTotal - authorizedTotal) / authorizedTotal) * 100;
+            const overageAmt = actualTotal - authorizedTotal;
+
+            if (overagePct > pctThreshold) {
+                tdpJustificationRequired = true;
+                section.style.display = 'block';
+                document.getElementById('tdp-justification-message').textContent =
+                    `Your trip total ($${actualTotal.toFixed(2)}) exceeds the authorized amount ($${authorizedTotal.toFixed(2)}) by $${overageAmt.toFixed(2)} (${overagePct.toFixed(1)}%). Justification is required.`;
+                tdpCheckJustification();
+            } else {
+                tdpJustificationRequired = false;
+                section.style.display = 'none';
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        }
+
+        function tdpCheckJustification() {
+            const textarea = document.getElementById('tdp-justification-text');
+            const counter = document.getElementById('tdp-justification-counter');
+            const submitBtn = document.getElementById('btn-submit-trip');
+            if (!textarea) return;
+            const len = textarea.value.trim().length;
+            if (len < 20) {
+                counter.innerHTML = `${len} / 20 minimum characters`;
+                counter.style.color = '#999';
+                if (submitBtn && tdpJustificationRequired) submitBtn.disabled = true;
+            } else {
+                counter.innerHTML = `✅ Minimum met (${len} chars)`;
+                counter.style.color = '#28a745';
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        }
+
         async function tdpSubmitTrip() {
             if (!tdpState.tripId) return;
             
@@ -7745,6 +7852,16 @@
             // Validate transportation before showing confirm
             if (!validateTransportation()) {
                 return; // Validation failed, don't submit
+            }
+            
+            // Validate justification if required
+            if (tdpJustificationRequired) {
+                const justText = document.getElementById('tdp-justification-text')?.value?.trim() || '';
+                if (justText.length < 20) {
+                    showMessage('error', '⚠️ Justification is required (minimum 20 characters) because your trip exceeds the authorized budget.');
+                    document.getElementById('tdp-justification-text')?.focus();
+                    return;
+                }
             }
             
             showConfirmModal('📤 Submit this trip for approval?<br><br>All expenses will be sent to your supervisor.', tdpDoSubmitTrip);
@@ -7911,9 +8028,13 @@
             // Submit the trip
             try {
                 showMessage('info', '📤 Submitting trip...');
+                const submitBody = {};
+                const justText = document.getElementById('tdp-justification-text')?.value?.trim();
+                if (justText && justText.length >= 20) submitBody.justification = justText;
                 const resp = await fetch(`/api/trips/${tdpState.tripId}/submit`, {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+                    body: JSON.stringify(submitBody)
                 });
                 const result = await resp.json();
                 if (result.success) {
