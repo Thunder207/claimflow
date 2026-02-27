@@ -3416,7 +3416,7 @@
             
             if (isPersonalActive) {
                 const km = parseFloat(document.getElementById('dp-vehicle-km')?.value || 0);
-                tdpState.vehicleKm = km;
+                dpState.vehicleKm = km;
                 const vehicleTotal = km * DP_VEHICLE_RATE;
                 total += vehicleTotal;
                 const vtEl = document.getElementById('dp-vehicle-total');
