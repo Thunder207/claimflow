@@ -4850,7 +4850,45 @@ function generateRefNumber(db) {
 // Generate PDF expense report
 function generateExpenseReportPDF(tripId, db) {
     return new Promise((resolve, reject) => {
-        // Fetch all needed data
+        // ── Helper: format date for tables ("Feb 27") ──
+        function fmtDateShort(dateStr) {
+            if (!dateStr) return 'N/A';
+            const d = new Date(dateStr + (dateStr.length === 10 ? 'T12:00:00' : ''));
+            if (isNaN(d)) return String(dateStr);
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return `${months[d.getMonth()]} ${d.getDate()}`;
+        }
+        // ── Helper: format date for text ("Feb 27, 2026") ──
+        function fmtDate(dateStr) {
+            if (!dateStr) return 'N/A';
+            const d = new Date(dateStr + (dateStr.length === 10 ? 'T12:00:00' : ''));
+            if (isNaN(d)) return String(dateStr);
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+        }
+        // ── Helper: format timestamp ("Feb 27, 2026 at 2:23 PM") ──
+        function fmtTimestamp(dateStr) {
+            if (!dateStr) return 'N/A';
+            const d = new Date(dateStr);
+            if (isNaN(d)) return String(dateStr);
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            let h = d.getHours(), ampm = h >= 12 ? 'PM' : 'AM';
+            h = h % 12 || 12;
+            const min = String(d.getMinutes()).padStart(2, '0');
+            return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} at ${h}:${min} ${ampm}`;
+        }
+        // ── Helper: format dollars ──
+        function fmtDollars(val) {
+            const n = parseFloat(val || 0);
+            return '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        }
+        function fmtVariance(val) {
+            const n = parseFloat(val || 0);
+            const abs = Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            if (n >= 0) return '+$' + abs;
+            return '\u2212$' + abs; // minus sign
+        }
+
         const tripQuery = `
             SELECT t.*, emp.name as employee_name, emp.email as employee_email, emp.employee_number,
                    emp.department, emp.position,
@@ -4864,24 +4902,17 @@ function generateExpenseReportPDF(tripId, db) {
         db.get(tripQuery, [tripId], (err, trip) => {
             if (err || !trip) return reject(err || new Error('Trip not found'));
 
-            // Get AT record
             db.get(`SELECT * FROM travel_authorizations WHERE trip_id = ?`, [tripId], (err, at) => {
                 if (err) return reject(err);
 
-                // Get AT expenses (estimates)
-                const atExpQuery = at ? `SELECT * FROM expenses WHERE travel_auth_id = ? ORDER BY date ASC` : null;
-                const atExpParams = at ? [at.id] : [];
-
                 const fetchAtExp = at ? new Promise((res, rej) => {
-                    db.all(atExpQuery, atExpParams, (e, rows) => e ? rej(e) : res(rows || []));
+                    db.all(`SELECT * FROM expenses WHERE travel_auth_id = ? ORDER BY date ASC`, [at.id], (e, rows) => e ? rej(e) : res(rows || []));
                 }) : Promise.resolve([]);
 
-                // Get trip expenses (actuals)
                 const fetchTripExp = new Promise((res, rej) => {
                     db.all(`SELECT * FROM expenses WHERE trip_id = ? ORDER BY date ASC`, [tripId], (e, rows) => e ? rej(e) : res(rows || []));
                 });
 
-                // Get variance thresholds
                 const fetchSettings = new Promise((res, rej) => {
                     db.all(`SELECT key, value FROM app_settings WHERE key IN ('variance_pct_threshold', 'variance_dollar_threshold')`, [], (e, rows) => {
                         if (e) return rej(e);
@@ -4896,186 +4927,218 @@ function generateExpenseReportPDF(tripId, db) {
                     const dollarThreshold = parseFloat(settings.variance_dollar_threshold || '100');
                     const refNumber = trip.report_ref || 'PENDING';
 
-                    // Create PDF
-                    const doc = new PDFDocument({ size: 'LETTER', margins: { top: 50, bottom: 60, left: 50, right: 50 } });
+                    const MARGIN = 72;
+                    const doc = new PDFDocument({ size: 'LETTER', margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN }, bufferPages: true });
                     const buffers = [];
                     doc.on('data', chunk => buffers.push(chunk));
                     doc.on('end', () => resolve(Buffer.concat(buffers)));
 
-                    let pageNum = 0;
-                    const pageWidth = 612 - 100; // margins
+                    const pageW = 612 - MARGIN * 2; // 468pt usable
+                    const LEFT = MARGIN;
+                    const RIGHT = 612 - MARGIN;
+                    const COLORS = { header: '#1a3a5c', green: '#28a745', orange: '#e67e22', red: '#dc3545', blue: '#007bff', grey: '#f8f9fa', body: '#000000', muted: '#666666' };
 
-                    function addFooter() {
-                        pageNum++;
-                        doc.save();
-                        doc.fontSize(8).fillColor('#999999')
-                            .text(`${refNumber}`, 50, 752, { width: pageWidth, align: 'left' })
-                            .text(`Page ${pageNum}`, 50, 752, { width: pageWidth, align: 'right' });
-                        doc.restore();
+                    function drawLine(y, color) {
+                        doc.save().moveTo(LEFT, y).lineTo(RIGHT, y).strokeColor(color || '#cccccc').lineWidth(0.5).stroke().restore();
                     }
 
-                    function drawLine(y) {
-                        doc.moveTo(50, y).lineTo(562, y).strokeColor('#cccccc').lineWidth(0.5).stroke();
+                    function checkPage(y, needed) {
+                        if (y + (needed || 20) > 720) { doc.addPage(); return MARGIN; }
+                        return y;
                     }
 
-                    // ========= PAGE 1: COVER/SUMMARY =========
-                    addFooter();
-                    doc.fontSize(22).fillColor('#1a237e').text('EXPENSE REPORT', { align: 'center' });
-                    doc.moveDown(0.3);
-                    doc.fontSize(10).fillColor('#666666').text('Government Employee Expense Tracker — ClaimFlow', { align: 'center' });
-                    doc.moveDown(1);
-                    drawLine(doc.y);
-                    doc.moveDown(0.5);
+                    // ── Helper: draw a table row with cell borders ──
+                    function drawTableRow(y, cols, values, opts) {
+                        opts = opts || {};
+                        const rowH = opts.rowHeight || 16;
+                        if (opts.bg) {
+                            doc.save().rect(LEFT - 4, y - 2, pageW + 8, rowH).fill(opts.bg).restore();
+                        }
+                        doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica')
+                           .fontSize(opts.fontSize || 9)
+                           .fillColor(opts.color || COLORS.body);
+                        cols.forEach((col, i) => {
+                            doc.text(values[i] || '', col.x, y, { width: col.width, align: col.align || 'left' });
+                        });
+                        doc.font('Helvetica');
+                        return y + rowH;
+                    }
 
-                    doc.fontSize(11).fillColor('#000000');
-                    const summaryData = [
-                        ['Reference Number', refNumber],
-                        ['Employee Name', trip.employee_name || 'N/A'],
-                        ['Employee Number', trip.employee_number || 'N/A'],
-                        ['Department', trip.department || 'N/A'],
-                        ['Position', trip.position || 'N/A'],
-                        ['Trip Name', trip.trip_name || 'N/A'],
-                        ['Destination', trip.destination || 'N/A'],
-                        ['Travel Dates', `${trip.start_date} to ${trip.end_date}`],
-                        ['Purpose', trip.purpose || 'N/A'],
-                    ];
+                    // Destination & Purpose: prefer AT record, fall back to trip
+                    const destination = (at && at.destination) || trip.destination || 'N/A';
+                    const purpose = (at && at.purpose) || trip.purpose || 'N/A';
 
-                    summaryData.forEach(([label, value]) => {
-                        doc.font('Helvetica-Bold').text(`${label}: `, { continued: true });
-                        doc.font('Helvetica').text(value);
-                        doc.moveDown(0.2);
-                    });
-
-                    doc.moveDown(0.5);
-                    drawLine(doc.y);
-                    doc.moveDown(0.5);
-
-                    // Financial Summary
+                    // Financial totals
                     const atTotal = at ? parseFloat(at.est_total || 0) : 0;
                     const actualTotal = tripExpenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
                     const variance = actualTotal - atTotal;
 
-                    doc.fontSize(14).fillColor('#1a237e').text('Financial Summary');
-                    doc.moveDown(0.3);
-                    doc.fontSize(11).fillColor('#000000');
-                    doc.font('Helvetica-Bold').text(`Authorized Total: `, { continued: true });
-                    doc.font('Helvetica').text(`$${atTotal.toFixed(2)}`);
-                    doc.font('Helvetica-Bold').text(`Actual Total: `, { continued: true });
-                    doc.font('Helvetica').text(`$${actualTotal.toFixed(2)}`);
-                    doc.font('Helvetica-Bold').text(`Variance: `, { continued: true });
-                    const varColor = variance > 0 ? '#dc3545' : '#28a745';
-                    doc.font('Helvetica').fillColor(varColor).text(`${variance >= 0 ? '+' : ''}$${variance.toFixed(2)}`);
-                    doc.fillColor('#000000');
-
-                    doc.moveDown(0.5);
+                    // ═══════════════════════════════════════════
+                    // PAGE 1 — COVER / SUMMARY
+                    // ═══════════════════════════════════════════
+                    doc.fontSize(18).fillColor(COLORS.header).font('Helvetica-Bold').text('EXPENSE REPORT', { align: 'center' });
+                    doc.moveDown(0.2);
+                    doc.fontSize(10).fillColor(COLORS.muted).font('Helvetica').text('ClaimFlow \u2014 Expense Management', { align: 'center' });
+                    doc.moveDown(0.8);
                     drawLine(doc.y);
                     doc.moveDown(0.5);
 
-                    // Approval chain summary
-                    doc.fontSize(14).fillColor('#1a237e').text('Approval Summary');
+                    // Reference & date
+                    doc.fontSize(10).fillColor(COLORS.body);
+                    doc.font('Helvetica-Bold').text('Reference: ', { continued: true }).font('Helvetica').text(refNumber);
+                    doc.font('Helvetica-Bold').text('Generated: ', { continued: true }).font('Helvetica').text(fmtTimestamp(new Date().toISOString()));
+                    doc.moveDown(0.6);
+
+                    // Employee info
+                    doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('Employee Information');
                     doc.moveDown(0.3);
-                    doc.fontSize(11).fillColor('#000000');
+                    doc.fontSize(10).fillColor(COLORS.body);
+                    const empInfo = [
+                        ['Name', trip.employee_name || 'N/A'],
+                        ['Employee #', trip.employee_number || 'N/A'],
+                        ['Department', trip.department || 'N/A'],
+                        ['Position', trip.position || 'N/A'],
+                    ];
+                    empInfo.forEach(([l, v]) => {
+                        doc.font('Helvetica-Bold').text(l + ': ', { continued: true }).font('Helvetica').text(v);
+                    });
+                    doc.moveDown(0.6);
+
+                    // Trip info
+                    doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('Trip Information');
+                    doc.moveDown(0.3);
+                    doc.fontSize(10).fillColor(COLORS.body);
+                    const tripInfo = [
+                        ['Trip Name', trip.trip_name || 'N/A'],
+                        ['Destination', destination],
+                        ['Travel Dates', fmtDate(trip.start_date) + ' to ' + fmtDate(trip.end_date)],
+                        ['Purpose', purpose],
+                    ];
+                    tripInfo.forEach(([l, v]) => {
+                        doc.font('Helvetica-Bold').text(l + ': ', { continued: true }).font('Helvetica').text(v);
+                    });
+                    doc.moveDown(0.6);
+
+                    // Financial summary box
+                    doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('Financial Summary');
+                    doc.moveDown(0.3);
+                    const boxY = doc.y;
+                    doc.save().rect(LEFT, boxY, pageW, 54).fill('#f0f0f0').restore();
+                    doc.fontSize(11).fillColor(COLORS.body).font('Helvetica');
+                    doc.font('Helvetica-Bold').text('Authorized: ', LEFT + 10, boxY + 8, { continued: true }).font('Helvetica').text(fmtDollars(atTotal));
+                    doc.font('Helvetica-Bold').text('Actual: ', LEFT + 10, boxY + 24, { continued: true }).font('Helvetica').text(fmtDollars(actualTotal));
+                    const vColor = variance > 0 ? COLORS.red : COLORS.green;
+                    doc.font('Helvetica-Bold').text('Variance: ', LEFT + 10, boxY + 40, { continued: true }).font('Helvetica').fillColor(vColor).text(fmtVariance(variance));
+                    doc.fillColor(COLORS.body);
+                    doc.y = boxY + 62;
+
+                    doc.moveDown(0.5);
+
+                    // Approval chain summary
+                    doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('Approval Summary');
+                    doc.moveDown(0.3);
+                    doc.fontSize(10).fillColor(COLORS.body).font('Helvetica');
+                    if (at) {
+                        doc.font('Helvetica-Bold').text('AT Submitted: ', { continued: true }).font('Helvetica').text(fmtTimestamp(at.created_at));
+                        if (at.approved_at) {
+                            doc.font('Helvetica-Bold').text('AT Approved: ', { continued: true }).font('Helvetica').text(fmtTimestamp(at.approved_at));
+                        }
+                    }
                     if (trip.submitted_at) {
-                        doc.font('Helvetica-Bold').text('Submitted: ', { continued: true });
-                        doc.font('Helvetica').text(trip.submitted_at);
+                        doc.font('Helvetica-Bold').text('Trip Submitted: ', { continued: true }).font('Helvetica').text(fmtTimestamp(trip.submitted_at));
                     }
                     if (trip.approved_at) {
-                        doc.font('Helvetica-Bold').text('Approved: ', { continued: true });
-                        doc.font('Helvetica').text(`${trip.approved_at} by ${trip.approved_by || 'Supervisor'}`);
+                        doc.font('Helvetica-Bold').text('Trip Approved: ', { continued: true }).font('Helvetica').text(fmtTimestamp(trip.approved_at) + ' by ' + (trip.approved_by || 'Supervisor'));
                     }
 
-                    // ========= PAGE 2: AT DETAILS =========
+                    // ═══════════════════════════════════════════
+                    // PAGE 2 — AT DETAILS
+                    // ═══════════════════════════════════════════
                     doc.addPage();
-                    addFooter();
-                    doc.fontSize(16).fillColor('#1a237e').text('Authorization to Travel — Estimated Expenses');
+                    doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('AUTHORIZATION TO TRAVEL \u2014 ESTIMATED EXPENSES');
                     doc.moveDown(0.5);
 
                     if (at && atExpenses.length > 0) {
-                        // Table header
-                        const colWidths = [80, 120, 100, 80, 130];
-                        const headers = ['Date', 'Type', 'Location', 'Amount', 'Description'];
-                        let tableY = doc.y;
+                        const cols2 = [
+                            { x: LEFT, width: 70, align: 'left' },
+                            { x: LEFT + 70, width: 100, align: 'left' },
+                            { x: LEFT + 170, width: 110, align: 'left' },
+                            { x: LEFT + 280, width: 70, align: 'right' },
+                            { x: LEFT + 350, width: 118, align: 'left' },
+                        ];
+                        let tY = doc.y;
+                        tY = drawTableRow(tY, cols2, ['Date', 'Category', 'Location', 'Amount', 'Description'], { bold: true, bg: '#e8ecf1', fontSize: 9 });
+                        drawLine(tY - 1);
 
-                        doc.fontSize(9).font('Helvetica-Bold').fillColor('#333333');
-                        let xPos = 50;
-                        headers.forEach((h, i) => {
-                            doc.text(h, xPos, tableY, { width: colWidths[i] });
-                            xPos += colWidths[i];
-                        });
-                        tableY += 15;
-                        drawLine(tableY);
-                        tableY += 5;
-
-                        doc.font('Helvetica').fontSize(8).fillColor('#000000');
+                        let lastDate = '', rowIdx = 0;
                         atExpenses.forEach(exp => {
-                            if (tableY > 700) { doc.addPage(); addFooter(); tableY = 50; }
-                            xPos = 50;
-                            const vals = [exp.date, exp.meal_name || exp.expense_type, exp.location || '', `$${parseFloat(exp.amount).toFixed(2)}`, (exp.description || '').substring(0, 40)];
-                            vals.forEach((v, i) => {
-                                doc.text(v, xPos, tableY, { width: colWidths[i] });
-                                xPos += colWidths[i];
-                            });
-                            tableY += 14;
+                            tY = checkPage(tY, 18);
+                            const bg = (rowIdx % 2 === 1) ? COLORS.grey : null;
+                            const dateStr = exp.date || '';
+                            const showDate = (dateStr !== lastDate) ? fmtDateShort(dateStr) : '';
+                            lastDate = dateStr;
+                            let desc = exp.description || '';
+                            // Hotel: show full check-in/check-out
+                            if (exp.expense_type === 'hotel' && exp.hotel_checkin && exp.hotel_checkout) {
+                                desc = fmtDateShort(exp.hotel_checkin) + ' to ' + fmtDateShort(exp.hotel_checkout) + (desc ? ' - ' + desc : '');
+                            }
+                            // Kilometric
+                            if (exp.expense_type === 'vehicle_km' && exp.km_driven) {
+                                desc = exp.km_driven + ' km @ $' + (parseFloat(exp.km_rate || 0.68).toFixed(2)) + '/km' + (desc ? ' - ' + desc : '');
+                            }
+                            tY = drawTableRow(tY, cols2, [showDate, exp.meal_name || exp.expense_type || '', exp.location || '', fmtDollars(exp.amount), desc.substring(0, 50)], { bg });
+                            rowIdx++;
                         });
-
-                        drawLine(tableY);
-                        tableY += 5;
-                        doc.font('Helvetica-Bold').fontSize(10);
-                        doc.text(`Total Estimated: $${atTotal.toFixed(2)}`, 50, tableY);
+                        drawLine(tY);
+                        tY += 5;
+                        tY = drawTableRow(tY, cols2, ['', '', 'Total Estimated', fmtDollars(atTotal), ''], { bold: true, fontSize: 10 });
                     } else {
-                        doc.fontSize(11).fillColor('#666666').text('No Authorization to Travel record linked to this trip.');
+                        doc.fontSize(10).fillColor(COLORS.muted).text('No Authorization to Travel record linked to this trip.');
                     }
 
-                    // ========= PAGE 3: ACTUAL TRIP EXPENSES =========
+                    // ═══════════════════════════════════════════
+                    // PAGE 3 — ACTUAL EXPENSES
+                    // ═══════════════════════════════════════════
                     doc.addPage();
-                    addFooter();
-                    doc.fontSize(16).fillColor('#1a237e').text('Actual Trip Expenses');
+                    doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('ACTUAL TRIP EXPENSES');
                     doc.moveDown(0.5);
 
                     if (tripExpenses.length > 0) {
-                        const colWidths3 = [70, 100, 90, 70, 80, 100];
-                        const headers3 = ['Date', 'Type', 'Location', 'Amount', 'Vendor', 'Description'];
-                        let tableY = doc.y;
+                        const cols3 = [
+                            { x: LEFT, width: 65, align: 'left' },
+                            { x: LEFT + 65, width: 90, align: 'left' },
+                            { x: LEFT + 155, width: 70, align: 'right' },
+                            { x: LEFT + 225, width: 110, align: 'left' },
+                            { x: LEFT + 335, width: 133, align: 'left' },
+                        ];
+                        let tY = doc.y;
+                        tY = drawTableRow(tY, cols3, ['Date', 'Category', 'Amount', 'Vendor', 'Description'], { bold: true, bg: '#e8ecf1', fontSize: 9 });
+                        drawLine(tY - 1);
 
-                        doc.fontSize(9).font('Helvetica-Bold').fillColor('#333333');
-                        let xPos = 50;
-                        headers3.forEach((h, i) => {
-                            doc.text(h, xPos, tableY, { width: colWidths3[i] });
-                            xPos += colWidths3[i];
-                        });
-                        tableY += 15;
-                        drawLine(tableY);
-                        tableY += 5;
-
-                        doc.font('Helvetica').fontSize(8).fillColor('#000000');
+                        let rowIdx = 0;
                         tripExpenses.forEach(exp => {
-                            if (tableY > 700) { doc.addPage(); addFooter(); tableY = 50; }
-                            xPos = 50;
-                            const vals = [exp.date, exp.meal_name || exp.expense_type, exp.location || '', `$${parseFloat(exp.amount).toFixed(2)}`, (exp.vendor || '').substring(0, 20), (exp.description || '').substring(0, 30)];
-                            vals.forEach((v, i) => {
-                                doc.text(v, xPos, tableY, { width: colWidths3[i] });
-                                xPos += colWidths3[i];
-                            });
-                            tableY += 14;
+                            tY = checkPage(tY, 18);
+                            const bg = (rowIdx % 2 === 1) ? COLORS.grey : null;
+                            let desc = (exp.description || '').replace(/FUTURE[- ]?DATED?[^.]*/gi, '').replace(/[&]\s*[þ]/g, '').trim();
+                            tY = drawTableRow(tY, cols3, [fmtDateShort(exp.date), exp.meal_name || exp.expense_type || '', fmtDollars(exp.amount), (exp.vendor || '').substring(0, 25), desc.substring(0, 45)], { bg });
+                            rowIdx++;
                         });
-
-                        drawLine(tableY);
-                        tableY += 5;
-                        doc.font('Helvetica-Bold').fontSize(10);
-                        doc.text(`Total Actual: $${actualTotal.toFixed(2)}`, 50, tableY);
+                        drawLine(tY);
+                        tY += 5;
+                        tY = drawTableRow(tY, cols3, ['', 'Total Actual', fmtDollars(actualTotal), '', ''], { bold: true, fontSize: 10 });
                     } else {
-                        doc.fontSize(11).fillColor('#666666').text('No expenses recorded for this trip.');
+                        doc.fontSize(10).fillColor(COLORS.muted).text('No expenses recorded for this trip.');
                     }
 
-                    // ========= PAGE 4: VARIANCE COMPARISON =========
+                    // ═══════════════════════════════════════════
+                    // PAGE 4 — VARIANCE
+                    // ═══════════════════════════════════════════
                     doc.addPage();
-                    addFooter();
-                    doc.fontSize(16).fillColor('#1a237e').text('Variance Comparison — Authorized vs Actual');
-                    doc.moveDown(0.3);
-                    doc.fontSize(9).fillColor('#666666').text(`Thresholds: >${pctThreshold}% AND >$${dollarThreshold}`);
+                    doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('VARIANCE COMPARISON');
+                    doc.moveDown(0.2);
+                    doc.fontSize(9).fillColor(COLORS.muted).font('Helvetica').text('Thresholds: >' + pctThreshold + '% AND >' + fmtDollars(dollarThreshold));
                     doc.moveDown(0.5);
 
-                    // Build variance by category
                     const cats = ['breakfast','lunch','dinner','incidentals','hotel','vehicle_km','transport_flight','transport_train','transport_bus','transport_rental','other'];
                     const catLabels = { breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', incidentals:'Incidentals', hotel:'Hotel', vehicle_km:'Kilometric', transport_flight:'Flight', transport_train:'Train', transport_bus:'Bus', transport_rental:'Rental Car', other:'Other' };
                     const estByCat = {}, actByCat = {};
@@ -5083,90 +5146,130 @@ function generateExpenseReportPDF(tripId, db) {
                     atExpenses.forEach(e => { const c = cats.includes(e.expense_type) ? e.expense_type : 'other'; estByCat[c] += parseFloat(e.amount || 0); });
                     tripExpenses.forEach(e => { const c = cats.includes(e.expense_type) ? e.expense_type : 'other'; actByCat[c] += parseFloat(e.amount || 0); });
 
-                    const varColWidths = [100, 80, 80, 80, 60, 60];
-                    const varHeaders = ['Category', 'Authorized', 'Actual', 'Variance ($)', '%', 'Status'];
+                    const vCols = [
+                        { x: LEFT, width: 90, align: 'left' },
+                        { x: LEFT + 90, width: 75, align: 'right' },
+                        { x: LEFT + 165, width: 75, align: 'right' },
+                        { x: LEFT + 240, width: 80, align: 'right' },
+                        { x: LEFT + 320, width: 55, align: 'right' },
+                        { x: LEFT + 375, width: 93, align: 'center' },
+                    ];
                     let vY = doc.y;
-                    doc.fontSize(9).font('Helvetica-Bold').fillColor('#333333');
-                    let vX = 50;
-                    varHeaders.forEach((h, i) => { doc.text(h, vX, vY, { width: varColWidths[i] }); vX += varColWidths[i]; });
-                    vY += 15;
-                    drawLine(vY);
-                    vY += 5;
+                    vY = drawTableRow(vY, vCols, ['Category', 'Authorized', 'Actual', 'Variance', '%', 'Status'], { bold: true, bg: '#e8ecf1', fontSize: 9 });
+                    drawLine(vY - 1);
 
-                    doc.font('Helvetica').fontSize(8).fillColor('#000000');
+                    let vRowIdx = 0;
                     cats.forEach(cat => {
                         const est = estByCat[cat], act = actByCat[cat];
                         if (est === 0 && act === 0) return;
-                        if (vY > 700) { doc.addPage(); addFooter(); vY = 50; }
+                        vY = checkPage(vY, 18);
                         const diff = act - est;
                         const pct = est > 0 ? ((diff / est) * 100).toFixed(1) : (act > 0 ? '100.0' : '0.0');
-                        let status = '✅';
-                        if (est === 0 && act > 0) status = 'NEW';
-                        else if (act > est && Math.abs(parseFloat(pct)) > pctThreshold && Math.abs(diff) > dollarThreshold) status = '🔴';
-                        else if (act > est) status = '⚠️';
+                        let statusText = 'OK', statusColor = COLORS.green;
+                        if (est === 0 && act > 0) { statusText = 'NEW'; statusColor = COLORS.blue; }
+                        else if (act > est && Math.abs(parseFloat(pct)) > pctThreshold && Math.abs(diff) > dollarThreshold) { statusText = 'OVER LIMIT'; statusColor = COLORS.red; }
+                        else if (act > est) { statusText = 'OVER'; statusColor = COLORS.orange; }
 
-                        vX = 50;
-                        const vals = [catLabels[cat] || cat, `$${est.toFixed(2)}`, `$${act.toFixed(2)}`, `${diff >= 0 ? '+' : ''}$${diff.toFixed(2)}`, `${pct}%`, status];
-                        vals.forEach((v, i) => { doc.text(v, vX, vY, { width: varColWidths[i] }); vX += varColWidths[i]; });
-                        vY += 14;
+                        const bg = (vRowIdx % 2 === 1) ? COLORS.grey : null;
+                        // Draw row with default color first, then status with its own color
+                        if (bg) { doc.save().rect(LEFT - 4, vY - 2, pageW + 8, 16).fill(bg).restore(); }
+                        doc.font('Helvetica').fontSize(9).fillColor(COLORS.body);
+                        const rowVals = [catLabels[cat] || cat, fmtDollars(est), fmtDollars(act), fmtVariance(diff), pct + '%'];
+                        vCols.slice(0, 5).forEach((col, i) => {
+                            doc.text(rowVals[i], col.x, vY, { width: col.width, align: col.align || 'left' });
+                        });
+                        doc.fillColor(statusColor).font('Helvetica-Bold').text(statusText, vCols[5].x, vY, { width: vCols[5].width, align: 'center' });
+                        doc.font('Helvetica').fillColor(COLORS.body);
+                        vY += 16;
+                        vRowIdx++;
                     });
 
-                    // Total row
                     drawLine(vY);
                     vY += 5;
-                    doc.font('Helvetica-Bold').fontSize(9);
-                    vX = 50;
                     const totalDiff = actualTotal - atTotal;
                     const totalPct = atTotal > 0 ? ((totalDiff / atTotal) * 100).toFixed(1) : '0.0';
-                    const totVals = ['TOTAL', `$${atTotal.toFixed(2)}`, `$${actualTotal.toFixed(2)}`, `${totalDiff >= 0 ? '+' : ''}$${totalDiff.toFixed(2)}`, `${totalPct}%`, ''];
-                    totVals.forEach((v, i) => { doc.text(v, vX, vY, { width: varColWidths[i] }); vX += varColWidths[i]; });
+                    vY = drawTableRow(vY, vCols, ['TOTAL', fmtDollars(atTotal), fmtDollars(actualTotal), fmtVariance(totalDiff), totalPct + '%', ''], { bold: true, fontSize: 10 });
+
+                    // Legend
+                    vY += 10;
+                    vY = checkPage(vY, 50);
+                    doc.fontSize(8).fillColor(COLORS.muted).font('Helvetica').text('Legend:', LEFT, vY);
+                    vY += 12;
+                    doc.fillColor(COLORS.green).text('OK', LEFT, vY, { continued: true }).fillColor(COLORS.muted).text(' = Within thresholds     ', { continued: true });
+                    doc.fillColor(COLORS.orange).text('OVER', { continued: true }).fillColor(COLORS.muted).text(' = Over budget     ', { continued: true });
+                    doc.fillColor(COLORS.red).text('OVER LIMIT', { continued: true }).fillColor(COLORS.muted).text(' = Exceeds thresholds     ', { continued: true });
+                    doc.fillColor(COLORS.blue).text('NEW', { continued: true }).fillColor(COLORS.muted).text(' = No authorized amount');
 
                     // Justification
                     if (trip.justification) {
-                        doc.moveDown(1.5);
-                        doc.fontSize(12).fillColor('#856404').font('Helvetica-Bold').text('Employee Justification for Budget Overage:');
-                        doc.moveDown(0.3);
-                        doc.fontSize(10).fillColor('#333333').font('Helvetica-Oblique').text(trip.justification);
+                        doc.moveDown(1);
+                        const jY = checkPage(doc.y, 60);
+                        doc.save().rect(LEFT, jY, pageW, 4).fill('#ffc107').restore();
+                        doc.save().rect(LEFT, jY + 4, pageW, 50).fill('#fff8e1').restore();
+                        doc.fontSize(11).fillColor('#856404').font('Helvetica-Bold').text('Employee Justification for Budget Overage:', LEFT + 8, jY + 10);
+                        doc.fontSize(10).fillColor('#333333').font('Helvetica-Oblique').text(trip.justification, LEFT + 8, jY + 26, { width: pageW - 16 });
                     }
 
-                    // ========= PAGE 5: APPROVAL CHAIN =========
+                    // ═══════════════════════════════════════════
+                    // PAGE 5 — APPROVAL CHAIN & SIGNATURES
+                    // ═══════════════════════════════════════════
                     doc.addPage();
-                    addFooter();
-                    doc.fontSize(16).fillColor('#1a237e').text('Approval Chain & Signatures');
-                    doc.moveDown(1);
+                    doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('APPROVAL CHAIN & SIGNATURES');
+                    doc.moveDown(0.8);
 
-                    doc.fontSize(11).fillColor('#000000').font('Helvetica');
-                    const chainItems = [
-                        ['Trip Created', trip.created_at || 'N/A'],
-                        ['Trip Submitted', trip.submitted_at || 'N/A'],
-                        ['Trip Approved', trip.approved_at ? `${trip.approved_at} by ${trip.approved_by || 'Supervisor'}` : 'N/A'],
-                        ['Report Generated', new Date().toISOString()],
-                    ];
+                    const chainItems = [];
+                    chainItems.push(['Trip Created', fmtTimestamp(trip.created_at)]);
                     if (at) {
-                        chainItems.splice(1, 0, ['AT Submitted', at.created_at || 'N/A']);
-                        chainItems.splice(2, 0, ['AT Approved', at.approved_at || 'N/A']);
+                        chainItems.push(['AT Submitted', fmtTimestamp(at.created_at)]);
+                        chainItems.push(['AT Approved', at.approved_at ? fmtTimestamp(at.approved_at) : 'Pending']);
                     }
+                    chainItems.push(['Trip Submitted', fmtTimestamp(trip.submitted_at)]);
+                    chainItems.push(['Trip Approved', trip.approved_at ? fmtTimestamp(trip.approved_at) + ' by ' + (trip.approved_by || 'Supervisor') : 'Pending']);
+                    chainItems.push(['Report Generated', fmtTimestamp(new Date().toISOString())]);
 
-                    chainItems.forEach(([label, value]) => {
-                        doc.font('Helvetica-Bold').text(`${label}: `, { continued: true });
-                        doc.font('Helvetica').text(value);
-                        doc.moveDown(0.3);
+                    doc.fontSize(10).fillColor(COLORS.body).font('Helvetica');
+                    let cY = doc.y;
+                    chainItems.forEach(([label, value], idx) => {
+                        // Timeline dot
+                        doc.save().circle(LEFT + 6, cY + 5, 3).fill(COLORS.header).restore();
+                        if (idx < chainItems.length - 1) {
+                            doc.save().moveTo(LEFT + 6, cY + 10).lineTo(LEFT + 6, cY + 26).strokeColor('#cccccc').lineWidth(1).stroke().restore();
+                        }
+                        doc.font('Helvetica-Bold').fillColor(COLORS.body).text(label + ':', LEFT + 18, cY);
+                        doc.font('Helvetica').text(value, LEFT + 18, cY + 13);
+                        cY += 30;
                     });
 
-                    doc.moveDown(2);
-                    drawLine(doc.y);
-                    doc.moveDown(1);
+                    cY += 30;
+                    drawLine(cY);
+                    cY += 25;
 
                     // Signature lines
-                    doc.fontSize(10).fillColor('#000000');
-                    const sigY = doc.y;
-                    doc.text('_________________________________', 50, sigY);
-                    doc.text(`Employee: ${trip.employee_name}`, 50, sigY + 15);
-                    doc.text('_________________________________', 320, sigY);
-                    doc.text(`Supervisor: ${trip.supervisor_name || 'N/A'}`, 320, sigY + 15);
+                    doc.fontSize(10).fillColor(COLORS.body);
+                    doc.text('_________________________________', LEFT, cY);
+                    doc.text('Employee: ' + (trip.employee_name || 'N/A'), LEFT, cY + 15);
+                    doc.text('_________________________________', LEFT + 250, cY);
+                    doc.text('Supervisor: ' + (trip.supervisor_name || 'N/A'), LEFT + 250, cY + 15);
 
-                    doc.moveDown(4);
-                    doc.fontSize(8).fillColor('#999999').text(`This report was auto-generated by ClaimFlow on ${new Date().toISOString()}. Reference: ${refNumber}`, { align: 'center' });
+                    cY += 60;
+                    doc.fontSize(8).fillColor(COLORS.muted).text(
+                        'This report was auto-generated by ClaimFlow on ' + fmtTimestamp(new Date().toISOString()) + '. Reference: ' + refNumber,
+                        LEFT, cY, { width: pageW, align: 'center' }
+                    );
+
+                    // ═══════════════════════════════════════════
+                    // ADD PAGE NUMBERS & REFERENCE TO ALL PAGES
+                    // ═══════════════════════════════════════════
+                    const totalPages = doc.bufferedPageRange().count;
+                    for (let i = 0; i < totalPages; i++) {
+                        doc.switchToPage(i);
+                        // Reference # top right
+                        doc.save().fontSize(8).fillColor(COLORS.muted).font('Helvetica')
+                            .text(refNumber, LEFT, MARGIN - 20, { width: pageW, align: 'right' }).restore();
+                        // Page number bottom center
+                        doc.save().fontSize(8).fillColor(COLORS.muted).font('Helvetica')
+                            .text('Page ' + (i + 1) + ' of ' + totalPages, LEFT, 756, { width: pageW, align: 'center' }).restore();
+                    }
 
                     doc.end();
                 }).catch(reject);
