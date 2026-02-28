@@ -5004,19 +5004,40 @@ function generateExpenseReportPDF(tripId, db) {
                         return y;
                     }
 
-                    // ── Helper: draw a table row with cell borders ──
+                    // ── Helper: draw a table row with cell borders and text wrapping ──
                     function drawTableRow(y, cols, values, opts) {
                         opts = opts || {};
-                        const rowH = opts.rowHeight || 16;
+                        let maxTextHeight = 0;
+                        
+                        // Calculate required height for text wrapping
+                        doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(opts.fontSize || 9);
+                        cols.forEach((col, i) => {
+                            const text = values[i] || '';
+                            if (text) {
+                                const textHeight = doc.heightOfString(text, { width: col.width });
+                                maxTextHeight = Math.max(maxTextHeight, textHeight);
+                            }
+                        });
+                        
+                        const rowH = Math.max(opts.rowHeight || 16, maxTextHeight + 4); // Add padding
+                        
                         if (opts.bg) {
                             doc.save().rect(LEFT - 4, y - 2, pageW + 8, rowH).fill(opts.bg).restore();
                         }
+                        
                         doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica')
                            .fontSize(opts.fontSize || 9)
                            .fillColor(opts.color || COLORS.body);
+                        
                         cols.forEach((col, i) => {
-                            doc.text(values[i] || '', col.x, y, { width: col.width, align: col.align || 'left' });
+                            const text = values[i] || '';
+                            doc.text(text, col.x, y, { 
+                                width: col.width, 
+                                align: col.align || 'left',
+                                lineBreak: true
+                            });
                         });
+                        
                         doc.font('Helvetica');
                         return y + rowH;
                     }
@@ -5097,20 +5118,20 @@ function generateExpenseReportPDF(tripId, db) {
                     doc.moveDown(0.3);
                     doc.fontSize(10).fillColor(COLORS.body).font('Helvetica');
                     if (at) {
-                        doc.font('Helvetica-Bold').text('AT Submitted: ', { continued: true }).font('Helvetica').text(fmtTimestamp(at.created_at));
+                        doc.font('Helvetica-Bold').text('Authorization to Travel Submitted: ', { continued: true }).font('Helvetica').text(fmtTimestamp(at.created_at) + ' — by ' + (trip.employee_name || 'Employee'));
                         if (at.approved_at) {
-                            doc.font('Helvetica-Bold').text('AT Approved: ', { continued: true }).font('Helvetica').text(fmtTimestamp(at.approved_at));
+                            doc.font('Helvetica-Bold').text('Authorization to Travel Approved: ', { continued: true }).font('Helvetica').text(fmtTimestamp(at.approved_at) + ' — by ' + (trip.supervisor_name || 'Supervisor'));
                         }
                     }
                     if (trip.submitted_at) {
-                        doc.font('Helvetica-Bold').text('Trip Submitted: ', { continued: true }).font('Helvetica').text(fmtTimestamp(trip.submitted_at));
+                        doc.font('Helvetica-Bold').text('Trip Expense Submitted: ', { continued: true }).font('Helvetica').text(fmtTimestamp(trip.submitted_at) + ' — by ' + (trip.employee_name || 'Employee'));
                     }
                     if (trip.approved_at) {
-                        doc.font('Helvetica-Bold').text('Trip Approved: ', { continued: true }).font('Helvetica').text(fmtTimestamp(trip.approved_at) + ' by ' + (trip.approved_by || 'Supervisor'));
+                        doc.font('Helvetica-Bold').text('Trip Expense Approved: ', { continued: true }).font('Helvetica').text(fmtTimestamp(trip.approved_at) + ' — by ' + (trip.approved_by || trip.supervisor_name || 'Supervisor'));
                     }
 
                     // ═══════════════════════════════════════════
-                    // PAGE 2 — AT DETAILS
+                    // PAGE 2 — AUTHORIZATION TO TRAVEL DETAILS
                     // ═══════════════════════════════════════════
                     doc.addPage();
                     doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('AUTHORIZATION TO TRAVEL \u2014 ESTIMATED EXPENSES');
@@ -5136,14 +5157,31 @@ function generateExpenseReportPDF(tripId, db) {
                             const showDate = (dateStr !== lastDate) ? fmtDateShort(dateStr) : '';
                             lastDate = dateStr;
                             let desc = exp.description || '';
-                            // Hotel: show full check-in/check-out with proper date calculation
-                            if (exp.expense_type === 'hotel' && exp.hotel_checkin) {
-                                const checkinDate = new Date(exp.hotel_checkin + 'T12:00:00');
-                                const checkoutDate = new Date(checkinDate);
-                                checkoutDate.setDate(checkoutDate.getDate() + 1); // Check-out is next day
-                                const checkinStr = fmtDateShort(exp.hotel_checkin);
-                                const checkoutStr = fmtDateShort(checkoutDate.toISOString().split('T')[0]);
-                                desc = `Check-in: ${checkinStr}, Check-out: ${checkoutStr} — ${desc || 'Night'}`;
+                            // Hotel: use Check-in / Night X / Check-out pattern
+                            if (exp.expense_type === 'hotel') {
+                                // Count total hotel nights for this authorization
+                                const totalHotelNights = atExpenses.filter(e => e.expense_type === 'hotel').length;
+                                const hotelExpenses = atExpenses.filter(e => e.expense_type === 'hotel').sort((a, b) => a.date.localeCompare(b.date));
+                                const currentHotelIndex = hotelExpenses.findIndex(e => e.id === exp.id);
+                                
+                                if (totalHotelNights === 1) {
+                                    const checkinDate = new Date(exp.hotel_checkin + 'T12:00:00');
+                                    const checkoutDate = new Date(checkinDate);
+                                    checkoutDate.setDate(checkoutDate.getDate() + 1);
+                                    desc = `Check-in: ${fmtDateShort(exp.hotel_checkin)}, Check-out: ${fmtDateShort(checkoutDate.toISOString().split('T')[0])}`;
+                                } else if (currentHotelIndex === 0) {
+                                    desc = `Check-in: ${fmtDateShort(exp.hotel_checkin || exp.date)}`;
+                                } else if (currentHotelIndex === totalHotelNights - 1) {
+                                    const checkoutDate = new Date((exp.hotel_checkin || exp.date) + 'T12:00:00');
+                                    checkoutDate.setDate(checkoutDate.getDate() + 1);
+                                    desc = `Check-out: ${fmtDateShort(checkoutDate.toISOString().split('T')[0])}`;
+                                } else {
+                                    desc = `Night ${currentHotelIndex + 1} of ${totalHotelNights}`;
+                                }
+                            }
+                            // Flight: show route only, no costs
+                            if (exp.expense_type === 'transport_flight') {
+                                desc = 'Departure and Return flight';
                             }
                             // Kilometric - clean up any garbled characters
                             if (exp.expense_type === 'vehicle_km' && exp.km_driven) {
@@ -5193,6 +5231,36 @@ function generateExpenseReportPDF(tripId, db) {
                                 .replace(/\|\s*$/, '')  // Remove trailing pipes
                                 .replace(/\s+\|\s*$/, '')  // Remove trailing pipes with spaces
                                 .trim();
+
+                            // Hotel: use Check-in / Night X / Check-out pattern
+                            if (exp.expense_type === 'hotel') {
+                                const totalHotelNights = tripExpenses.filter(e => e.expense_type === 'hotel').length;
+                                const hotelExpenses = tripExpenses.filter(e => e.expense_type === 'hotel').sort((a, b) => a.date.localeCompare(b.date));
+                                const currentHotelIndex = hotelExpenses.findIndex(e => e.id === exp.id);
+                                
+                                if (totalHotelNights === 1) {
+                                    const checkinDate = new Date(exp.date + 'T12:00:00');
+                                    const checkoutDate = new Date(checkinDate);
+                                    checkoutDate.setDate(checkoutDate.getDate() + 1);
+                                    desc = `Check-in: ${fmtDateShort(exp.date)}, Check-out: ${fmtDateShort(checkoutDate.toISOString().split('T')[0])}`;
+                                } else if (currentHotelIndex === 0) {
+                                    desc = `Check-in: ${fmtDateShort(exp.date)}`;
+                                } else if (currentHotelIndex === totalHotelNights - 1) {
+                                    const checkoutDate = new Date(exp.date + 'T12:00:00');
+                                    checkoutDate.setDate(checkoutDate.getDate() + 1);
+                                    desc = `Check-out: ${fmtDateShort(checkoutDate.toISOString().split('T')[0])}`;
+                                } else {
+                                    desc = `Night ${currentHotelIndex + 1} of ${totalHotelNights}`;
+                                }
+                            }
+
+                            // Flight: show route only, no costs
+                            if (exp.expense_type === 'transport_flight') {
+                                // Look for route information or use generic description
+                                const hasBaggage = desc.toLowerCase().includes('baggage') || (exp.amount && tripExpenses.some(e => e.expense_type === 'transport_flight' && e.description && e.description.toLowerCase().includes('baggage')));
+                                desc = hasBaggage ? 'Departure and Return flight (includes baggage)' : 'Departure and Return flight';
+                            }
+
                             tY = drawTableRow(tY, cols3, [fmtDateShort(exp.date), getCategoryLabel(exp.expense_type, exp.meal_name), fmtDollars(exp.amount), (exp.vendor || '').substring(0, 35), desc.substring(0, 75)], { bg });
                             rowIdx++;
                         });
@@ -5293,11 +5361,11 @@ function generateExpenseReportPDF(tripId, db) {
                     const chainItems = [];
                     chainItems.push(['Trip Created', fmtTimestamp(trip.created_at)]);
                     if (at) {
-                        chainItems.push(['AT Submitted', fmtTimestamp(at.created_at)]);
-                        chainItems.push(['AT Approved', at.approved_at ? fmtTimestamp(at.approved_at) : 'Pending']);
+                        chainItems.push(['Authorization to Travel Submitted', fmtTimestamp(at.created_at) + ' by ' + (trip.employee_name || 'Employee')]);
+                        chainItems.push(['Authorization to Travel Approved', at.approved_at ? fmtTimestamp(at.approved_at) + ' by ' + (trip.supervisor_name || 'Supervisor') : 'Pending']);
                     }
-                    chainItems.push(['Trip Submitted', fmtTimestamp(trip.submitted_at)]);
-                    chainItems.push(['Trip Approved', trip.approved_at ? fmtTimestamp(trip.approved_at) + ' by ' + (trip.approved_by || 'Supervisor') : 'Pending']);
+                    chainItems.push(['Trip Expense Submitted', fmtTimestamp(trip.submitted_at) + ' by ' + (trip.employee_name || 'Employee')]);
+                    chainItems.push(['Trip Expense Approved', trip.approved_at ? fmtTimestamp(trip.approved_at) + ' by ' + (trip.approved_by || trip.supervisor_name || 'Supervisor') : 'Pending']);
                     chainItems.push(['Report Generated', fmtTimestamp(new Date().toISOString())]);
 
                     doc.fontSize(10).fillColor(COLORS.body).font('Helvetica');
