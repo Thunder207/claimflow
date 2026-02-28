@@ -2494,7 +2494,7 @@
         function handleReceiptUpload(month, year) {
             const receiptInput = document.getElementById(`receipt-${month}-${year}`);
             if (receiptInput.files[0]) {
-                console.log(`Receipt uploaded for ${getMonthName(month)} ${year}`);
+                console.log(`Receipt uploaded for ${getMonthName(month)} ${year}: ${receiptInput.files[0].name}`);
                 updateTransitTotal();
             }
         }
@@ -2525,6 +2525,7 @@
                     month: parseInt(month),
                     year: parseInt(year),
                     amount: Math.min(amount, transitSettings.monthly_max),
+                    receiptAmount: amount, // Store original amount before capping
                     receipt: receipt,
                     monthName: getMonthName(month)
                 });
@@ -2533,25 +2534,26 @@
             if (!allValid || claims.length === 0) return;
             
             // Add to draft expenses (integrate with existing draft system)
-            if (!window.standaloneDrafts) window.standaloneDrafts = [];
-            
             const transitDraft = {
                 id: Date.now() + Math.random(),
                 type: 'transit',
                 category: 'Public Transit Benefit',
                 claims: claims,
-                totalAmount: claims.reduce((sum, c) => sum + c.amount, 0),
-                description: claims.map(c => `${c.monthName} ${c.year}: $${c.amount.toFixed(2)}`).join(', ')
+                amount: claims.reduce((sum, c) => sum + c.amount, 0),
+                description: claims.map(c => `${c.monthName} ${c.year}: $${c.amount.toFixed(2)}`).join(', '),
+                date: new Date().toISOString().split('T')[0],
+                vendor: 'Public Transit Benefit'
             };
             
-            window.standaloneDrafts.push(transitDraft);
+            standaloneDrafts.push(transitDraft);
+            saveStandaloneDrafts();
             
             // Reset form
             document.getElementById('sa-category').value = '';
             handleCategoryChange();
             
             // Refresh draft list
-            updateStandaloneDraftList();
+            renderStandaloneDrafts();
             
             showMessage('success', `Transit benefit claims added to draft (${claims.length} months, $${transitDraft.totalAmount.toFixed(2)} total)`);
         }
@@ -6037,15 +6039,26 @@
             const total = standaloneDrafts.reduce((sum, d) => sum + d.amount, 0);
             totalEl.textContent = '$' + total.toFixed(2);
 
-            list.innerHTML = standaloneDrafts.map((d, i) => `
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #2196f3;">
-                    <div>
-                        <strong>${d.category}</strong> - $${d.amount.toFixed(2)}
-                        <br><small style="color: #6c757d;">${d.date} · ${d.vendor}${d.description ? ' · ' + d.description : ''}</small>
+            list.innerHTML = standaloneDrafts.map((d, i) => {
+                const borderColor = d.type === 'transit' ? '#17a2b8' : '#2196f3';
+                const icon = d.type === 'transit' ? '🚍' : '';
+                
+                let displayText;
+                if (d.type === 'transit') {
+                    displayText = `<strong>${icon} ${d.category}</strong> - $${d.amount.toFixed(2)}
+                        <br><small style="color: #6c757d;">${d.claims.length} month(s): ${d.description}</small>`;
+                } else {
+                    displayText = `<strong>${d.category}</strong> - $${d.amount.toFixed(2)}
+                        <br><small style="color: #6c757d;">${d.date} · ${d.vendor}${d.description ? ' · ' + d.description : ''}</small>`;
+                }
+                
+                return `
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid ${borderColor};">
+                        <div>${displayText}</div>
+                        <button onclick="removeStandaloneDraft(${i})" style="background: #dc3545; color: white; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px;">✕</button>
                     </div>
-                    <button onclick="removeStandaloneDraft(${i})" style="background: #dc3545; color: white; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px;">✕</button>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         function removeStandaloneDraft(index) {
@@ -6072,23 +6085,52 @@
 
             for (const draft of standaloneDrafts) {
                 try {
-                    const formData = new FormData();
-                    formData.append('expense_type', 'other');
-                    formData.append('category', draft.category);
-                    formData.append('meal_name', draft.category);
-                    formData.append('date', draft.date);
-                    formData.append('amount', draft.amount);
-                    formData.append('vendor', draft.vendor);
-                    formData.append('location', 'Office');
-                    formData.append('description', draft.description || '');
+                    if (draft.type === 'transit') {
+                        // Handle transit claims separately
+                        const formData = new FormData();
+                        formData.append('claims', JSON.stringify(draft.claims.map(c => ({
+                            month: c.month,
+                            year: c.year,
+                            amount: c.amount
+                        }))));
+                        
+                        // Add receipt files
+                        draft.claims.forEach((claim, index) => {
+                            if (claim.receipt) {
+                                formData.append('receipts', claim.receipt, `receipt_${claim.month}_${claim.year}.${claim.receipt.name.split('.').pop()}`);
+                            }
+                        });
 
-                    const resp = await fetch('/api/expenses', {
-                        method: 'POST',
-                        headers: { 'Authorization': 'Bearer ' + sessionId },
-                        body: formData
-                    });
-                    const result = await resp.json();
-                    if (resp.ok && result.success) {
+                        const resp = await fetch('/api/transit-claims', {
+                            method: 'POST',
+                            headers: { 'Authorization': 'Bearer ' + sessionId },
+                            body: formData
+                        });
+                        const result = await resp.json();
+                        if (resp.ok && result.success) {
+                            successCount++;
+                        } else {
+                            errors.push('Transit Benefit: ' + (result.error || 'Submission failed'));
+                        }
+                    } else {
+                        // Handle regular expenses
+                        const formData = new FormData();
+                        formData.append('expense_type', 'other');
+                        formData.append('category', draft.category);
+                        formData.append('meal_name', draft.category);
+                        formData.append('date', draft.date);
+                        formData.append('amount', draft.amount);
+                        formData.append('vendor', draft.vendor);
+                        formData.append('location', 'Office');
+                        formData.append('description', draft.description || '');
+
+                        const resp = await fetch('/api/expenses', {
+                            method: 'POST',
+                            headers: { 'Authorization': 'Bearer ' + sessionId },
+                            body: formData
+                        });
+                        const result = await resp.json();
+                        if (resp.ok && result.success) {
                         successCount++;
                     } else {
                         errors.push(draft.category + ': ' + (result.error || 'Failed'));

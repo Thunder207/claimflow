@@ -1058,6 +1058,52 @@ try {
                 </div>
             </div>
 
+            <!-- 🚍 Public Transit Benefit Settings -->
+            <div style="margin-top: 40px; border-top: 2px solid #eee; padding-top: 30px;">
+                <div class="section-header">🚍 Public Transit Benefit Settings</div>
+                <div style="max-width: 600px; margin: 0 auto;">
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #17a2b8;">
+                        <p style="color: #495057; font-size: 14px; line-height: 1.6; margin-bottom: 10px;">
+                            Configure the monthly maximum and claim window for public transit benefit claims.
+                        </p>
+                        <p style="color: #6c757d; font-size: 13px; margin: 0;">
+                            Changes apply to new submissions only. Already-approved claims are unaffected.
+                        </p>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                        <div>
+                            <label style="font-weight: 600; color: #2c3e50; margin-bottom: 8px; display: block;">Monthly Maximum ($):</label>
+                            <input type="number" id="transit-monthly-max" min="0.01" max="1000" step="0.01" 
+                                   style="width: 100%; padding: 10px; border: 2px solid #17a2b8; border-radius: 8px; font-size: 15px;"
+                                   placeholder="100.00">
+                            <small style="color: #6c757d; font-size: 12px;">Maximum amount claimable per month per employee</small>
+                        </div>
+                        <div>
+                            <label style="font-weight: 600; color: #2c3e50; margin-bottom: 8px; display: block;">Claim Window (Months):</label>
+                            <input type="number" id="transit-claim-window" min="0" max="12" step="1" 
+                                   style="width: 100%; padding: 10px; border: 2px solid #17a2b8; border-radius: 8px; font-size: 15px;"
+                                   placeholder="2">
+                            <small style="color: #6c757d; font-size: 12px;">How many months back (+ current month) employees can claim</small>
+                        </div>
+                    </div>
+                    
+                    <div id="transit-current" style="background: #e8f5e8; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; color: #155724;"></div>
+                    
+                    <button onclick="saveTransitSettings()" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%); color: white; border: none; padding: 12px 30px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">
+                        💾 Save Transit Settings
+                    </button>
+                    
+                    <div id="transit-save-msg" style="margin-top: 12px; display: none;"></div>
+                    
+                    <!-- Audit Trail -->
+                    <div style="margin-top: 30px;">
+                        <h4 style="color: #2c3e50; margin-bottom: 12px;">📋 Transit Settings Change History</h4>
+                        <div id="transit-audit-log" style="font-size: 13px; color: #495057;">Loading...</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Email Log -->
             <div style="margin-top: 40px; border-top: 2px solid #eee; padding-top: 30px;">
                 <div class="section-header">📬 Email Log</div>
@@ -1313,6 +1359,7 @@ try {
             } else if (tabName === 'settings') {
                 loadVarianceSettings();
                 loadAuditEmailSettings();
+                loadTransitSettings();
                 loadEmailLog();
             }
         }
@@ -4178,6 +4225,95 @@ try {
                     alert('Error: ' + (data.error || 'Failed to save'));
                 }
             } catch(e) { alert('Failed to save settings: ' + e.message); }
+        }
+
+        // 🚍 Transit benefit settings
+        async function loadTransitSettings() {
+            if (currentUserRole !== 'admin') return;
+            try {
+                const resp = await fetch('/api/settings/transit', { headers: { 'Authorization': `Bearer ${sessionId}` } });
+                const data = await resp.json();
+                document.getElementById('transit-monthly-max').value = data.monthly_max;
+                document.getElementById('transit-claim-window').value = data.claim_window;
+                document.getElementById('transit-current').innerHTML = `📊 Current settings: Maximum <strong>$${data.monthly_max.toFixed(2)}/month</strong>, claim window <strong>${data.claim_window} months back</strong>`;
+                loadTransitAudit();
+            } catch(e) { console.error('Failed to load transit settings:', e); }
+        }
+
+        async function saveTransitSettings() {
+            const monthlyMax = parseFloat(document.getElementById('transit-monthly-max').value);
+            const claimWindow = parseInt(document.getElementById('transit-claim-window').value);
+            
+            if (isNaN(monthlyMax) || monthlyMax <= 0 || monthlyMax > 1000) {
+                alert('Monthly maximum must be between $0.01 and $1,000.00');
+                return;
+            }
+            if (isNaN(claimWindow) || claimWindow < 0 || claimWindow > 12) {
+                alert('Claim window must be between 0 and 12 months');
+                return;
+            }
+            
+            try {
+                const resp = await fetch('/api/settings/transit', {
+                    method: 'PUT',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionId}` 
+                    },
+                    body: JSON.stringify({ monthly_max: monthlyMax, claim_window: claimWindow })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    const msgDiv = document.getElementById('transit-save-msg');
+                    msgDiv.style.display = 'block';
+                    msgDiv.innerHTML = '<span style="color: #28a745; font-weight: 600;">✅ Transit settings saved successfully!</span>';
+                    setTimeout(() => { msgDiv.style.display = 'none'; }, 3000);
+                    loadTransitSettings();
+                } else {
+                    alert('Error: ' + (data.error || 'Failed to save'));
+                }
+            } catch(e) { alert('Failed to save transit settings: ' + e.message); }
+        }
+
+        async function loadTransitAudit() {
+            try {
+                const resp = await fetch('/api/settings/variance/audit', { headers: { 'Authorization': `Bearer ${sessionId}` } });
+                const logs = await resp.json();
+                const container = document.getElementById('transit-audit-log');
+                
+                if (!logs.length) {
+                    container.innerHTML = '<p style="color:#999; text-align:center; padding:10px;">No changes yet</p>';
+                    return;
+                }
+                
+                const transitLogs = logs.filter(log => log.setting_key === 'transit_settings');
+                if (!transitLogs.length) {
+                    container.innerHTML = '<p style="color:#999; text-align:center; padding:10px;">No transit setting changes yet</p>';
+                    return;
+                }
+                
+                const table = `
+                    <table style="width:100%; border-collapse: collapse; font-size:12px;">
+                        <thead><tr style="background:#f1f3f4; font-weight:600;">
+                            <th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Date</th>
+                            <th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Changed By</th>
+                            <th style="border:1px solid #dee2e6; padding:8px; text-align:left;">From</th>
+                            <th style="border:1px solid #dee2e6; padding:8px; text-align:left;">To</th>
+                        </tr></thead>
+                        <tbody>${transitLogs.map(log => `
+                            <tr>
+                                <td style="border:1px solid #dee2e6; padding:8px;">${new Date(log.changed_at).toLocaleString()}</td>
+                                <td style="border:1px solid #dee2e6; padding:8px;">${log.changed_by}</td>
+                                <td style="border:1px solid #dee2e6; padding:8px;">${log.old_value}</td>
+                                <td style="border:1px solid #dee2e6; padding:8px;">${log.new_value}</td>
+                            </tr>
+                        `).join('')}</tbody>
+                    </table>
+                `;
+                container.innerHTML = table;
+            } catch(e) {
+                document.getElementById('transit-audit-log').innerHTML = '<p style="color:#dc3545; text-align:center; padding:10px;">Failed to load audit log</p>';
+            }
         }
 
         async function loadVarianceAudit() {
