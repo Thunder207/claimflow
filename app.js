@@ -4212,8 +4212,13 @@ app.post('/api/travel-auth/:id/expenses', requireAuth, async (req, res) => {
     if (expense_type === 'vehicle_km' && kilometers) {
         finalDesc = `${vehicle_from || ''} → ${vehicle_to || ''} (${kilometers} km)${finalDesc ? ' — ' + finalDesc : ''}`;
     }
-    if (expense_type === 'hotel' && hotel_checkin && hotel_checkout) {
-        finalDesc = `Check-in: ${hotel_checkin}, Check-out: ${hotel_checkout}${finalDesc ? ' — ' + finalDesc : ''}`;
+    if (expense_type === 'hotel' && hotel_checkin) {
+        // Ensure check-out is the day after check-in for proper hotel night calculation
+        const checkinDate = new Date(hotel_checkin + 'T12:00:00');
+        const checkoutDate = new Date(checkinDate);
+        checkoutDate.setDate(checkoutDate.getDate() + 1);
+        const checkoutStr = checkoutDate.toISOString().split('T')[0];
+        finalDesc = `Check-in: ${hotel_checkin}, Check-out: ${checkoutStr} — Night${finalDesc ? ' — ' + finalDesc : ''}`;
     }
 
     const mealNames = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', incidentals: 'Incidentals' };
@@ -5106,10 +5111,12 @@ function generateExpenseReportPDF(tripId, db) {
                                 const checkoutStr = fmtDateShort(checkoutDate.toISOString().split('T')[0]);
                                 desc = `Check-in: ${checkinStr}, Check-out: ${checkoutStr} — ${desc || 'Night'}`;
                             }
-                            // Kilometric
+                            // Kilometric - clean up any garbled characters
                             if (exp.expense_type === 'vehicle_km' && exp.km_driven) {
-                                desc = exp.km_driven + ' km @ $' + (parseFloat(exp.km_rate || 0.68).toFixed(2)) + '/km' + (desc ? ' - ' + desc : '');
+                                desc = exp.km_driven + ' km @ $' + (parseFloat(exp.km_rate || 0.68).toFixed(2)) + '/km' + (desc ? ' — ' + desc : '');
                             }
+                            // Remove any garbled characters that might appear
+                            desc = desc.replace(/[!''""`´~^°]/g, '').replace(/\s{2,}/g, ' ').trim();
                             tY = drawTableRow(tY, cols2, [showDate, getCategoryLabel(exp.expense_type, exp.meal_name), exp.location || '', fmtDollars(exp.amount), desc.substring(0, 80)], { bg });
                             rowIdx++;
                         });
@@ -5144,10 +5151,13 @@ function generateExpenseReportPDF(tripId, db) {
                             tY = checkPage(tY, 18);
                             const bg = (rowIdx % 2 === 1) ? COLORS.grey : null;
                             let desc = (exp.description || '')
-                                .replace(/⚠️\s*FUTURE[-\s]DATED\s*EXPENSE[^|]*(\|\s*)?/gi, '')  // Remove future-dated warning
-                                .replace(/\|\s*$/, '')  // Remove trailing pipe
-                                .replace(/[&]\s*[þÞ]/g, '')  // Remove & þ characters
-                                .replace(/\s+\|\s*$/g, '')  // Remove trailing pipe with spaces
+                                // Remove future-dated warnings - all possible variants
+                                .replace(/⚠️[\s\S]*?FUTURE[\s\S]*?EXPENSE[\s\S]*?(\|[\s\S]*?)?$/gi, '')
+                                .replace(/\|\s*[&]\s*[þÞ][\s\S]*?$/gi, '')  // Remove | & þ and everything after
+                                .replace(/[&]\s*[þÞ][\s\S]*?$/gi, '')  // Remove & þ and everything after
+                                .replace(/FUTURE[\s-]*DATED[\s\S]*?$/gi, '')  // Remove any FUTURE-DATED text
+                                .replace(/\|\s*$/, '')  // Remove trailing pipes
+                                .replace(/\s+\|\s*$/, '')  // Remove trailing pipes with spaces
                                 .trim();
                             tY = drawTableRow(tY, cols3, [fmtDateShort(exp.date), getCategoryLabel(exp.expense_type, exp.meal_name), fmtDollars(exp.amount), (exp.vendor || '').substring(0, 35), desc.substring(0, 75)], { bg });
                             rowIdx++;
@@ -5287,17 +5297,19 @@ function generateExpenseReportPDF(tripId, db) {
                     );
 
                     // ═══════════════════════════════════════════
-                    // ADD PAGE NUMBERS & REFERENCE TO EXISTING PAGES ONLY
+                    // ADD FOOTERS TO CONTENT PAGES ONLY (NO SEPARATE PAGE-NUMBER PAGES)
                     // ═══════════════════════════════════════════
                     const pageRange = doc.bufferedPageRange();
-                    const totalPages = Math.min(pageRange.count, 5); // Limit to expected 5 pages max
-                    for (let i = 0; i < totalPages; i++) {
+                    const actualPageCount = pageRange.count;
+                    // Only process actual content pages (should be exactly 5)
+                    for (let i = 0; i < Math.min(actualPageCount, 5); i++) {
                         doc.switchToPage(i);
-                        // Footer with page number and reference
+                        // Add footer to each content page
                         doc.save().fontSize(8).fillColor(COLORS.muted).font('Helvetica')
-                            .text(`Page ${i + 1} of ${totalPages}     Ref: ${refNumber}`, LEFT, 740, { width: pageW, align: 'center' })
+                            .text(`Page ${i + 1} of 5     Ref: ${refNumber}`, LEFT, 740, { width: pageW, align: 'center' })
                             .restore();
                     }
+                    // Ensure we don't add any more pages after this point
 
                     doc.end();
                 }).catch(reject);
