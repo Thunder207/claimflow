@@ -980,7 +980,7 @@
                     <div style="font-size: 16px; color: #495057; font-weight: 600;">
                         Total Claim: <span id="transit-total-amount" style="color: #28a745;">$0.00</span>
                     </div>
-                    <button type="button" onclick="console.log('CLICK!'); submitTransitClaimDirect();" id="transit-submit-btn" style="padding: 12px 25px; font-size: 14px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                    <button type="button" onclick="submitTransitClaimDirect();" id="transit-submit-btn" style="padding: 12px 25px; font-size: 14px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
                         🚍 Submit for Approval
                     </button>
                 </div>
@@ -2733,29 +2733,20 @@
          * Submit transit claims directly for approval (no draft step)
          */
         async function submitTransitClaimDirect() {
-            console.log('🚍 Transit submit clicked!');
-            alert('Submit clicked — processing your claim...');
+            console.log('🚍 Transit submit clicked');
             
-            // Check authentication
             if (!sessionId) {
                 showMessage('error', 'Please log in to submit transit claims');
-                alert('ERROR: Not logged in');
                 return;
             }
             
-            // Collect claims from all cards
             const claims = [];
             const receipts = [];
-            let allValid = true;
             const errors = [];
             
-            // Check if cards exist
             const cards = document.querySelectorAll('.transit-claim-card');
-            console.log('🔍 Found transit cards:', cards.length);
-            
             if (cards.length === 0) {
-                showMessage('error', 'No transit claim form found. Please refresh the page and try again.');
-                alert('ERROR: No claim cards found');
+                showMessage('error', 'No claim form found. Please refresh the page.');
                 return;
             }
             
@@ -2764,74 +2755,53 @@
                 const receiptAmountInput = card.querySelector('.receipt-amount');
                 const receiptUpload = card.querySelector('.receipt-upload');
                 
-                console.log('🔍 Card', index + 1, 'elements:', {
-                    select: !!select,
-                    receiptInput: !!receiptAmountInput,
-                    receiptUpload: !!receiptUpload
-                });
-                
-                if (!select || !receiptAmountInput || !receiptUpload) {
-                    console.error('❌ Missing form elements in card', index + 1);
-                    errors.push(`Card ${index + 1}: Form elements not found`);
-                    allValid = false;
-                    return;
-                }
+                if (!select || !receiptAmountInput || !receiptUpload) return;
                 
                 const monthValue = select.value;
                 const receiptAmount = parseFloat(receiptAmountInput.value) || 0;
                 const receiptFile = receiptUpload.files[0];
                 
-                console.log('🔍 Card', index + 1, 'values:', {
-                    month: monthValue,
-                    amount: receiptAmount,
-                    hasFile: !!receiptFile
-                });
+                // Skip completely empty cards
+                if (!monthValue && receiptAmount === 0 && !receiptFile) return;
                 
-                // Skip incomplete cards (allows partial forms)
-                if (!monthValue && receiptAmount === 0 && !receiptFile) {
-                    return; // Empty card, skip
-                }
-                
-                // Validate complete cards
-                const cardNumber = index + 1;
+                // Validate filled cards
                 if (!monthValue) {
-                    errors.push(`Card ${cardNumber}: Please select a month`);
-                    allValid = false;
+                    errors.push('Please select a month');
+                    select.style.border = '2px solid #dc3545';
                     return;
                 }
                 if (receiptAmount <= 0) {
-                    errors.push(`Card ${cardNumber}: Please enter a receipt amount`);
-                    allValid = false;
+                    errors.push('Please enter a receipt amount');
+                    receiptAmountInput.style.border = '2px solid #dc3545';
                     return;
                 }
                 if (!receiptFile) {
-                    errors.push(`Card ${cardNumber}: Please upload a receipt`);
-                    allValid = false;
+                    errors.push('⚠️ Please upload a receipt photo before submitting');
+                    receiptUpload.style.border = '2px solid #dc3545';
+                    // Scroll the receipt field into view
+                    receiptUpload.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     return;
                 }
                 
-                // Parse month and year
+                // Clear any previous error styling
+                select.style.border = '';
+                receiptAmountInput.style.border = '';
+                receiptUpload.style.border = '';
+                
                 const [month, year] = monthValue.split('-').map(Number);
                 const claimAmount = Math.min(receiptAmount, transitSettings.monthly_max);
                 
-                claims.push({
-                    month: month,
-                    year: year,
-                    amount: claimAmount,
-                    receipt_amount: receiptAmount
-                });
-                
+                claims.push({ month, year, amount: claimAmount, receipt_amount: receiptAmount });
                 receipts.push(receiptFile);
             });
             
-            // Validation
-            if (claims.length === 0) {
-                showMessage('error', 'Please complete at least one month\'s claim');
+            if (errors.length > 0) {
+                showMessage('error', errors.join('. '));
                 return;
             }
             
-            if (!allValid) {
-                showMessage('error', errors.join('<br>'));
+            if (claims.length === 0) {
+                showMessage('error', 'Please fill in the form: select a month, enter amount, and upload a receipt');
                 return;
             }
             
@@ -2858,8 +2828,6 @@
                     formData.append('receipts', file);
                 });
                 
-                console.log('🌐 Submitting to API with claims:', claims);
-                
                 const resp = await fetch('/api/transit-claims', {
                     method: 'POST',
                     headers: { 'Authorization': 'Bearer ' + sessionId },
@@ -2867,19 +2835,15 @@
                 });
                 const result = await resp.json();
                 
-                console.log('📄 API Response:', { status: resp.status, result });
-                
                 if (resp.ok && result.success) {
                     const totalAmount = claims.reduce((sum, claim) => sum + claim.amount, 0);
-                    showMessage('success', `✅ Transit benefit submitted! ${claims.length} month(s), $${totalAmount.toFixed(2)} total — awaiting manager approval`);
+                    showMessage('success', `✅ Transit benefit submitted! ${claims.length} month(s), $${totalAmount.toFixed(2)} total — sent to your manager for approval`);
                     
-                    // Reset form - go back to category selection
+                    // Reset form
                     document.getElementById('sa-category').value = '';
                     handleCategoryChange();
                 } else {
-                    const errorMsg = result.error || `HTTP ${resp.status}: Failed to submit transit claim`;
-                    console.error('❌ API Error:', errorMsg);
-                    showMessage('error', errorMsg);
+                    showMessage('error', result.error || 'Failed to submit. Please try again.');
                 }
             } catch (error) {
                 console.error('Transit submission error:', error);
@@ -3147,46 +3111,7 @@
                 // Show supervisor button if applicable (must run after user is loaded)
                 checkSupervisorRole();
                 
-                // Add backup click handler for transit submit button + force-enable safety mechanism
-                setTimeout(() => {
-                    const submitBtn = document.getElementById('transit-submit-btn');
-                    if (submitBtn) {
-                        // Backup event listener
-                        submitBtn.addEventListener('click', function(e) {
-                            console.log('🚍 Backup click handler triggered');
-                            e.preventDefault();
-                            e.stopPropagation();
-                            
-                            // Force-enable button if form appears complete (safety mechanism)
-                            const cards = document.querySelectorAll('.transit-claim-card');
-                            let hasData = false;
-                            cards.forEach(card => {
-                                const select = card.querySelector('select');
-                                const amountInput = card.querySelector('.receipt-amount');
-                                if (select && select.value && amountInput && parseFloat(amountInput.value) > 0) {
-                                    hasData = true;
-                                }
-                            });
-                            
-                            if (hasData && submitBtn.disabled) {
-                                console.log('🔧 Force-enabling button - form appears complete');
-                                submitBtn.disabled = false;
-                            }
-                            
-                            submitTransitClaimDirect();
-                        });
-                        
-                        // Double-click handler as ultimate fallback
-                        submitBtn.addEventListener('dblclick', function(e) {
-                            console.log('🚍 Double-click handler - forcing submission');
-                            e.preventDefault();
-                            submitBtn.disabled = false;
-                            submitTransitClaimDirect();
-                        });
-                        
-                        console.log('✅ Transit submit handlers attached (click + double-click fallback)');
-                    }
-                }, 100);
+                // Transit submit button is handled by onclick in HTML — no backup needed
 
             } catch (error) {
                 console.error('Dashboard data load error:', error);
