@@ -980,7 +980,7 @@
                     <div style="font-size: 16px; color: #495057; font-weight: 600;">
                         Total Claim: <span id="transit-total-amount" style="color: #28a745;">$0.00</span>
                     </div>
-                    <button type="button" onclick="submitTransitClaimDirect()" id="transit-submit-btn" style="padding: 12px 25px; font-size: 14px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" disabled>
+                    <button type="button" onclick="submitTransitClaimDirect(); return false;" id="transit-submit-btn" style="padding: 12px 25px; font-size: 14px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" disabled>
                         🚍 Submit for Approval
                     </button>
                 </div>
@@ -2712,6 +2712,14 @@
          * Submit transit claims directly for approval (no draft step)
          */
         async function submitTransitClaimDirect() {
+            console.log('🚍 Transit submit clicked!');
+            
+            // Check if user is authenticated
+            if (!sessionId) {
+                showMessage('error', 'Please log in to submit transit claims');
+                return;
+            }
+            
             // Collect claims from all cards
             const claims = [];
             const receipts = [];
@@ -2817,11 +2825,17 @@
                 }
             } catch (error) {
                 console.error('Transit submission error:', error);
-                showMessage('error', 'Network error — please try again');
+                showMessage('error', 'Network error — please try again. Error: ' + error.message);
             } finally {
                 btn.disabled = false;
                 btn.textContent = originalText;
             }
+        }
+        
+        // Global error handler to catch any uncaught errors
+        window.addEventListener('error', function(event) {
+            console.error('Global error:', event.error);
+        });
         }
 
         // Legacy function removed - no more draft functionality for transit benefits
@@ -2833,6 +2847,23 @@
             const months = ['January', 'February', 'March', 'April', 'May', 'June',
                            'July', 'August', 'September', 'October', 'November', 'December'];
             return months[monthNum - 1] || 'Unknown';
+        }
+
+        /**
+         * Initialize transit form event handlers (backup for onclick)
+         */
+        function initializeTransitEventHandlers() {
+            const submitBtn = document.getElementById('transit-submit-btn');
+            if (submitBtn) {
+                // Add backup click handler
+                submitBtn.addEventListener('click', function(event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    console.log('🚍 Transit submit button clicked via event listener');
+                    submitTransitClaimDirect();
+                });
+                console.log('✅ Transit submit button event handler attached');
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════════════════════
@@ -3080,6 +3111,9 @@
 
                 // Show supervisor button if applicable (must run after user is loaded)
                 checkSupervisorRole();
+                
+                // Initialize transit form event handlers
+                initializeTransitEventHandlers();
 
             } catch (error) {
                 console.error('Dashboard data load error:', error);
