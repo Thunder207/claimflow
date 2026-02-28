@@ -947,53 +947,30 @@
 
             <!-- 🚍 Public Transit Benefit Form (shown when category selected) -->
             <div id="transit-form-container" style="display: none; margin-top: 20px; border: 2px solid #17a2b8; border-radius: 12px; padding: 20px; background: linear-gradient(135deg, #e3f8fd 0%, #f0fbfc 100%);">
-                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 15px;">
-                    <h4 style="color: #17a2b8; margin: 0; display: flex; align-items: center; gap: 8px;">
-                        🚍 <span>Public Transit Benefit</span>
-                    </h4>
-                    <div style="color: #6c757d; font-size: 14px;">
-                        Monthly reimbursement for public transportation
+                <h4 style="color: #17a2b8; margin: 0 0 15px 0; display: flex; align-items: center; gap: 8px;">
+                    🚍 <span>Public Transit Benefit Claims</span>
+                </h4>
+                
+                <div id="transit-claim-months" style="border: 1px solid #bee5eb; border-radius: 8px; padding: 15px; background: white; margin-bottom: 15px;">
+                    <p style="margin: 0 0 10px 0; color: #495057; font-weight: 500;">
+                        Select the month(s) you are claiming for:
+                        <span id="transit-monthly-max" style="color: #17a2b8; font-weight: 600;">(Maximum: $100.00/month)</span>
+                    </p>
+                    <div id="transit-months-list" style="display: flex; flex-direction: column; gap: 12px;">
+                        <!-- Month options will be populated by JavaScript -->
+                    </div>
+                    <div id="transit-existing-claims" style="margin-top: 15px;">
+                        <!-- Existing approved/pending claims will be shown here -->
                     </div>
                 </div>
-                <div style="color: #17a2b8; font-weight: 600; margin-bottom: 20px; font-size: 14px;">
-                    Maximum: <span id="transit-monthly-max">$100.00</span>/month
-                </div>
-                
-                <div id="transit-claim-cards" style="margin-bottom: 20px;">
-                    <!-- Claim cards will be populated by JavaScript -->
-                </div>
-                
-                <div id="transit-no-months" style="display: none; text-align: center; padding: 30px; color: #6c757d; background: #f8f9fa; border-radius: 8px; margin-bottom: 20px;">
-                    ✅ All eligible months have been claimed.<br>
-                    <small>No months available for reimbursement.</small>
-                </div>
-                
-                <div style="margin-bottom: 20px;">
-                    <button type="button" onclick="addTransitClaimCard()" id="transit-add-month-btn" style="background: none; color: #17a2b8; border: 1px solid #17a2b8; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px;">
-                        + Add Another Month
-                    </button>
-                </div>
-                
-                <hr style="border: none; border-top: 1px solid #dee2e6; margin: 20px 0;">
                 
                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0;">
-                    <div style="font-size: 16px; color: #495057; font-weight: 600;">
-                        Total Claim: <span id="transit-total-amount" style="color: #28a745;">$0.00</span>
+                    <div style="font-size: 16px; color: #495057;">
+                        <strong>Total Claim: <span id="transit-total-amount" style="color: #28a745;">$0.00</span></strong>
                     </div>
-                    <button type="button" onclick="submitTransitClaimDirect(); return false;" id="transit-submit-btn" style="padding: 12px 25px; font-size: 14px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" disabled>
-                        🚍 Submit for Approval
+                    <button type="button" onclick="submitTransitClaimDirect()" id="transit-add-btn" class="btn" style="padding: 12px 25px; font-size: 14px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer;" disabled>
+                        📤 Submit for Approval
                     </button>
-                </div>
-                
-                <!-- Claim History Section -->
-                <div id="transit-history-section" style="margin-top: 30px; display: none;">
-                    <hr style="border: none; border-top: 1px solid #dee2e6; margin-bottom: 15px;">
-                    <div style="color: #495057; font-size: 14px; font-weight: 600; margin-bottom: 10px;">
-                        Transit Claim History
-                    </div>
-                    <div id="transit-history-list" style="display: flex; flex-direction: column; gap: 8px;">
-                        <!-- History items will be populated by JavaScript -->
-                    </div>
                 </div>
             </div>
 
@@ -2339,14 +2316,12 @@
         }
 
         // ═══════════════════════════════════════════════════════════════════════════════
-        // 🚍 PUBLIC TRANSIT BENEFIT FUNCTIONS - USER-FRIENDLY REDESIGN
+        // 🚍 PUBLIC TRANSIT BENEFIT FUNCTIONS
         // ═══════════════════════════════════════════════════════════════════════════════
 
         // Global variables for transit system
         let transitSettings = { monthly_max: 100.00, claim_window: 2 };
-        let transitEligibleMonths = [];
-        let transitExistingClaims = [];
-        let transitClaimCardCounter = 0;
+        let currentTransitClaims = [];
 
         /**
          * Handle category change in standalone expense form
@@ -2380,7 +2355,7 @@
                 });
                 if (settingsResponse.ok) {
                     transitSettings = await settingsResponse.json();
-                    document.getElementById('transit-monthly-max').textContent = `$${parseFloat(transitSettings.monthly_max).toFixed(2)}`;
+                    document.getElementById('transit-monthly-max').textContent = `(Maximum: $${parseFloat(transitSettings.monthly_max).toFixed(2)}/month)`;
                 }
 
                 // Load existing claims for eligible months
@@ -2389,9 +2364,7 @@
                 });
                 if (claimsResponse.ok) {
                     const data = await claimsResponse.json();
-                    transitEligibleMonths = data.eligible_months || [];
-                    transitExistingClaims = data.existing_claims || [];
-                    initializeTransitForm();
+                    renderTransitMonths(data.eligible_months, data.existing_claims);
                 }
             } catch (error) {
                 console.error('Error loading transit form:', error);
@@ -2400,319 +2373,137 @@
         }
 
         /**
-         * Initialize the new user-friendly transit form
+         * Render the month selector with existing claims
          */
-        function initializeTransitForm() {
-            // Clear existing content
-            document.getElementById('transit-claim-cards').innerHTML = '';
-            transitClaimCardCounter = 0;
-
-            // Check if there are any available months
-            const availableMonths = getAvailableMonths();
+        function renderTransitMonths(eligibleMonths, existingClaims) {
+            const container = document.getElementById('transit-months-list');
+            const existingContainer = document.getElementById('transit-existing-claims');
             
-            if (availableMonths.length === 0) {
-                // No months available
-                document.getElementById('transit-no-months').style.display = 'block';
-                document.getElementById('transit-add-month-btn').style.display = 'none';
-                document.getElementById('transit-submit-btn').style.display = 'none';
-            } else {
-                // Add the first claim card automatically
-                document.getElementById('transit-no-months').style.display = 'none';
-                addTransitClaimCard();
-            }
+            container.innerHTML = '';
+            existingContainer.innerHTML = '';
 
-            // Show claim history
-            renderTransitHistory();
-            updateTransitUI();
-        }
-
-        /**
-         * Get months that are available for claiming (not already claimed/pending)
-         */
-        function getAvailableMonths() {
-            return transitEligibleMonths.filter(month => {
-                return !transitExistingClaims.some(claim => 
-                    claim.claim_month === month.month && 
-                    claim.claim_year === month.year && 
-                    claim.status !== 'rejected'
-                );
-            });
-        }
-
-        /**
-         * Get months that are not already selected in other cards
-         */
-        function getUnselectedMonths() {
-            const selectedMonths = new Set();
-            document.querySelectorAll('.transit-claim-card select').forEach(select => {
-                if (select.value) {
-                    selectedMonths.add(select.value);
+            // Create month checkboxes for eligible months
+            eligibleMonths.forEach(month => {
+                const existingClaim = existingClaims.find(c => c.claim_month === month.month && c.claim_year === month.year);
+                
+                if (!existingClaim) {
+                    // Available month
+                    const monthDiv = createMonthSelector(month);
+                    container.appendChild(monthDiv);
                 }
             });
-            
-            return getAvailableMonths().filter(month => 
-                !selectedMonths.has(`${month.month}-${month.year}`)
-            );
+
+            // Show existing claims
+            if (existingClaims.length > 0) {
+                existingContainer.innerHTML = '<div style="border-top: 1px solid #dee2e6; padding-top: 10px; margin-top: 10px;"><small style="color: #6c757d; font-weight: 500;">Previous Claims:</small></div>';
+                existingClaims.forEach(claim => {
+                    const statusIcon = claim.status === 'approved' ? '✅' : claim.status === 'pending' ? '⏳' : '❌';
+                    const statusText = claim.status === 'approved' ? 
+                        `Approved (${new Date(claim.approved_date).toLocaleDateString()})` : 
+                        claim.status === 'pending' ? 'Pending' : 'Rejected';
+                    
+                    const claimDiv = document.createElement('div');
+                    claimDiv.style.cssText = 'padding: 8px; background: #f8f9fa; border-radius: 4px; font-size: 13px; color: #495057;';
+                    claimDiv.innerHTML = `${statusIcon} ${getMonthName(claim.claim_month)} ${claim.claim_year} — $${claim.claim_amount} — ${statusText}`;
+                    existingContainer.appendChild(claimDiv);
+                });
+            }
+
+            updateTransitTotal();
         }
 
         /**
-         * Add a new transit claim card
+         * Create a month selector checkbox with amount input
          */
-        function addTransitClaimCard() {
-            const availableMonths = getUnselectedMonths();
-            if (availableMonths.length === 0) {
-                showMessage('info', 'No more months available for claims');
-                return;
-            }
-
-            const cardId = `transit-card-${++transitClaimCardCounter}`;
-            const cardsContainer = document.getElementById('transit-claim-cards');
+        function createMonthSelector(month) {
+            const div = document.createElement('div');
+            div.style.cssText = 'display: flex; align-items: center; gap: 10px; padding: 8px; border: 1px solid #dee2e6; border-radius: 6px; background: #f8f9fa;';
             
-            const cardDiv = document.createElement('div');
-            cardDiv.className = 'transit-claim-card';
-            cardDiv.id = cardId;
-            cardDiv.style.cssText = 'border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; background: white; margin-bottom: 15px;';
-            
-            cardDiv.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
-                    <div style="flex: 1;">
-                        <label style="display: block; font-weight: 600; color: #495057; margin-bottom: 8px;">
-                            Claiming for:
-                        </label>
-                        <select onchange="updateTransitUI()" style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 6px; font-size: 14px;">
-                            <option value="">Select month...</option>
-                        </select>
-                    </div>
-                    ${transitClaimCardCounter > 1 ? `
-                    <button type="button" onclick="removeTransitClaimCard('${cardId}')" style="background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; margin-left: 15px;">
-                        ✕ Remove
-                    </button>
-                    ` : ''}
-                </div>
-                
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; font-weight: 600; color: #495057; margin-bottom: 8px;">
-                        Receipt Amount:
-                    </label>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="color: #6c757d; font-size: 18px;">$</span>
-                        <input type="number" class="receipt-amount" min="0.01" step="0.01" placeholder="0.00" 
-                               oninput="updateTransitUI()" style="flex: 1; padding: 8px; border: 1px solid #ced4da; border-radius: 6px; font-size: 14px;">
-                    </div>
-                    <small style="color: #6c757d; display: block; margin-top: 4px;">
-                        ⓘ Maximum reimbursement: $${parseFloat(transitSettings.monthly_max).toFixed(2)}
-                    </small>
-                </div>
-                
-                <div class="claim-amount-display" style="margin-bottom: 15px; padding: 8px; background: #f8f9fa; border-radius: 6px; border-left: 3px solid #28a745; display: none;">
-                    <strong style="color: #495057;">Claim Amount: <span class="claim-amount-value" style="color: #28a745;">$0.00</span></strong>
-                    <span class="capped-indicator" style="color: #e67e22; font-size: 12px; margin-left: 8px; display: none;">(capped at monthly maximum)</span>
-                </div>
-                
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; font-weight: 600; color: #495057; margin-bottom: 8px;">
-                        Receipt:
-                    </label>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <input type="file" class="receipt-upload" accept="image/*,.pdf" onchange="handleReceiptUpload(this)"
-                               style="flex: 1; padding: 6px; border: 1px solid #ced4da; border-radius: 6px; font-size: 13px;">
-                        <span class="receipt-status" style="font-size: 12px; color: #6c757d;"></span>
-                    </div>
+            div.innerHTML = `
+                <input type="checkbox" id="month-${month.month}-${month.year}" onchange="updateTransitTotal()" 
+                       style="transform: scale(1.2);">
+                <label for="month-${month.month}-${month.year}" style="flex: 1; font-weight: 500; color: #495057;">
+                    ${getMonthName(month.month)} ${month.year}
+                </label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 13px; color: #6c757d;">$</span>
+                    <input type="number" id="amount-${month.month}-${month.year}" min="0.01" max="${transitSettings.monthly_max}" 
+                           step="0.01" placeholder="0.00" onchange="updateTransitTotal()" disabled
+                           style="width: 80px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 4px; text-align: right;">
+                    <input type="file" id="receipt-${month.month}-${month.year}" accept="image/*,.pdf" disabled
+                           style="width: 100px; font-size: 11px;" onchange="handleReceiptUpload(${month.month}, ${month.year})">
                 </div>
             `;
-            
-            cardsContainer.appendChild(cardDiv);
-            populateMonthDropdown(cardDiv.querySelector('select'));
-            updateTransitUI();
-        }
 
-        /**
-         * Remove a transit claim card
-         */
-        function removeTransitClaimCard(cardId) {
-            const card = document.getElementById(cardId);
-            if (card) {
-                card.remove();
-                updateTransitUI();
-                
-                // Update "Add Another Month" button visibility
-                const remainingCards = document.querySelectorAll('.transit-claim-card');
-                if (remainingCards.length === 0) {
-                    addTransitClaimCard(); // Always keep at least one card
+            // Add event listener for checkbox
+            const checkbox = div.querySelector(`#month-${month.month}-${month.year}`);
+            const amountInput = div.querySelector(`#amount-${month.month}-${month.year}`);
+            const receiptInput = div.querySelector(`#receipt-${month.month}-${month.year}`);
+
+            checkbox.addEventListener('change', function() {
+                amountInput.disabled = !this.checked;
+                receiptInput.disabled = !this.checked;
+                if (!this.checked) {
+                    amountInput.value = '';
                 }
-            }
-        }
-
-        /**
-         * Populate a month dropdown with available options
-         */
-        function populateMonthDropdown(select) {
-            const currentValue = select.value;
-            select.innerHTML = '<option value="">Select month...</option>';
-            
-            const availableMonths = getUnselectedMonths();
-            
-            // Add current selection back if it was previously selected
-            if (currentValue) {
-                const [month, year] = currentValue.split('-');
-                const wasSelected = transitEligibleMonths.find(m => m.month == month && m.year == year);
-                if (wasSelected) {
-                    select.innerHTML += `<option value="${currentValue}" selected>${getMonthName(parseInt(month))} ${year}</option>`;
-                }
-            }
-            
-            // Add available months
-            availableMonths.forEach(month => {
-                const value = `${month.month}-${month.year}`;
-                if (value !== currentValue) {
-                    select.innerHTML += `<option value="${value}">${getMonthName(month.month)} ${month.year}</option>`;
-                }
-            });
-        }
-
-        /**
-         * Handle receipt file upload
-         */
-        function handleReceiptUpload(fileInput) {
-            const card = fileInput.closest('.transit-claim-card');
-            const statusSpan = card.querySelector('.receipt-status');
-            
-            if (fileInput.files[0]) {
-                const fileName = fileInput.files[0].name;
-                statusSpan.textContent = `${fileName} ✅`;
-                statusSpan.style.color = '#28a745';
-            } else {
-                statusSpan.textContent = '';
-            }
-            
-            updateTransitUI();
-        }
-
-        /**
-         * Update all transit UI elements (totals, validation, buttons)
-         */
-        function updateTransitUI() {
-            // Refresh all dropdowns to exclude selected months
-            document.querySelectorAll('.transit-claim-card select').forEach(select => {
-                populateMonthDropdown(select);
+                updateTransitTotal();
             });
 
-            // Update claim amounts for each card
-            let totalClaim = 0;
-            let allValid = true;
-            
-            document.querySelectorAll('.transit-claim-card').forEach(card => {
-                const select = card.querySelector('select');
-                const receiptAmountInput = card.querySelector('.receipt-amount');
-                const claimAmountDisplay = card.querySelector('.claim-amount-display');
-                const claimAmountValue = card.querySelector('.claim-amount-value');
-                const cappedIndicator = card.querySelector('.capped-indicator');
-                const receiptUpload = card.querySelector('.receipt-upload');
-                
-                const receiptAmount = parseFloat(receiptAmountInput.value) || 0;
-                const hasMonth = select.value !== '';
-                const hasReceipt = receiptUpload.files.length > 0;
-                
-                if (hasMonth && receiptAmount > 0) {
-                    // Calculate claim amount (capped at monthly max)
-                    const claimAmount = Math.min(receiptAmount, transitSettings.monthly_max);
-                    const isCapped = receiptAmount > transitSettings.monthly_max;
-                    
-                    claimAmountValue.textContent = `$${claimAmount.toFixed(2)}`;
-                    cappedIndicator.style.display = isCapped ? 'inline' : 'none';
-                    claimAmountDisplay.style.display = 'block';
-                    
-                    totalClaim += claimAmount;
-                    
-                    // Check if this card is complete
-                    if (!hasReceipt) {
-                        allValid = false;
-                    }
-                } else {
-                    claimAmountDisplay.style.display = 'none';
-                    if (hasMonth || receiptAmount > 0) {
-                        allValid = false;
-                    }
-                }
-            });
-            
-            // Update total display
-            document.getElementById('transit-total-amount').textContent = `$${totalClaim.toFixed(2)}`;
-            
-            // Update submit button state
-            const submitBtn = document.getElementById('transit-submit-btn');
-            const hasAnyClaims = document.querySelectorAll('.transit-claim-card select[value!=""]').length > 0;
-            submitBtn.disabled = !allValid || !hasAnyClaims || totalClaim === 0;
-            
-            // Update "Add Another Month" button visibility
-            const addBtn = document.getElementById('transit-add-month-btn');
-            const unselectedMonths = getUnselectedMonths();
-            addBtn.style.display = unselectedMonths.length > 0 ? 'inline-block' : 'none';
+            return div;
         }
 
         /**
-         * Render transit claim history
+         * Update the total transit claim amount
          */
-        function renderTransitHistory() {
-            const historySection = document.getElementById('transit-history-section');
-            const historyList = document.getElementById('transit-history-list');
+        function updateTransitTotal() {
+            let total = 0;
+            const checkboxes = document.querySelectorAll('#transit-months-list input[type="checkbox"]:checked');
             
-            if (!transitExistingClaims || transitExistingClaims.length === 0) {
-                historySection.style.display = 'none';
-                return;
-            }
-            
-            historySection.style.display = 'block';
-            historyList.innerHTML = '';
-            
-            // Sort claims by date (newest first)
-            const sortedClaims = [...transitExistingClaims].sort((a, b) => 
-                new Date(b.created_date || 0) - new Date(a.created_date || 0)
-            );
-            
-            sortedClaims.forEach(claim => {
-                const statusIcon = claim.status === 'approved' ? '✅' : claim.status === 'pending' ? '⏳' : '❌';
-                const statusColor = claim.status === 'approved' ? '#28a745' : claim.status === 'pending' ? '#17a2b8' : '#dc3545';
+            checkboxes.forEach(checkbox => {
+                const [, month, year] = checkbox.id.split('-');
+                const amountInput = document.getElementById(`amount-${month}-${year}`);
+                const amount = parseFloat(amountInput.value) || 0;
                 
-                let statusText = '';
-                if (claim.status === 'approved') {
-                    const approvedDate = claim.approved_date ? new Date(claim.approved_date).toLocaleDateString() : 'Unknown';
-                    statusText = `Approved — ${approvedDate}`;
-                } else if (claim.status === 'pending') {
-                    statusText = 'Pending';
-                } else if (claim.status === 'rejected') {
-                    statusText = `Rejected — "${claim.rejection_reason || 'No reason provided'}"`;
+                // Apply monthly cap
+                const cappedAmount = Math.min(amount, transitSettings.monthly_max);
+                if (amount > transitSettings.monthly_max) {
+                    amountInput.value = cappedAmount.toFixed(2);
+                    showMessage('info', `Amount capped at $${transitSettings.monthly_max.toFixed(2)} (monthly maximum)`);
                 }
                 
-                const historyItem = document.createElement('div');
-                historyItem.style.cssText = `
-                    display: flex; 
-                    justify-content: space-between; 
-                    align-items: center; 
-                    padding: 8px 12px; 
-                    background: #f8f9fa; 
-                    border-radius: 6px; 
-                    border-left: 3px solid ${statusColor};
-                    font-size: 13px;
-                `;
-                
-                historyItem.innerHTML = `
-                    <span style="color: #495057;">
-                        ${statusIcon} ${getMonthName(claim.claim_month)} ${claim.claim_year} 
-                        <strong style="color: ${statusColor};">$${parseFloat(claim.claim_amount).toFixed(2)}</strong>
-                    </span>
-                    <span style="color: #6c757d; font-size: 12px;">${statusText}</span>
-                `;
-                
-                historyList.appendChild(historyItem);
+                total += cappedAmount;
             });
+
+            document.getElementById('transit-total-amount').textContent = `$${total.toFixed(2)}`;
+            
+            // Enable/disable add button based on selections
+            const addBtn = document.getElementById('transit-add-btn');
+            const hasSelections = checkboxes.length > 0 && Array.from(checkboxes).some(cb => {
+                const [, month, year] = cb.id.split('-');
+                const amount = parseFloat(document.getElementById(`amount-${month}-${year}`).value) || 0;
+                const receipt = document.getElementById(`receipt-${month}-${year}`).files[0];
+                return amount > 0 && receipt;
+            });
+            
+            addBtn.disabled = !hasSelections;
+        }
+
+        /**
+         * Handle receipt upload for a specific month
+         */
+        function handleReceiptUpload(month, year) {
+            const receiptInput = document.getElementById(`receipt-${month}-${year}`);
+            if (receiptInput.files[0]) {
+                console.log(`Receipt uploaded for ${getMonthName(month)} ${year}: ${receiptInput.files[0].name}`);
+                updateTransitTotal();
+            }
         }
 
         /**
          * Submit transit claims directly for approval (no draft step)
          */
         async function submitTransitClaimDirect() {
-            console.log('🚍 Transit submit clicked!');
+            console.log('🚍 Transit submit clicked - original interface');
             
             // Check if user is authenticated
             if (!sessionId) {
@@ -2720,80 +2511,36 @@
                 return;
             }
             
-            // Collect claims from all cards
+            const checkboxes = document.querySelectorAll('#transit-months-list input[type="checkbox"]:checked');
             const claims = [];
-            const receipts = [];
             let allValid = true;
-            const errors = [];
             
-            document.querySelectorAll('.transit-claim-card').forEach((card, index) => {
-                const select = card.querySelector('select');
-                const receiptAmountInput = card.querySelector('.receipt-amount');
-                const receiptUpload = card.querySelector('.receipt-upload');
+            checkboxes.forEach(checkbox => {
+                const [, month, year] = checkbox.id.split('-');
+                const amountInput = document.getElementById(`amount-${month}-${year}`);
+                const receiptInput = document.getElementById(`receipt-${month}-${year}`);
                 
-                const monthValue = select.value;
-                const receiptAmount = parseFloat(receiptAmountInput.value) || 0;
-                const receiptFile = receiptUpload.files[0];
+                const amount = parseFloat(amountInput.value) || 0;
+                const receipt = receiptInput.files[0];
                 
-                // Skip incomplete cards (allows partial forms)
-                if (!monthValue && receiptAmount === 0 && !receiptFile) {
-                    return; // Empty card, skip
-                }
-                
-                // Validate complete cards
-                const cardNumber = index + 1;
-                if (!monthValue) {
-                    errors.push(`Card ${cardNumber}: Please select a month`);
+                if (amount <= 0) {
                     allValid = false;
+                    showMessage('error', `Please enter an amount for ${getMonthName(month)} ${year}`);
                     return;
                 }
-                if (receiptAmount <= 0) {
-                    errors.push(`Card ${cardNumber}: Please enter a receipt amount`);
+                if (!receipt) {
                     allValid = false;
-                    return;
-                }
-                if (!receiptFile) {
-                    errors.push(`Card ${cardNumber}: Please upload a receipt`);
-                    allValid = false;
+                    showMessage('error', `Please upload a receipt for ${getMonthName(month)} ${year}`);
                     return;
                 }
                 
-                // Parse month and year
-                const [month, year] = monthValue.split('-').map(Number);
-                const claimAmount = Math.min(receiptAmount, transitSettings.monthly_max);
-                
-                claims.push({
-                    month: month,
-                    year: year,
-                    amount: claimAmount,
-                    receipt_amount: receiptAmount
-                });
-                
-                receipts.push(receiptFile);
+                claims.push({ month: parseInt(month), year: parseInt(year), amount: Math.min(amount, transitSettings.monthly_max) });
             });
             
-            // Validation
-            if (claims.length === 0) {
-                showMessage('error', 'Please complete at least one month\'s claim');
-                return;
-            }
-            
-            if (!allValid) {
-                showMessage('error', errors.join('<br>'));
-                return;
-            }
-            
-            // Check for duplicate months
-            const monthKeys = claims.map(c => `${c.month}-${c.year}`);
-            const duplicates = monthKeys.filter((key, index) => monthKeys.indexOf(key) !== index);
-            if (duplicates.length > 0) {
-                showMessage('error', 'Duplicate months selected. Please remove duplicates.');
-                return;
-            }
+            if (!allValid || claims.length === 0) return;
             
             // Disable button during submission
-            const btn = document.getElementById('transit-submit-btn');
-            const originalText = btn.textContent;
+            const btn = document.getElementById('transit-add-btn');
             btn.disabled = true;
             btn.textContent = '⏳ Submitting...';
             
@@ -2801,9 +2548,13 @@
                 const formData = new FormData();
                 formData.append('claims', JSON.stringify(claims));
                 
-                // Add receipt files in the same order as claims
-                receipts.forEach(file => {
-                    formData.append('receipts', file);
+                // Add receipt files
+                checkboxes.forEach(checkbox => {
+                    const [, month, year] = checkbox.id.split('-');
+                    const receiptInput = document.getElementById(`receipt-${month}-${year}`);
+                    if (receiptInput.files[0]) {
+                        formData.append('receipts', receiptInput.files[0]);
+                    }
                 });
                 
                 const resp = await fetch('/api/transit-claims', {
@@ -2814,10 +2565,8 @@
                 const result = await resp.json();
                 
                 if (resp.ok && result.success) {
-                    const totalAmount = claims.reduce((sum, claim) => sum + claim.amount, 0);
-                    showMessage('success', `✅ Transit benefit submitted! ${claims.length} month(s), $${totalAmount.toFixed(2)} total — awaiting approval`);
-                    
-                    // Reset form - go back to category selection
+                    showMessage('success', `✅ Transit benefit submitted! ${claims.length} month(s), $${result.total_amount.toFixed(2)} total — awaiting approval`);
+                    // Reset form
                     document.getElementById('sa-category').value = '';
                     handleCategoryChange();
                 } else {
@@ -2825,20 +2574,71 @@
                 }
             } catch (error) {
                 console.error('Transit submission error:', error);
-                showMessage('error', 'Network error — please try again. Error: ' + error.message);
+                showMessage('error', 'Network error — please try again');
             } finally {
                 btn.disabled = false;
-                btn.textContent = originalText;
+                btn.textContent = '📤 Submit for Approval';
             }
         }
-        
-        // Global error handler to catch any uncaught errors
-        window.addEventListener('error', function(event) {
-            console.error('Global error:', event.error);
-        });
-        }
 
-        // Legacy function removed - no more draft functionality for transit benefits
+        /**
+         * Add transit claims to draft (legacy, kept for compatibility)
+         */
+        function addTransitClaimToDraft() {
+            const checkboxes = document.querySelectorAll('#transit-months-list input[type="checkbox"]:checked');
+            const claims = [];
+            let allValid = true;
+            
+            checkboxes.forEach(checkbox => {
+                const [, month, year] = checkbox.id.split('-');
+                const amountInput = document.getElementById(`amount-${month}-${year}`);
+                const receiptInput = document.getElementById(`receipt-${month}-${year}`);
+                
+                const amount = parseFloat(amountInput.value) || 0;
+                const receipt = receiptInput.files[0];
+                
+                if (amount <= 0 || !receipt) {
+                    allValid = false;
+                    showMessage('error', `Please enter amount and upload receipt for ${getMonthName(month)} ${year}`);
+                    return;
+                }
+                
+                claims.push({
+                    month: parseInt(month),
+                    year: parseInt(year),
+                    amount: Math.min(amount, transitSettings.monthly_max),
+                    receiptAmount: amount, // Store original amount before capping
+                    receipt: receipt,
+                    monthName: getMonthName(month)
+                });
+            });
+            
+            if (!allValid || claims.length === 0) return;
+            
+            // Add to draft expenses (integrate with existing draft system)
+            const transitDraft = {
+                id: Date.now() + Math.random(),
+                type: 'transit',
+                category: 'Public Transit Benefit',
+                claims: claims,
+                amount: claims.reduce((sum, c) => sum + c.amount, 0),
+                description: claims.map(c => `${c.monthName} ${c.year}: $${c.amount.toFixed(2)}`).join(', '),
+                date: new Date().toISOString().split('T')[0],
+                vendor: 'Public Transit Benefit'
+            };
+            
+            standaloneDrafts.push(transitDraft);
+            saveStandaloneDrafts();
+            
+            // Reset form
+            document.getElementById('sa-category').value = '';
+            handleCategoryChange();
+            
+            // Refresh draft list
+            renderStandaloneDrafts();
+            
+            showMessage('success', `Transit benefit claims added to draft (${claims.length} months, $${transitDraft.totalAmount.toFixed(2)} total)`);
+        }
 
         /**
          * Get month name from number
@@ -2847,23 +2647,6 @@
             const months = ['January', 'February', 'March', 'April', 'May', 'June',
                            'July', 'August', 'September', 'October', 'November', 'December'];
             return months[monthNum - 1] || 'Unknown';
-        }
-
-        /**
-         * Initialize transit form event handlers (backup for onclick)
-         */
-        function initializeTransitEventHandlers() {
-            const submitBtn = document.getElementById('transit-submit-btn');
-            if (submitBtn) {
-                // Add backup click handler
-                submitBtn.addEventListener('click', function(event) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    console.log('🚍 Transit submit button clicked via event listener');
-                    submitTransitClaimDirect();
-                });
-                console.log('✅ Transit submit button event handler attached');
-            }
         }
 
         // ═══════════════════════════════════════════════════════════════════════════════
@@ -3112,8 +2895,17 @@
                 // Show supervisor button if applicable (must run after user is loaded)
                 checkSupervisorRole();
                 
-                // Initialize transit form event handlers
-                initializeTransitEventHandlers();
+                // Add backup event handler for transit submit button (fix for non-responsive button)
+                setTimeout(() => {
+                    const transitBtn = document.getElementById('transit-add-btn');
+                    if (transitBtn) {
+                        transitBtn.addEventListener('click', function(e) {
+                            console.log('🚍 Transit backup click handler triggered');
+                            e.preventDefault();
+                            submitTransitClaimDirect();
+                        });
+                    }
+                }, 100);
 
             } catch (error) {
                 console.error('Dashboard data load error:', error);
