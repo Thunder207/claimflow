@@ -2726,14 +2726,42 @@
             let allValid = true;
             const errors = [];
             
-            document.querySelectorAll('.transit-claim-card').forEach((card, index) => {
+            // Debug: Check if cards exist
+            const cards = document.querySelectorAll('.transit-claim-card');
+            console.log('🔍 Found transit cards:', cards.length);
+            
+            if (cards.length === 0) {
+                showMessage('error', 'No transit claim form found. Please refresh the page and try again.');
+                return;
+            }
+            
+            cards.forEach((card, index) => {
                 const select = card.querySelector('select');
                 const receiptAmountInput = card.querySelector('.receipt-amount');
                 const receiptUpload = card.querySelector('.receipt-upload');
                 
+                console.log('🔍 Card', index + 1, 'elements:', {
+                    select: !!select,
+                    receiptInput: !!receiptAmountInput,
+                    receiptUpload: !!receiptUpload
+                });
+                
+                if (!select || !receiptAmountInput || !receiptUpload) {
+                    console.error('❌ Missing form elements in card', index + 1);
+                    errors.push(`Card ${index + 1}: Form elements not found`);
+                    allValid = false;
+                    return;
+                }
+                
                 const monthValue = select.value;
                 const receiptAmount = parseFloat(receiptAmountInput.value) || 0;
                 const receiptFile = receiptUpload.files[0];
+                
+                console.log('🔍 Card', index + 1, 'values:', {
+                    month: monthValue,
+                    amount: receiptAmount,
+                    hasFile: !!receiptFile
+                });
                 
                 // Skip incomplete cards (allows partial forms)
                 if (!monthValue && receiptAmount === 0 && !receiptFile) {
@@ -2806,6 +2834,8 @@
                     formData.append('receipts', file);
                 });
                 
+                console.log('🌐 Submitting to API with claims:', claims);
+                
                 const resp = await fetch('/api/transit-claims', {
                     method: 'POST',
                     headers: { 'Authorization': 'Bearer ' + sessionId },
@@ -2813,15 +2843,19 @@
                 });
                 const result = await resp.json();
                 
+                console.log('📄 API Response:', { status: resp.status, result });
+                
                 if (resp.ok && result.success) {
                     const totalAmount = claims.reduce((sum, claim) => sum + claim.amount, 0);
-                    showMessage('success', `✅ Transit benefit submitted! ${claims.length} month(s), $${totalAmount.toFixed(2)} total — awaiting approval`);
+                    showMessage('success', `✅ Transit benefit submitted! ${claims.length} month(s), $${totalAmount.toFixed(2)} total — awaiting manager approval`);
                     
                     // Reset form - go back to category selection
                     document.getElementById('sa-category').value = '';
                     handleCategoryChange();
                 } else {
-                    showMessage('error', result.error || 'Failed to submit transit claim');
+                    const errorMsg = result.error || `HTTP ${resp.status}: Failed to submit transit claim`;
+                    console.error('❌ API Error:', errorMsg);
+                    showMessage('error', errorMsg);
                 }
             } catch (error) {
                 console.error('Transit submission error:', error);
