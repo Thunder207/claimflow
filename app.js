@@ -486,7 +486,7 @@ function initializeDatabase() {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (employee_id) REFERENCES employees (id),
             FOREIGN KEY (approved_by) REFERENCES employees (id),
-            UNIQUE(employee_id, claim_month, claim_year) ON CONFLICT REPLACE
+            UNIQUE(employee_id, claim_month, claim_year)
         )`
     ];
     
@@ -5736,12 +5736,27 @@ app.post('/api/transit-claims', requireAuth, upload.fields([
         return res.status(400).json({ error: errors.join('; ') });
     }
     
-    // Get transit settings for validation
-    db.get(`SELECT value FROM app_settings WHERE key = 'transit_monthly_max'`, (err, setting) => {
-        const monthlyMax = parseFloat(setting ? setting.value : '100.00');
-        const expenseBatchId = Date.now().toString();
+    // Check for existing claims (prevent duplicates)
+    const monthYearPairs = claims.map(c => `(${c.month}, ${c.year})`).join(', ');
+    db.all(`SELECT claim_month, claim_year, status FROM transit_claims 
+            WHERE employee_id = ? AND (claim_month, claim_year) IN (${monthYearPairs}) AND status != 'rejected'`, 
+           [req.user.employeeId], (err, existingClaims) => {
         
-        // Insert claims
+        if (err) return res.status(500).json({ error: 'Failed to check existing claims' });
+        
+        if (existingClaims.length > 0) {
+            const conflicts = existingClaims.map(c => `${c.claim_month}/${c.claim_year} (${c.status})`).join(', ');
+            return res.status(409).json({ 
+                error: `Claims already exist for: ${conflicts}. Cannot submit duplicate claims.` 
+            });
+        }
+        
+        // Get transit settings for validation
+        db.get(`SELECT value FROM app_settings WHERE key = 'transit_monthly_max'`, (err, setting) => {
+            const monthlyMax = parseFloat(setting ? setting.value : '100.00');
+            const expenseBatchId = Date.now().toString();
+            
+            // Insert claims
         const insertPromises = claims.map((claim, index) => {
             return new Promise((resolve, reject) => {
                 const receiptAmount = parseFloat(claim.amount);
@@ -5773,6 +5788,7 @@ app.post('/api/transit-claims', requireAuth, upload.fields([
         }).catch(error => {
             console.error('Error inserting transit claims:', error);
             res.status(500).json({ error: 'Failed to save transit claims' });
+        });
         });
     });
 });
