@@ -5843,12 +5843,23 @@ app.post('/api/transit-claims', requireAuth, upload.fields([
         });
         
         Promise.all(insertPromises).then(claimIds => {
-            // Add to draft expenses for batch submission
             const totalAmount = claims.reduce((sum, claim) => sum + Math.min(parseFloat(claim.amount), monthlyMax), 0);
+            
+            // Notify supervisor
+            db.get(`SELECT supervisor_id FROM employees WHERE id = ?`, [req.user.employeeId], (err, emp) => {
+                if (!err && emp && emp.supervisor_id) {
+                    const monthNames = claims.map(c => {
+                        const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                        return `${mn[c.month - 1]} ${c.year}`;
+                    }).join(', ');
+                    createNotification(emp.supervisor_id, 'transit_pending',
+                        `🚍 ${req.user.name} submitted a transit benefit claim for ${monthNames} ($${totalAmount.toFixed(2)}) — awaiting your approval.`);
+                }
+            });
             
             res.json({ 
                 success: true, 
-                message: `${claims.length} transit claims added to draft`,
+                message: `${claims.length} transit claim(s) submitted for approval`,
                 claim_ids: claimIds,
                 total_amount: totalAmount,
                 expense_batch_id: expenseBatchId
@@ -5857,6 +5868,79 @@ app.post('/api/transit-claims', requireAuth, upload.fields([
             console.error('Error inserting transit claims:', error);
             res.status(500).json({ error: 'Failed to save transit claims' });
         });
+        });
+    });
+});
+
+// ============================================
+// TRANSIT CLAIMS — SUPERVISOR APPROVAL
+// ============================================
+
+// Get pending transit claims for supervisor
+app.get('/api/transit-claims/pending', requireAuth, requireRole('supervisor'), (req, res) => {
+    db.all(`SELECT tc.*, e.name as employee_name, e.department, e.employee_number
+            FROM transit_claims tc
+            JOIN employees e ON tc.employee_id = e.id
+            WHERE e.supervisor_id = ? AND tc.status = 'pending'
+            ORDER BY tc.submitted_date DESC`,
+           [req.user.employeeId], (err, claims) => {
+        if (err) return res.status(500).json({ error: 'Failed to load pending claims' });
+        res.json({ claims: claims || [] });
+    });
+});
+
+// Approve transit claim
+app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor'), (req, res) => {
+    const claimId = req.params.id;
+    
+    // Verify this claim belongs to a direct report
+    db.get(`SELECT tc.*, e.name as employee_name, e.supervisor_id, tc.employee_id
+            FROM transit_claims tc
+            JOIN employees e ON tc.employee_id = e.id
+            WHERE tc.id = ? AND tc.status = 'pending'`, [claimId], (err, claim) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!claim) return res.status(404).json({ error: 'Claim not found or not pending' });
+        if (claim.supervisor_id !== req.user.employeeId) {
+            return res.status(403).json({ error: 'You can only approve claims from your direct reports' });
+        }
+        
+        db.run(`UPDATE transit_claims SET status = 'approved', approved_by = ?, approved_date = CURRENT_TIMESTAMP WHERE id = ?`,
+               [req.user.employeeId, claimId], function(err) {
+            if (err) return res.status(500).json({ error: 'Failed to approve claim' });
+            
+            const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            createNotification(claim.employee_id, 'transit_approved',
+                `✅ Your transit benefit for ${mn[claim.claim_month - 1]} ${claim.claim_year} ($${claim.claim_amount}) has been approved by ${req.user.name}.`);
+            
+            res.json({ success: true, message: 'Transit claim approved' });
+        });
+    });
+});
+
+// Reject transit claim
+app.post('/api/transit-claims/:id/reject', requireAuth, requireRole('supervisor'), (req, res) => {
+    const claimId = req.params.id;
+    const { reason } = req.body;
+    
+    db.get(`SELECT tc.*, e.name as employee_name, e.supervisor_id, tc.employee_id
+            FROM transit_claims tc
+            JOIN employees e ON tc.employee_id = e.id
+            WHERE tc.id = ? AND tc.status = 'pending'`, [claimId], (err, claim) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!claim) return res.status(404).json({ error: 'Claim not found or not pending' });
+        if (claim.supervisor_id !== req.user.employeeId) {
+            return res.status(403).json({ error: 'You can only reject claims from your direct reports' });
+        }
+        
+        db.run(`UPDATE transit_claims SET status = 'rejected', rejection_reason = ?, approved_by = ?, approved_date = CURRENT_TIMESTAMP WHERE id = ?`,
+               [reason || 'No reason provided', req.user.employeeId, claimId], function(err) {
+            if (err) return res.status(500).json({ error: 'Failed to reject claim' });
+            
+            const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            createNotification(claim.employee_id, 'transit_rejected',
+                `❌ Your transit benefit for ${mn[claim.claim_month - 1]} ${claim.claim_year} was rejected by ${req.user.name}. Reason: ${reason || 'Not specified'}`);
+            
+            res.json({ success: true, message: 'Transit claim rejected' });
         });
     });
 });
