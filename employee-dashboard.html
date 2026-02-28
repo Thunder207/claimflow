@@ -968,8 +968,8 @@
                     <div style="font-size: 16px; color: #495057;">
                         <strong>Total Claim: <span id="transit-total-amount" style="color: #28a745;">$0.00</span></strong>
                     </div>
-                    <button type="button" onclick="addTransitClaimToDraft()" id="transit-add-btn" class="btn" style="padding: 12px 25px; font-size: 14px; background: #17a2b8; color: white; border: none; border-radius: 8px; cursor: pointer;" disabled>
-                        ➕ Add to Draft
+                    <button type="button" onclick="submitTransitClaimDirect()" id="transit-add-btn" class="btn" style="padding: 12px 25px; font-size: 14px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer;" disabled>
+                        📤 Submit for Approval
                     </button>
                 </div>
             </div>
@@ -2500,7 +2500,81 @@
         }
 
         /**
-         * Add transit claims to draft
+         * Submit transit claims directly for approval (no draft step)
+         */
+        async function submitTransitClaimDirect() {
+            const checkboxes = document.querySelectorAll('#transit-months-list input[type="checkbox"]:checked');
+            const claims = [];
+            let allValid = true;
+            
+            checkboxes.forEach(checkbox => {
+                const [, month, year] = checkbox.id.split('-');
+                const amountInput = document.getElementById(`amount-${month}-${year}`);
+                const receiptInput = document.getElementById(`receipt-${month}-${year}`);
+                
+                const amount = parseFloat(amountInput.value) || 0;
+                const receipt = receiptInput.files[0];
+                
+                if (amount <= 0) {
+                    allValid = false;
+                    showMessage('error', `Please enter an amount for ${getMonthName(month)} ${year}`);
+                    return;
+                }
+                if (!receipt) {
+                    allValid = false;
+                    showMessage('error', `Please upload a receipt for ${getMonthName(month)} ${year}`);
+                    return;
+                }
+                
+                claims.push({ month: parseInt(month), year: parseInt(year), amount: Math.min(amount, transitSettings.monthly_max) });
+            });
+            
+            if (!allValid || claims.length === 0) return;
+            
+            // Disable button during submission
+            const btn = document.getElementById('transit-add-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Submitting...';
+            
+            try {
+                const formData = new FormData();
+                formData.append('claims', JSON.stringify(claims));
+                
+                // Add receipt files
+                checkboxes.forEach(checkbox => {
+                    const [, month, year] = checkbox.id.split('-');
+                    const receiptInput = document.getElementById(`receipt-${month}-${year}`);
+                    if (receiptInput.files[0]) {
+                        formData.append('receipts', receiptInput.files[0]);
+                    }
+                });
+                
+                const resp = await fetch('/api/transit-claims', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + sessionId },
+                    body: formData
+                });
+                const result = await resp.json();
+                
+                if (resp.ok && result.success) {
+                    showMessage('success', `✅ Transit benefit submitted! ${claims.length} month(s), $${result.total_amount.toFixed(2)} total — awaiting approval`);
+                    // Reset form
+                    document.getElementById('sa-category').value = '';
+                    handleCategoryChange();
+                } else {
+                    showMessage('error', result.error || 'Failed to submit transit claim');
+                }
+            } catch (error) {
+                console.error('Transit submission error:', error);
+                showMessage('error', 'Network error — please try again');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '📤 Submit for Approval';
+            }
+        }
+
+        /**
+         * Add transit claims to draft (legacy, kept for compatibility)
          */
         function addTransitClaimToDraft() {
             const checkboxes = document.querySelectorAll('#transit-months-list input[type="checkbox"]:checked');

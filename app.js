@@ -5765,7 +5765,7 @@ app.post('/api/transit-claims', requireAuth, upload.fields([
                 
                 db.run(`INSERT INTO transit_claims 
                        (employee_id, claim_month, claim_year, receipt_amount, claim_amount, receipt_file, status, expense_batch_id, submitted_date)
-                       VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, CURRENT_TIMESTAMP)`,
+                       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, CURRENT_TIMESTAMP)`,
                        [req.user.employeeId, claim.month, claim.year, receiptAmount, claimAmount, receiptFile, expenseBatchId],
                        function(err) {
                     if (err) reject(err);
