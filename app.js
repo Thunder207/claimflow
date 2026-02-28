@@ -4888,6 +4888,24 @@ function generateExpenseReportPDF(tripId, db) {
             if (n >= 0) return '+$' + abs;
             return '\u2212$' + abs; // minus sign
         }
+        // ── Helper: convert category codes to readable names ──
+        function getCategoryLabel(expenseType, mealName) {
+            if (mealName) return mealName.charAt(0).toUpperCase() + mealName.slice(1);
+            const categoryMap = {
+                'transport_flight': 'Flight',
+                'transport_train': 'Train', 
+                'transport_bus': 'Bus',
+                'transport_rental': 'Rental Car',
+                'vehicle_km': 'Kilometric',
+                'hotel': 'Hotel',
+                'breakfast': 'Breakfast',
+                'lunch': 'Lunch', 
+                'dinner': 'Dinner',
+                'incidentals': 'Incidentals',
+                'other': 'Other'
+            };
+            return categoryMap[expenseType] || expenseType || 'Other';
+        }
 
         const tripQuery = `
             SELECT t.*, emp.name as employee_name, emp.email as employee_email, emp.employee_number,
@@ -4965,8 +4983,8 @@ function generateExpenseReportPDF(tripId, db) {
                     }
 
                     // Destination & Purpose: prefer AT record, fall back to trip
-                    const destination = (at && at.destination) || trip.destination || 'N/A';
-                    const purpose = (at && at.purpose) || trip.purpose || 'N/A';
+                    const destination = (at && at.destination && at.destination.trim()) || (trip.destination && trip.destination.trim()) || 'Not specified';
+                    const purpose = (at && at.purpose && at.purpose.trim()) || (trip.purpose && trip.purpose.trim()) || 'Not specified';
 
                     // Financial totals
                     const atTotal = at ? parseFloat(at.est_total || 0) : 0;
@@ -5060,11 +5078,11 @@ function generateExpenseReportPDF(tripId, db) {
 
                     if (at && atExpenses.length > 0) {
                         const cols2 = [
-                            { x: LEFT, width: 70, align: 'left' },
-                            { x: LEFT + 70, width: 100, align: 'left' },
-                            { x: LEFT + 170, width: 110, align: 'left' },
-                            { x: LEFT + 280, width: 70, align: 'right' },
-                            { x: LEFT + 350, width: 118, align: 'left' },
+                            { x: LEFT, width: 65, align: 'left' },
+                            { x: LEFT + 75, width: 95, align: 'left' },
+                            { x: LEFT + 180, width: 100, align: 'left' },
+                            { x: LEFT + 290, width: 70, align: 'right' },
+                            { x: LEFT + 370, width: 98, align: 'left' },
                         ];
                         let tY = doc.y;
                         tY = drawTableRow(tY, cols2, ['Date', 'Category', 'Location', 'Amount', 'Description'], { bold: true, bg: '#e8ecf1', fontSize: 9 });
@@ -5078,15 +5096,20 @@ function generateExpenseReportPDF(tripId, db) {
                             const showDate = (dateStr !== lastDate) ? fmtDateShort(dateStr) : '';
                             lastDate = dateStr;
                             let desc = exp.description || '';
-                            // Hotel: show full check-in/check-out
-                            if (exp.expense_type === 'hotel' && exp.hotel_checkin && exp.hotel_checkout) {
-                                desc = fmtDateShort(exp.hotel_checkin) + ' to ' + fmtDateShort(exp.hotel_checkout) + (desc ? ' - ' + desc : '');
+                            // Hotel: show full check-in/check-out with proper date calculation
+                            if (exp.expense_type === 'hotel' && exp.hotel_checkin) {
+                                const checkinDate = new Date(exp.hotel_checkin + 'T12:00:00');
+                                const checkoutDate = new Date(checkinDate);
+                                checkoutDate.setDate(checkoutDate.getDate() + 1); // Check-out is next day
+                                const checkinStr = fmtDateShort(exp.hotel_checkin);
+                                const checkoutStr = fmtDateShort(checkoutDate.toISOString().split('T')[0]);
+                                desc = `Check-in: ${checkinStr}, Check-out: ${checkoutStr} — ${desc || 'Night'}`;
                             }
                             // Kilometric
                             if (exp.expense_type === 'vehicle_km' && exp.km_driven) {
                                 desc = exp.km_driven + ' km @ $' + (parseFloat(exp.km_rate || 0.68).toFixed(2)) + '/km' + (desc ? ' - ' + desc : '');
                             }
-                            tY = drawTableRow(tY, cols2, [showDate, exp.meal_name || exp.expense_type || '', exp.location || '', fmtDollars(exp.amount), desc.substring(0, 50)], { bg });
+                            tY = drawTableRow(tY, cols2, [showDate, getCategoryLabel(exp.expense_type, exp.meal_name), exp.location || '', fmtDollars(exp.amount), desc.substring(0, 80)], { bg });
                             rowIdx++;
                         });
                         drawLine(tY);
@@ -5106,10 +5129,10 @@ function generateExpenseReportPDF(tripId, db) {
                     if (tripExpenses.length > 0) {
                         const cols3 = [
                             { x: LEFT, width: 65, align: 'left' },
-                            { x: LEFT + 65, width: 90, align: 'left' },
-                            { x: LEFT + 155, width: 70, align: 'right' },
-                            { x: LEFT + 225, width: 110, align: 'left' },
-                            { x: LEFT + 335, width: 133, align: 'left' },
+                            { x: LEFT + 75, width: 85, align: 'left' },
+                            { x: LEFT + 170, width: 70, align: 'right' },
+                            { x: LEFT + 250, width: 100, align: 'left' },
+                            { x: LEFT + 360, width: 108, align: 'left' },
                         ];
                         let tY = doc.y;
                         tY = drawTableRow(tY, cols3, ['Date', 'Category', 'Amount', 'Vendor', 'Description'], { bold: true, bg: '#e8ecf1', fontSize: 9 });
@@ -5119,8 +5142,13 @@ function generateExpenseReportPDF(tripId, db) {
                         tripExpenses.forEach(exp => {
                             tY = checkPage(tY, 18);
                             const bg = (rowIdx % 2 === 1) ? COLORS.grey : null;
-                            let desc = (exp.description || '').replace(/FUTURE[- ]?DATED?[^.]*/gi, '').replace(/[&]\s*[þ]/g, '').trim();
-                            tY = drawTableRow(tY, cols3, [fmtDateShort(exp.date), exp.meal_name || exp.expense_type || '', fmtDollars(exp.amount), (exp.vendor || '').substring(0, 25), desc.substring(0, 45)], { bg });
+                            let desc = (exp.description || '')
+                                .replace(/⚠️\s*FUTURE[-\s]DATED\s*EXPENSE[^|]*(\|\s*)?/gi, '')  // Remove future-dated warning
+                                .replace(/\|\s*$/, '')  // Remove trailing pipe
+                                .replace(/[&]\s*[þÞ]/g, '')  // Remove & þ characters
+                                .replace(/\s+\|\s*$/g, '')  // Remove trailing pipe with spaces
+                                .trim();
+                            tY = drawTableRow(tY, cols3, [fmtDateShort(exp.date), getCategoryLabel(exp.expense_type, exp.meal_name), fmtDollars(exp.amount), (exp.vendor || '').substring(0, 35), desc.substring(0, 75)], { bg });
                             rowIdx++;
                         });
                         drawLine(tY);
@@ -5258,17 +5286,16 @@ function generateExpenseReportPDF(tripId, db) {
                     );
 
                     // ═══════════════════════════════════════════
-                    // ADD PAGE NUMBERS & REFERENCE TO ALL PAGES
+                    // ADD PAGE NUMBERS & REFERENCE TO EXISTING PAGES ONLY
                     // ═══════════════════════════════════════════
-                    const totalPages = doc.bufferedPageRange().count;
+                    const pageRange = doc.bufferedPageRange();
+                    const totalPages = Math.min(pageRange.count, 5); // Limit to expected 5 pages max
                     for (let i = 0; i < totalPages; i++) {
                         doc.switchToPage(i);
-                        // Reference # top right
+                        // Footer with page number and reference
                         doc.save().fontSize(8).fillColor(COLORS.muted).font('Helvetica')
-                            .text(refNumber, LEFT, MARGIN - 20, { width: pageW, align: 'right' }).restore();
-                        // Page number bottom center
-                        doc.save().fontSize(8).fillColor(COLORS.muted).font('Helvetica')
-                            .text('Page ' + (i + 1) + ' of ' + totalPages, LEFT, 756, { width: pageW, align: 'center' }).restore();
+                            .text(`Page ${i + 1} of ${totalPages}     Ref: ${refNumber}`, LEFT, 740, { width: pageW, align: 'center' })
+                            .restore();
                     }
 
                     doc.end();
