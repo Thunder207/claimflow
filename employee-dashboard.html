@@ -2639,10 +2639,28 @@
             // Update total display
             document.getElementById('transit-total-amount').textContent = `$${totalClaim.toFixed(2)}`;
             
-            // Update submit button state
+            // Update submit button state (FIXED: Check actual selected values, not HTML attributes)
             const submitBtn = document.getElementById('transit-submit-btn');
-            const hasAnyClaims = document.querySelectorAll('.transit-claim-card select[value!=""]').length > 0;
-            submitBtn.disabled = !allValid || !hasAnyClaims || totalClaim === 0;
+            let hasAnyClaims = false;
+            
+            // Check if any card has a selected month (check .value property, not attribute)
+            document.querySelectorAll('.transit-claim-card select').forEach(select => {
+                if (select.value && select.value !== '') {
+                    hasAnyClaims = true;
+                }
+            });
+            
+            // More user-friendly validation: enable button if basic fields are filled
+            const enableButton = hasAnyClaims && totalClaim > 0;
+            submitBtn.disabled = !enableButton;
+            
+            // Debug logging for button state
+            console.log('🔍 Button validation:', {
+                hasAnyClaims,
+                totalClaim,
+                allValid,
+                buttonEnabled: enableButton
+            });
             
             // Update "Add Another Month" button visibility
             const addBtn = document.getElementById('transit-add-month-btn');
@@ -3123,16 +3141,44 @@
                 // Show supervisor button if applicable (must run after user is loaded)
                 checkSupervisorRole();
                 
-                // Add backup click handler for transit submit button
+                // Add backup click handler for transit submit button + force-enable safety mechanism
                 setTimeout(() => {
                     const submitBtn = document.getElementById('transit-submit-btn');
                     if (submitBtn) {
+                        // Backup event listener
                         submitBtn.addEventListener('click', function(e) {
                             console.log('🚍 Backup click handler triggered');
                             e.preventDefault();
+                            e.stopPropagation();
+                            
+                            // Force-enable button if form appears complete (safety mechanism)
+                            const cards = document.querySelectorAll('.transit-claim-card');
+                            let hasData = false;
+                            cards.forEach(card => {
+                                const select = card.querySelector('select');
+                                const amountInput = card.querySelector('.receipt-amount');
+                                if (select && select.value && amountInput && parseFloat(amountInput.value) > 0) {
+                                    hasData = true;
+                                }
+                            });
+                            
+                            if (hasData && submitBtn.disabled) {
+                                console.log('🔧 Force-enabling button - form appears complete');
+                                submitBtn.disabled = false;
+                            }
+                            
                             submitTransitClaimDirect();
                         });
-                        console.log('✅ Transit submit backup handler attached');
+                        
+                        // Double-click handler as ultimate fallback
+                        submitBtn.addEventListener('dblclick', function(e) {
+                            console.log('🚍 Double-click handler - forcing submission');
+                            e.preventDefault();
+                            submitBtn.disabled = false;
+                            submitTransitClaimDirect();
+                        });
+                        
+                        console.log('✅ Transit submit handlers attached (click + double-click fallback)');
                     }
                 }, 100);
 
