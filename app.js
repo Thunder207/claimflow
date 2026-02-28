@@ -465,6 +465,28 @@ function initializeDatabase() {
             changed_by INTEGER NOT NULL,
             changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (changed_by) REFERENCES employees(id)
+        )`,
+
+        // 🚍 Public Transit Benefit claims table
+        `CREATE TABLE IF NOT EXISTS transit_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            claim_month INTEGER NOT NULL,
+            claim_year INTEGER NOT NULL,
+            receipt_amount DECIMAL(10,2) NOT NULL,
+            claim_amount DECIMAL(10,2) NOT NULL,
+            receipt_file TEXT,
+            status TEXT DEFAULT 'draft',
+            submitted_date DATETIME,
+            approved_date DATETIME,
+            approved_by INTEGER,
+            rejection_reason TEXT,
+            expense_batch_id TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees (id),
+            FOREIGN KEY (approved_by) REFERENCES employees (id),
+            UNIQUE(employee_id, claim_month, claim_year) ON CONFLICT REPLACE
         )`
     ];
     
@@ -717,8 +739,20 @@ function insertDefaultData() {
             console.error('❌ Error inserting variance_dollar_threshold:', err.message);
         }
     });
+
+    // 🚍 Seed default transit benefit settings
+    db.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('transit_monthly_max', '100.00')`, (err) => {
+        if (err && !err.message.includes('UNIQUE constraint failed')) {
+            console.error('❌ Error inserting transit_monthly_max:', err.message);
+        }
+    });
+    db.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('transit_claim_window', '2')`, (err) => {
+        if (err && !err.message.includes('UNIQUE constraint failed')) {
+            console.error('❌ Error inserting transit_claim_window:', err.message);
+        }
+    });
     
-    console.log('✅ Default variance threshold settings initialized');
+    console.log('✅ Default variance threshold and transit benefit settings initialized');
 }
 
 // 🌐 Routes
@@ -5580,6 +5614,166 @@ app.get('/api/trips/:id/report-info', requireAuth, (req, res) => {
         if (err) return res.status(500).json({ error: 'Database error' });
         if (!row) return res.status(404).json({ error: 'Trip not found' });
         res.json(row);
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🚍 PUBLIC TRANSIT BENEFIT API ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Get transit settings
+app.get('/api/settings/transit', requireAuth, (req, res) => {
+    db.all(`SELECT key, value FROM app_settings WHERE key IN ('transit_monthly_max', 'transit_claim_window')`, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Failed to load transit settings' });
+        const settings = {};
+        rows.forEach(r => { settings[r.key] = r.value; });
+        res.json({
+            monthly_max: parseFloat(settings.transit_monthly_max || '100.00'),
+            claim_window: parseInt(settings.transit_claim_window || '2')
+        });
+    });
+});
+
+// Update transit settings (admin only)
+app.put('/api/settings/transit', requireAuth, requireRole('admin'), (req, res) => {
+    const { monthly_max, claim_window } = req.body;
+    
+    // Validation
+    const maxAmount = parseFloat(monthly_max);
+    const window = parseInt(claim_window);
+    
+    if (isNaN(maxAmount) || maxAmount <= 0 || maxAmount > 1000) {
+        return res.status(400).json({ error: 'Monthly maximum must be between $0.01 and $1,000.00' });
+    }
+    if (isNaN(window) || window < 0 || window > 12) {
+        return res.status(400).json({ error: 'Claim window must be between 0 and 12 months' });
+    }
+    
+    // Get old values for audit
+    db.all(`SELECT key, value FROM app_settings WHERE key IN ('transit_monthly_max', 'transit_claim_window')`, [], (err, oldRows) => {
+        const oldSettings = {};
+        if (!err && oldRows) oldRows.forEach(r => { oldSettings[r.key] = r.value; });
+        
+        // Update settings
+        db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('transit_monthly_max', ?, ?, CURRENT_TIMESTAMP)`, [String(maxAmount), req.user.employeeId]);
+        db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('transit_claim_window', ?, ?, CURRENT_TIMESTAMP)`, [String(window), req.user.employeeId]);
+        
+        // Audit log
+        db.run(`INSERT INTO settings_audit_log (setting_key, old_value, new_value, changed_by) VALUES (?, ?, ?, ?)`,
+            ['transit_settings', 
+             `Max: $${oldSettings.transit_monthly_max || '100.00'}, Window: ${oldSettings.transit_claim_window || '2'} months`,
+             `Max: $${maxAmount}, Window: ${window} months`,
+             req.user.employeeId]);
+        
+        res.json({ success: true, message: 'Transit settings updated', monthly_max: maxAmount, claim_window: window });
+    });
+});
+
+// Get eligible months and existing claims for current user
+app.get('/api/transit-claims/eligible', requireAuth, (req, res) => {
+    // Get transit settings
+    db.all(`SELECT key, value FROM app_settings WHERE key IN ('transit_monthly_max', 'transit_claim_window')`, [], (err, settingsRows) => {
+        if (err) return res.status(500).json({ error: 'Failed to load settings' });
+        
+        const settings = {};
+        settingsRows.forEach(r => { settings[r.key] = r.value; });
+        const claimWindow = parseInt(settings.transit_claim_window || '2');
+        
+        // Calculate eligible months (current month + claim_window months back)
+        const today = new Date();
+        const currentYear = today.getFullYear();
+        const currentMonth = today.getMonth() + 1; // JavaScript months are 0-based
+        
+        const eligibleMonths = [];
+        for (let i = 0; i <= claimWindow; i++) {
+            const date = new Date(currentYear, currentMonth - 1 - i, 1);
+            eligibleMonths.push({
+                month: date.getMonth() + 1,
+                year: date.getFullYear()
+            });
+        }
+        
+        // Get existing claims for eligible months
+        const monthYearPairs = eligibleMonths.map(m => `(${m.month}, ${m.year})`).join(', ');
+        db.all(`SELECT * FROM transit_claims WHERE employee_id = ? AND (claim_month, claim_year) IN (${monthYearPairs}) AND status != 'rejected'`, 
+               [req.user.employeeId], (err, existingClaims) => {
+            if (err) return res.status(500).json({ error: 'Failed to load existing claims' });
+            
+            res.json({
+                eligible_months: eligibleMonths,
+                existing_claims: existingClaims || []
+            });
+        });
+    });
+});
+
+// Submit transit claims
+app.post('/api/transit-claims', requireAuth, upload.fields([
+    { name: 'receipts', maxCount: 12 } // Allow up to 12 receipts (one per month)
+]), (req, res) => {
+    const claims = JSON.parse(req.body.claims || '[]');
+    const receipts = req.files.receipts || [];
+    
+    if (!claims.length) {
+        return res.status(400).json({ error: 'No claims provided' });
+    }
+    
+    // Validate each claim
+    const errors = [];
+    claims.forEach((claim, index) => {
+        if (!claim.month || !claim.year || !claim.amount) {
+            errors.push(`Claim ${index + 1}: Missing required fields`);
+        }
+        if (parseFloat(claim.amount) <= 0) {
+            errors.push(`Claim ${index + 1}: Amount must be greater than 0`);
+        }
+        if (!receipts[index]) {
+            errors.push(`Claim ${index + 1}: Receipt required`);
+        }
+    });
+    
+    if (errors.length) {
+        return res.status(400).json({ error: errors.join('; ') });
+    }
+    
+    // Get transit settings for validation
+    db.get(`SELECT value FROM app_settings WHERE key = 'transit_monthly_max'`, (err, setting) => {
+        const monthlyMax = parseFloat(setting ? setting.value : '100.00');
+        const expenseBatchId = Date.now().toString();
+        
+        // Insert claims
+        const insertPromises = claims.map((claim, index) => {
+            return new Promise((resolve, reject) => {
+                const receiptAmount = parseFloat(claim.amount);
+                const claimAmount = Math.min(receiptAmount, monthlyMax);
+                const receiptFile = receipts[index] ? receipts[index].filename : null;
+                
+                db.run(`INSERT INTO transit_claims 
+                       (employee_id, claim_month, claim_year, receipt_amount, claim_amount, receipt_file, status, expense_batch_id, submitted_date)
+                       VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, CURRENT_TIMESTAMP)`,
+                       [req.user.employeeId, claim.month, claim.year, receiptAmount, claimAmount, receiptFile, expenseBatchId],
+                       function(err) {
+                    if (err) reject(err);
+                    else resolve(this.lastID);
+                });
+            });
+        });
+        
+        Promise.all(insertPromises).then(claimIds => {
+            // Add to draft expenses for batch submission
+            const totalAmount = claims.reduce((sum, claim) => sum + Math.min(parseFloat(claim.amount), monthlyMax), 0);
+            
+            res.json({ 
+                success: true, 
+                message: `${claims.length} transit claims added to draft`,
+                claim_ids: claimIds,
+                total_amount: totalAmount,
+                expense_batch_id: expenseBatchId
+            });
+        }).catch(error => {
+            console.error('Error inserting transit claims:', error);
+            res.status(500).json({ error: 'Failed to save transit claims' });
+        });
     });
 });
 
