@@ -980,7 +980,7 @@
                     <div style="font-size: 16px; color: #495057; font-weight: 600;">
                         Total Claim: <span id="transit-total-amount" style="color: #28a745;">$0.00</span>
                     </div>
-                    <button type="button" onclick="submitTransitClaimDirect()" id="transit-submit-btn" style="padding: 12px 25px; font-size: 14px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;" disabled>
+                    <button type="button" onclick="console.log('CLICK!'); submitTransitClaimDirect();" id="transit-submit-btn" style="padding: 12px 25px; font-size: 14px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
                         🚍 Submit for Approval
                     </button>
                 </div>
@@ -2356,15 +2356,18 @@
             const category = document.getElementById('sa-category').value;
             const regularFields = ['sa-date', 'sa-amount', 'sa-vendor', 'sa-description', 'sa-receipt'].map(id => document.getElementById(id).closest('.form-group'));
             const transitContainer = document.getElementById('transit-form-container');
+            const addToDraftBtn = document.querySelector('button[data-i18n="add_to_draft"]');
 
             if (category === 'Public Transit Benefit') {
-                // Hide regular fields and show transit form
+                // Hide regular fields + Add to Draft button, show transit form
                 regularFields.forEach(field => field.style.display = 'none');
+                if (addToDraftBtn) addToDraftBtn.style.display = 'none';
                 transitContainer.style.display = 'block';
                 loadTransitForm();
             } else {
-                // Show regular fields and hide transit form
+                // Show regular fields + Add to Draft button, hide transit form
                 regularFields.forEach(field => field.style.display = 'block');
+                if (addToDraftBtn) addToDraftBtn.style.display = '';
                 transitContainer.style.display = 'none';
             }
         }
@@ -2731,10 +2734,12 @@
          */
         async function submitTransitClaimDirect() {
             console.log('🚍 Transit submit clicked!');
+            alert('Submit clicked — processing your claim...');
             
             // Check authentication
             if (!sessionId) {
                 showMessage('error', 'Please log in to submit transit claims');
+                alert('ERROR: Not logged in');
                 return;
             }
             
@@ -2744,12 +2749,13 @@
             let allValid = true;
             const errors = [];
             
-            // Debug: Check if cards exist
+            // Check if cards exist
             const cards = document.querySelectorAll('.transit-claim-card');
             console.log('🔍 Found transit cards:', cards.length);
             
             if (cards.length === 0) {
                 showMessage('error', 'No transit claim form found. Please refresh the page and try again.');
+                alert('ERROR: No claim cards found');
                 return;
             }
             
