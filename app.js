@@ -4986,8 +4986,9 @@ function generateExpenseReportPDF(tripId, db) {
                     const destination = (at && at.destination && at.destination.trim()) || (trip.destination && trip.destination.trim()) || 'Not specified';
                     const purpose = (at && at.purpose && at.purpose.trim()) || (trip.purpose && trip.purpose.trim()) || 'Not specified';
 
-                    // Financial totals
-                    const atTotal = at ? parseFloat(at.est_total || 0) : 0;
+                    // Financial totals - calculate from individual expenses for accuracy  
+                    const atTotalFromExpenses = atExpenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+                    const atTotal = at ? (atTotalFromExpenses > 0 ? atTotalFromExpenses : parseFloat(at.est_total || 0)) : 0;
                     const actualTotal = tripExpenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
                     const variance = actualTotal - atTotal;
 
