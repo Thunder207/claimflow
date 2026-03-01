@@ -1880,13 +1880,13 @@ try {
                 });
                 const result = await resp.json();
                 if (resp.ok && result.success) {
-                    showMessage('success', '✅ Transit claim approved');
+                    showNotification('✅ Transit claim approved', 'success');
                     loadPendingTransitClaims();
                 } else {
-                    showMessage('danger', result.error || 'Failed to approve');
+                    showNotification(result.error || 'Failed to approve', 'error');
                 }
             } catch (err) {
-                showMessage('danger', 'Network error');
+                showNotification('Network error', 'error');
             }
         }
         
@@ -1901,13 +1901,13 @@ try {
                 });
                 const result = await resp.json();
                 if (resp.ok && result.success) {
-                    showMessage('success', '❌ Transit claim rejected');
+                    showNotification('❌ Transit claim rejected', 'success');
                     loadPendingTransitClaims();
                 } else {
-                    showMessage('danger', result.error || 'Failed to reject');
+                    showNotification(result.error || 'Failed to reject', 'error');
                 }
             } catch (err) {
-                showMessage('danger', 'Network error');
+                showNotification('Network error', 'error');
             }
         }
 

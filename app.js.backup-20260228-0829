@@ -482,19 +482,11 @@ function initializeDatabase() {
             approved_by INTEGER,
             rejection_reason TEXT,
             expense_batch_id TEXT,
-            report_ref TEXT,
-            pdf_report BLOB,
-            report_generated_at DATETIME,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (employee_id) REFERENCES employees (id),
             FOREIGN KEY (approved_by) REFERENCES employees (id),
             UNIQUE(employee_id, claim_month, claim_year)
-        )`,
-
-        `CREATE TABLE IF NOT EXISTS ptb_report_sequence (
-            year INTEGER PRIMARY KEY,
-            last_number INTEGER DEFAULT 0
         )`
     ];
     
@@ -616,17 +608,6 @@ function insertDefaultData() {
             if (err && !err.message.includes('duplicate column')) {
                 console.error('❌ Error adding report_generated_at column:', err.message);
             }
-        });
-
-        // Transit claims PDF columns
-        db.run(`ALTER TABLE transit_claims ADD COLUMN report_ref TEXT DEFAULT NULL`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {}
-        });
-        db.run(`ALTER TABLE transit_claims ADD COLUMN pdf_report BLOB DEFAULT NULL`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {}
-        });
-        db.run(`ALTER TABLE transit_claims ADD COLUMN report_generated_at DATETIME DEFAULT NULL`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {}
         });
     }
     
@@ -5023,40 +5004,19 @@ function generateExpenseReportPDF(tripId, db) {
                         return y;
                     }
 
-                    // ── Helper: draw a table row with cell borders and text wrapping ──
+                    // ── Helper: draw a table row with cell borders ──
                     function drawTableRow(y, cols, values, opts) {
                         opts = opts || {};
-                        let maxTextHeight = 0;
-                        
-                        // Calculate required height for text wrapping
-                        doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(opts.fontSize || 9);
-                        cols.forEach((col, i) => {
-                            const text = values[i] || '';
-                            if (text) {
-                                const textHeight = doc.heightOfString(text, { width: col.width });
-                                maxTextHeight = Math.max(maxTextHeight, textHeight);
-                            }
-                        });
-                        
-                        const rowH = Math.max(opts.rowHeight || 16, maxTextHeight + 4); // Add padding
-                        
+                        const rowH = opts.rowHeight || 16;
                         if (opts.bg) {
                             doc.save().rect(LEFT - 4, y - 2, pageW + 8, rowH).fill(opts.bg).restore();
                         }
-                        
                         doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica')
                            .fontSize(opts.fontSize || 9)
                            .fillColor(opts.color || COLORS.body);
-                        
                         cols.forEach((col, i) => {
-                            const text = values[i] || '';
-                            doc.text(text, col.x, y, { 
-                                width: col.width, 
-                                align: col.align || 'left',
-                                lineBreak: true
-                            });
+                            doc.text(values[i] || '', col.x, y, { width: col.width, align: col.align || 'left' });
                         });
-                        
                         doc.font('Helvetica');
                         return y + rowH;
                     }
@@ -5137,20 +5097,20 @@ function generateExpenseReportPDF(tripId, db) {
                     doc.moveDown(0.3);
                     doc.fontSize(10).fillColor(COLORS.body).font('Helvetica');
                     if (at) {
-                        doc.font('Helvetica-Bold').text('Authorization to Travel Submitted: ', { continued: true }).font('Helvetica').text(fmtTimestamp(at.created_at) + ' — by ' + (trip.employee_name || 'Employee'));
+                        doc.font('Helvetica-Bold').text('AT Submitted: ', { continued: true }).font('Helvetica').text(fmtTimestamp(at.created_at));
                         if (at.approved_at) {
-                            doc.font('Helvetica-Bold').text('Authorization to Travel Approved: ', { continued: true }).font('Helvetica').text(fmtTimestamp(at.approved_at) + ' — by ' + (trip.supervisor_name || 'Supervisor'));
+                            doc.font('Helvetica-Bold').text('AT Approved: ', { continued: true }).font('Helvetica').text(fmtTimestamp(at.approved_at));
                         }
                     }
                     if (trip.submitted_at) {
-                        doc.font('Helvetica-Bold').text('Trip Expense Submitted: ', { continued: true }).font('Helvetica').text(fmtTimestamp(trip.submitted_at) + ' — by ' + (trip.employee_name || 'Employee'));
+                        doc.font('Helvetica-Bold').text('Trip Submitted: ', { continued: true }).font('Helvetica').text(fmtTimestamp(trip.submitted_at));
                     }
                     if (trip.approved_at) {
-                        doc.font('Helvetica-Bold').text('Trip Expense Approved: ', { continued: true }).font('Helvetica').text(fmtTimestamp(trip.approved_at) + ' — by ' + (trip.approved_by || trip.supervisor_name || 'Supervisor'));
+                        doc.font('Helvetica-Bold').text('Trip Approved: ', { continued: true }).font('Helvetica').text(fmtTimestamp(trip.approved_at) + ' by ' + (trip.approved_by || 'Supervisor'));
                     }
 
                     // ═══════════════════════════════════════════
-                    // PAGE 2 — AUTHORIZATION TO TRAVEL DETAILS
+                    // PAGE 2 — AT DETAILS
                     // ═══════════════════════════════════════════
                     doc.addPage();
                     doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('AUTHORIZATION TO TRAVEL \u2014 ESTIMATED EXPENSES');
@@ -5176,31 +5136,14 @@ function generateExpenseReportPDF(tripId, db) {
                             const showDate = (dateStr !== lastDate) ? fmtDateShort(dateStr) : '';
                             lastDate = dateStr;
                             let desc = exp.description || '';
-                            // Hotel: use Check-in / Night X / Check-out pattern
-                            if (exp.expense_type === 'hotel') {
-                                // Count total hotel nights for this authorization
-                                const totalHotelNights = atExpenses.filter(e => e.expense_type === 'hotel').length;
-                                const hotelExpenses = atExpenses.filter(e => e.expense_type === 'hotel').sort((a, b) => a.date.localeCompare(b.date));
-                                const currentHotelIndex = hotelExpenses.findIndex(e => e.id === exp.id);
-                                
-                                if (totalHotelNights === 1) {
-                                    const checkinDate = new Date(exp.hotel_checkin + 'T12:00:00');
-                                    const checkoutDate = new Date(checkinDate);
-                                    checkoutDate.setDate(checkoutDate.getDate() + 1);
-                                    desc = `Check-in: ${fmtDateShort(exp.hotel_checkin)}, Check-out: ${fmtDateShort(checkoutDate.toISOString().split('T')[0])}`;
-                                } else if (currentHotelIndex === 0) {
-                                    desc = `Check-in: ${fmtDateShort(exp.hotel_checkin || exp.date)}`;
-                                } else if (currentHotelIndex === totalHotelNights - 1) {
-                                    const checkoutDate = new Date((exp.hotel_checkin || exp.date) + 'T12:00:00');
-                                    checkoutDate.setDate(checkoutDate.getDate() + 1);
-                                    desc = `Check-out: ${fmtDateShort(checkoutDate.toISOString().split('T')[0])}`;
-                                } else {
-                                    desc = `Night ${currentHotelIndex + 1} of ${totalHotelNights}`;
-                                }
-                            }
-                            // Flight: show route only, no costs
-                            if (exp.expense_type === 'transport_flight') {
-                                desc = 'Departure and Return flight';
+                            // Hotel: show full check-in/check-out with proper date calculation
+                            if (exp.expense_type === 'hotel' && exp.hotel_checkin) {
+                                const checkinDate = new Date(exp.hotel_checkin + 'T12:00:00');
+                                const checkoutDate = new Date(checkinDate);
+                                checkoutDate.setDate(checkoutDate.getDate() + 1); // Check-out is next day
+                                const checkinStr = fmtDateShort(exp.hotel_checkin);
+                                const checkoutStr = fmtDateShort(checkoutDate.toISOString().split('T')[0]);
+                                desc = `Check-in: ${checkinStr}, Check-out: ${checkoutStr} — ${desc || 'Night'}`;
                             }
                             // Kilometric - clean up any garbled characters
                             if (exp.expense_type === 'vehicle_km' && exp.km_driven) {
@@ -5250,36 +5193,6 @@ function generateExpenseReportPDF(tripId, db) {
                                 .replace(/\|\s*$/, '')  // Remove trailing pipes
                                 .replace(/\s+\|\s*$/, '')  // Remove trailing pipes with spaces
                                 .trim();
-
-                            // Hotel: use Check-in / Night X / Check-out pattern
-                            if (exp.expense_type === 'hotel') {
-                                const totalHotelNights = tripExpenses.filter(e => e.expense_type === 'hotel').length;
-                                const hotelExpenses = tripExpenses.filter(e => e.expense_type === 'hotel').sort((a, b) => a.date.localeCompare(b.date));
-                                const currentHotelIndex = hotelExpenses.findIndex(e => e.id === exp.id);
-                                
-                                if (totalHotelNights === 1) {
-                                    const checkinDate = new Date(exp.date + 'T12:00:00');
-                                    const checkoutDate = new Date(checkinDate);
-                                    checkoutDate.setDate(checkoutDate.getDate() + 1);
-                                    desc = `Check-in: ${fmtDateShort(exp.date)}, Check-out: ${fmtDateShort(checkoutDate.toISOString().split('T')[0])}`;
-                                } else if (currentHotelIndex === 0) {
-                                    desc = `Check-in: ${fmtDateShort(exp.date)}`;
-                                } else if (currentHotelIndex === totalHotelNights - 1) {
-                                    const checkoutDate = new Date(exp.date + 'T12:00:00');
-                                    checkoutDate.setDate(checkoutDate.getDate() + 1);
-                                    desc = `Check-out: ${fmtDateShort(checkoutDate.toISOString().split('T')[0])}`;
-                                } else {
-                                    desc = `Night ${currentHotelIndex + 1} of ${totalHotelNights}`;
-                                }
-                            }
-
-                            // Flight: show route only, no costs
-                            if (exp.expense_type === 'transport_flight') {
-                                // Look for route information or use generic description
-                                const hasBaggage = desc.toLowerCase().includes('baggage') || (exp.amount && tripExpenses.some(e => e.expense_type === 'transport_flight' && e.description && e.description.toLowerCase().includes('baggage')));
-                                desc = hasBaggage ? 'Departure and Return flight (includes baggage)' : 'Departure and Return flight';
-                            }
-
                             tY = drawTableRow(tY, cols3, [fmtDateShort(exp.date), getCategoryLabel(exp.expense_type, exp.meal_name), fmtDollars(exp.amount), (exp.vendor || '').substring(0, 35), desc.substring(0, 75)], { bg });
                             rowIdx++;
                         });
@@ -5380,11 +5293,11 @@ function generateExpenseReportPDF(tripId, db) {
                     const chainItems = [];
                     chainItems.push(['Trip Created', fmtTimestamp(trip.created_at)]);
                     if (at) {
-                        chainItems.push(['Authorization to Travel Submitted', fmtTimestamp(at.created_at) + ' by ' + (trip.employee_name || 'Employee')]);
-                        chainItems.push(['Authorization to Travel Approved', at.approved_at ? fmtTimestamp(at.approved_at) + ' by ' + (trip.supervisor_name || 'Supervisor') : 'Pending']);
+                        chainItems.push(['AT Submitted', fmtTimestamp(at.created_at)]);
+                        chainItems.push(['AT Approved', at.approved_at ? fmtTimestamp(at.approved_at) : 'Pending']);
                     }
-                    chainItems.push(['Trip Expense Submitted', fmtTimestamp(trip.submitted_at) + ' by ' + (trip.employee_name || 'Employee')]);
-                    chainItems.push(['Trip Expense Approved', trip.approved_at ? fmtTimestamp(trip.approved_at) + ' by ' + (trip.approved_by || trip.supervisor_name || 'Supervisor') : 'Pending']);
+                    chainItems.push(['Trip Submitted', fmtTimestamp(trip.submitted_at)]);
+                    chainItems.push(['Trip Approved', trip.approved_at ? fmtTimestamp(trip.approved_at) + ' by ' + (trip.approved_by || 'Supervisor') : 'Pending']);
                     chainItems.push(['Report Generated', fmtTimestamp(new Date().toISOString())]);
 
                     doc.fontSize(10).fillColor(COLORS.body).font('Helvetica');
@@ -5862,23 +5775,12 @@ app.post('/api/transit-claims', requireAuth, upload.fields([
         });
         
         Promise.all(insertPromises).then(claimIds => {
+            // Add to draft expenses for batch submission
             const totalAmount = claims.reduce((sum, claim) => sum + Math.min(parseFloat(claim.amount), monthlyMax), 0);
-            
-            // Notify supervisor
-            db.get(`SELECT supervisor_id FROM employees WHERE id = ?`, [req.user.employeeId], (err, emp) => {
-                if (!err && emp && emp.supervisor_id) {
-                    const monthNames = claims.map(c => {
-                        const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                        return `${mn[c.month - 1]} ${c.year}`;
-                    }).join(', ');
-                    createNotification(emp.supervisor_id, 'transit_pending',
-                        `🚍 ${req.user.name} submitted a transit benefit claim for ${monthNames} ($${totalAmount.toFixed(2)}) — awaiting your approval.`);
-                }
-            });
             
             res.json({ 
                 success: true, 
-                message: `${claims.length} transit claim(s) submitted for approval`,
+                message: `${claims.length} transit claims added to draft`,
                 claim_ids: claimIds,
                 total_amount: totalAmount,
                 expense_batch_id: expenseBatchId
@@ -5888,419 +5790,6 @@ app.post('/api/transit-claims', requireAuth, upload.fields([
             res.status(500).json({ error: 'Failed to save transit claims' });
         });
         });
-    });
-});
-
-// ============================================
-// TRANSIT CLAIMS — PDF GENERATION
-// ============================================
-
-function generatePTBRefNumber(db) {
-    return new Promise((resolve, reject) => {
-        const year = new Date().getFullYear();
-        db.run(`INSERT OR IGNORE INTO ptb_report_sequence (year, last_number) VALUES (?, 0)`, [year], (err) => {
-            if (err) return reject(err);
-            db.run(`UPDATE ptb_report_sequence SET last_number = last_number + 1 WHERE year = ?`, [year], function(err) {
-                if (err) return reject(err);
-                db.get(`SELECT last_number FROM ptb_report_sequence WHERE year = ?`, [year], (err, row) => {
-                    if (err) return reject(err);
-                    resolve(`PTB-${year}-${String(row.last_number).padStart(5, '0')}`);
-                });
-            });
-        });
-    });
-}
-
-function generateTransitBenefitPDF(claimIds, db) {
-    return new Promise((resolve, reject) => {
-        const PDFDocument = require('pdfkit');
-
-        function fmtDateShort(dateStr) {
-            if (!dateStr) return 'N/A';
-            const d = new Date(dateStr + (dateStr.length === 10 ? 'T12:00:00' : ''));
-            if (isNaN(d)) return String(dateStr);
-            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-            return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
-        }
-        function fmtTimestamp(dateStr) {
-            if (!dateStr) return 'N/A';
-            const d = new Date(dateStr);
-            if (isNaN(d)) return String(dateStr);
-            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-            let h = d.getHours(), ampm = h >= 12 ? 'PM' : 'AM';
-            h = h % 12 || 12;
-            const min = String(d.getMinutes()).padStart(2, '0');
-            return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} at ${h}:${min} ${ampm}`;
-        }
-        function fmtDollars(val) {
-            const n = parseFloat(val || 0);
-            return '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-        }
-
-        const idList = Array.isArray(claimIds) ? claimIds : [claimIds];
-        const placeholders = idList.map(() => '?').join(',');
-
-        db.all(`SELECT tc.*, 
-                       emp.name as employee_name, emp.email as employee_email, emp.employee_number, emp.department, emp.position,
-                       sup.name as supervisor_name, sup.email as supervisor_email
-                FROM transit_claims tc
-                JOIN employees emp ON tc.employee_id = emp.id
-                LEFT JOIN employees sup ON emp.supervisor_id = sup.id
-                WHERE tc.id IN (${placeholders})
-                ORDER BY tc.claim_year, tc.claim_month`, idList, (err, claims) => {
-            if (err || !claims || claims.length === 0) return reject(err || new Error('No claims found'));
-
-            const first = claims[0];
-            const refNumber = first.report_ref || 'PENDING';
-            const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-
-            const MARGIN = 72;
-            const doc = new PDFDocument({ size: 'LETTER', margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN }, bufferPages: true });
-            const buffers = [];
-            doc.on('data', chunk => buffers.push(chunk));
-            doc.on('end', () => resolve(Buffer.concat(buffers)));
-
-            const pageW = 612 - MARGIN * 2;
-            const LEFT = MARGIN;
-            const RIGHT = 612 - MARGIN;
-            const COLORS = { header: '#1a3a5c', green: '#28a745', blue: '#007bff', body: '#000000', muted: '#666666' };
-
-            function drawLine(y, color) {
-                doc.save().moveTo(LEFT, y).lineTo(RIGHT, y).strokeColor(color || '#cccccc').lineWidth(0.5).stroke().restore();
-            }
-
-            // ═══════ PAGE 1 — COVER ═══════
-            doc.fontSize(18).fillColor(COLORS.header).font('Helvetica-Bold').text('PUBLIC TRANSIT BENEFIT EXPENSE REPORT', { align: 'center' });
-            doc.moveDown(0.2);
-            doc.fontSize(10).fillColor(COLORS.muted).font('Helvetica').text('ClaimFlow \u2014 Expense Management', { align: 'center' });
-            doc.moveDown(0.8);
-            drawLine(doc.y);
-            doc.moveDown(0.5);
-
-            // Reference & date
-            doc.fontSize(10).fillColor(COLORS.body);
-            doc.font('Helvetica-Bold').text('Reference: ', { continued: true }).font('Helvetica').text(refNumber);
-            doc.font('Helvetica-Bold').text('Generated: ', { continued: true }).font('Helvetica').text(fmtTimestamp(new Date().toISOString()));
-            doc.moveDown(0.8);
-
-            // Employee info
-            doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('EMPLOYEE INFORMATION');
-            doc.moveDown(0.3);
-            drawLine(doc.y); doc.moveDown(0.3);
-            doc.fontSize(10).fillColor(COLORS.body);
-            [['Name', first.employee_name], ['Employee #', first.employee_number], ['Department', first.department], ['Position', first.position]].forEach(([l, v]) => {
-                doc.font('Helvetica-Bold').text(l + ': ', { continued: true }).font('Helvetica').text(v || 'N/A');
-            });
-            doc.moveDown(0.8);
-
-            // Claim details table
-            doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('CLAIM DETAILS');
-            doc.moveDown(0.3);
-            drawLine(doc.y); doc.moveDown(0.3);
-
-            // Get transit settings for max display
-            db.get(`SELECT value FROM app_settings WHERE key = 'transit_monthly_max'`, (err, setting) => {
-                const monthlyMax = parseFloat(setting ? setting.value : '100.00');
-
-                // Table header
-                const col1 = LEFT, col2 = LEFT + 170, col3 = LEFT + 310;
-                let tY = doc.y;
-                doc.save().rect(LEFT - 4, tY - 2, pageW + 8, 18).fill('#e8ecf1').restore();
-                doc.fontSize(9).font('Helvetica-Bold').fillColor(COLORS.body);
-                doc.text('Month', col1, tY, { width: 160 });
-                doc.text('Receipt Amount', col2, tY, { width: 130, align: 'right' });
-                doc.text('Claim Amount', col3, tY, { width: 130, align: 'right' });
-                tY += 20;
-                drawLine(tY - 2);
-
-                let totalReceipt = 0, totalClaim = 0;
-                claims.forEach((claim, idx) => {
-                    const bg = (idx % 2 === 1) ? '#f8f9fa' : null;
-                    if (bg) doc.save().rect(LEFT - 4, tY - 2, pageW + 8, 18).fill(bg).restore();
-
-                    const monthLabel = `${monthNames[claim.claim_month - 1]} ${claim.claim_year}`;
-                    const receiptAmt = parseFloat(claim.receipt_amount);
-                    const claimAmt = parseFloat(claim.claim_amount);
-                    const capped = receiptAmt > monthlyMax;
-
-                    doc.fontSize(9).font('Helvetica').fillColor(COLORS.body);
-                    doc.text(monthLabel, col1, tY, { width: 160 });
-                    doc.text(fmtDollars(receiptAmt), col2, tY, { width: 130, align: 'right' });
-                    doc.text(fmtDollars(claimAmt) + (capped ? ' (capped)' : ''), col3, tY, { width: 130, align: 'right' });
-                    tY += 18;
-
-                    totalReceipt += receiptAmt;
-                    totalClaim += claimAmt;
-                });
-
-                drawLine(tY);
-                tY += 5;
-                doc.fontSize(10).font('Helvetica-Bold').fillColor(COLORS.body);
-                doc.text('TOTAL', col1, tY, { width: 160 });
-                doc.text(fmtDollars(totalReceipt), col2, tY, { width: 130, align: 'right' });
-                doc.text(fmtDollars(totalClaim), col3, tY, { width: 130, align: 'right' });
-                tY += 22;
-
-                doc.fontSize(9).fillColor(COLORS.muted).font('Helvetica');
-                doc.text(`Monthly Maximum: ${fmtDollars(monthlyMax)} (admin-configured)`, LEFT, tY);
-                doc.moveDown(1.5);
-
-                // Approval section
-                const aY = doc.y;
-                doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('APPROVAL');
-                doc.moveDown(0.3);
-                drawLine(doc.y); doc.moveDown(0.3);
-                doc.fontSize(10).fillColor(COLORS.body).font('Helvetica');
-
-                doc.font('Helvetica-Bold').text('Submitted: ', { continued: true });
-                doc.font('Helvetica').text(fmtTimestamp(first.submitted_date) + ' \u2014 by ' + (first.employee_name || 'Employee'));
-
-                doc.font('Helvetica-Bold').text('Approved: ', { continued: true });
-                doc.font('Helvetica').text(fmtTimestamp(first.approved_date) + ' \u2014 by ' + (first.supervisor_name || 'Supervisor'));
-
-                doc.moveDown(2);
-
-                // Signature lines
-                const sigY = doc.y;
-                doc.fontSize(10).fillColor(COLORS.body);
-                doc.text('_________________________________', LEFT, sigY);
-                doc.text('Employee: ' + (first.employee_name || 'N/A'), LEFT, sigY + 15);
-                doc.text('Date: _______________', LEFT, sigY + 28);
-                doc.text('_________________________________', LEFT + 250, sigY);
-                doc.text('Supervisor: ' + (first.supervisor_name || 'N/A'), LEFT + 250, sigY + 15);
-                doc.text('Date: _______________', LEFT + 250, sigY + 28);
-
-                doc.moveDown(3);
-                doc.fontSize(8).fillColor(COLORS.muted).text(
-                    'This report was auto-generated by ClaimFlow on ' + fmtTimestamp(new Date().toISOString()) + '. Reference: ' + refNumber,
-                    LEFT, doc.y, { width: pageW, align: 'center' }
-                );
-
-                // ═══════ PAGE 2+ — RECEIPT IMAGES ═══════
-                const fs = require('fs');
-                const path = require('path');
-                claims.forEach(claim => {
-                    if (claim.receipt_file) {
-                        const receiptPath = path.join(__dirname, 'uploads', claim.receipt_file);
-                        if (fs.existsSync(receiptPath)) {
-                            doc.addPage();
-                            doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('ATTACHED RECEIPT', { align: 'center' });
-                            doc.moveDown(0.3);
-                            doc.fontSize(10).fillColor(COLORS.muted).font('Helvetica').text(
-                                `${monthNames[claim.claim_month - 1]} ${claim.claim_year} \u2014 ${fmtDollars(claim.receipt_amount)}`, { align: 'center' }
-                            );
-                            doc.moveDown(0.5);
-
-                            try {
-                                const ext = path.extname(receiptPath).toLowerCase();
-                                if (['.jpg', '.jpeg', '.png'].includes(ext)) {
-                                    doc.image(receiptPath, LEFT, doc.y, { fit: [pageW, 580], align: 'center' });
-                                } else {
-                                    doc.fontSize(10).fillColor(COLORS.muted).text('Receipt file attached: ' + claim.receipt_file, { align: 'center' });
-                                }
-                            } catch (imgErr) {
-                                doc.fontSize(10).fillColor(COLORS.muted).text('Receipt file: ' + claim.receipt_file + ' (could not embed)', { align: 'center' });
-                            }
-                        }
-                    }
-                });
-
-                // Footer on all pages
-                const pageRange = doc.bufferedPageRange();
-                const totalPages = pageRange.count;
-                for (let i = 0; i < totalPages; i++) {
-                    doc.switchToPage(i);
-                    doc.save().fontSize(8).fillColor(COLORS.muted).font('Helvetica')
-                        .text(`Page ${i + 1} of ${totalPages}     Ref: ${refNumber}`, LEFT, 740, { width: pageW, align: 'center' })
-                        .restore();
-                }
-
-                doc.end();
-            });
-        });
-    });
-}
-
-// ============================================
-// TRANSIT CLAIMS — SUPERVISOR APPROVAL
-// ============================================
-
-// Get pending transit claims for supervisor
-app.get('/api/transit-claims/pending', requireAuth, requireRole('supervisor'), (req, res) => {
-    db.all(`SELECT tc.*, e.name as employee_name, e.department, e.employee_number
-            FROM transit_claims tc
-            JOIN employees e ON tc.employee_id = e.id
-            WHERE e.supervisor_id = ? AND tc.status = 'pending'
-            ORDER BY tc.submitted_date DESC`,
-           [req.user.employeeId], (err, claims) => {
-        if (err) return res.status(500).json({ error: 'Failed to load pending claims' });
-        res.json({ claims: claims || [] });
-    });
-});
-
-// Approve transit claim
-app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor'), (req, res) => {
-    const claimId = req.params.id;
-    
-    // Verify this claim belongs to a direct report
-    db.get(`SELECT tc.*, e.name as employee_name, e.supervisor_id, tc.employee_id
-            FROM transit_claims tc
-            JOIN employees e ON tc.employee_id = e.id
-            WHERE tc.id = ? AND tc.status = 'pending'`, [claimId], (err, claim) => {
-        if (err) return res.status(500).json({ error: 'Database error' });
-        if (!claim) return res.status(404).json({ error: 'Claim not found or not pending' });
-        if (claim.supervisor_id !== req.user.employeeId) {
-            return res.status(403).json({ error: 'You can only approve claims from your direct reports' });
-        }
-        
-        // Look up supervisor name
-        db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err2, supervisor) => {
-        const supervisorName = (supervisor && supervisor.name) || 'your supervisor';
-        
-        db.run(`UPDATE transit_claims SET status = 'approved', approved_by = ?, approved_date = CURRENT_TIMESTAMP WHERE id = ?`,
-               [req.user.employeeId, claimId], function(err) {
-            if (err) return res.status(500).json({ error: 'Failed to approve claim' });
-            
-            const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-            createNotification(claim.employee_id, 'transit_approved',
-                `✅ Your transit benefit for ${mn[claim.claim_month - 1]} ${claim.claim_year} ($${claim.claim_amount}) has been approved by ${supervisorName}.`);
-            
-            // Return success immediately — PDF generation happens async
-            res.json({ success: true, message: 'Transit claim approved' });
-            
-            // Async: Generate PDF and email
-            (async () => {
-                try {
-                    // Find all claims in the same batch (multi-month submissions)
-                    const batchClaims = await new Promise((res, rej) => {
-                        if (claim.expense_batch_id) {
-                            db.all(`SELECT id FROM transit_claims WHERE expense_batch_id = ? AND status = 'approved'`,
-                                [claim.expense_batch_id], (e, rows) => e ? rej(e) : res(rows || []));
-                        } else {
-                            res([{ id: claimId }]);
-                        }
-                    });
-                    const claimIdsForPDF = batchClaims.map(c => c.id);
-                    
-                    // Generate PTB reference
-                    const refNumber = await generatePTBRefNumber(db);
-                    
-                    // Store ref on all claims in batch
-                    for (const cid of claimIdsForPDF) {
-                        await new Promise((res, rej) => {
-                            db.run(`UPDATE transit_claims SET report_ref = ? WHERE id = ?`, [refNumber, cid], e => e ? rej(e) : res());
-                        });
-                    }
-                    
-                    // Generate PDF
-                    const pdfBuffer = await generateTransitBenefitPDF(claimIdsForPDF, db);
-                    
-                    if (pdfBuffer) {
-                        // Store PDF on first claim
-                        await new Promise((res, rej) => {
-                            db.run(`UPDATE transit_claims SET pdf_report = ?, report_generated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-                                [pdfBuffer, claimIdsForPDF[0]], e => e ? rej(e) : res());
-                        });
-                        console.log(`✅ Transit PDF generated: ${refNumber} (${claimIdsForPDF.length} claims)`);
-                        
-                        // Send emails (reuse SMTP settings from trip approval)
-                        try {
-                            const smtpSettings = await new Promise((res, rej) => {
-                                db.all(`SELECT key, value FROM app_settings WHERE key IN ('smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'audit_email')`, [], (e, rows) => {
-                                    if (e) return rej(e);
-                                    const s = {};
-                                    (rows || []).forEach(r => { s[r.key] = r.value; });
-                                    res(s);
-                                });
-                            });
-                            
-                            if (smtpSettings.smtp_host) {
-                                const nodemailer = require('nodemailer');
-                                const transporter = nodemailer.createTransport({
-                                    host: smtpSettings.smtp_host,
-                                    port: parseInt(smtpSettings.smtp_port || '587'),
-                                    secure: (smtpSettings.smtp_port === '465'),
-                                    auth: { user: smtpSettings.smtp_user, pass: smtpSettings.smtp_pass }
-                                });
-                                
-                                const recipients = [];
-                                if (claim.employee_email) recipients.push({ email: claim.employee_email, name: claim.employee_name });
-                                
-                                // Get supervisor email
-                                const sup = await new Promise((res, rej) => {
-                                    db.get(`SELECT email, name FROM employees WHERE id = ?`, [req.user.employeeId], (e, r) => e ? rej(e) : res(r));
-                                });
-                                if (sup && sup.email) recipients.push({ email: sup.email, name: sup.name });
-                                if (smtpSettings.audit_email) recipients.push({ email: smtpSettings.audit_email, name: 'Audit/Finance' });
-                                
-                                for (const recip of recipients) {
-                                    try {
-                                        await transporter.sendMail({
-                                            from: smtpSettings.smtp_from || smtpSettings.smtp_user,
-                                            to: recip.email,
-                                            subject: `Transit Benefit Report ${refNumber} — ${claim.employee_name}`,
-                                            text: `Dear ${recip.name},\n\nPlease find attached the transit benefit expense report for ${claim.employee_name}.\n\nReference: ${refNumber}\n\nThis is an automated message from ClaimFlow.`,
-                                            attachments: [{ filename: `${refNumber}.pdf`, content: pdfBuffer }]
-                                        });
-                                    } catch (emailErr) {
-                                        console.error(`❌ Email to ${recip.email} failed:`, emailErr.message);
-                                    }
-                                }
-                            }
-                        } catch (emailErr) {
-                            console.error('❌ Email sending error:', emailErr.message);
-                        }
-                    }
-                } catch (pdfErr) {
-                    console.error('❌ Transit PDF generation error:', pdfErr.message);
-                }
-            })();
-        });
-        }); // end supervisor name lookup
-    });
-});
-
-// Download transit claim PDF
-app.get('/api/transit-claims/:id/pdf', requireAuth, (req, res) => {
-    db.get(`SELECT tc.pdf_report, tc.report_ref FROM transit_claims tc WHERE tc.id = ?`, [req.params.id], (err, row) => {
-        if (err) return res.status(500).json({ error: 'Database error' });
-        if (!row || !row.pdf_report) return res.status(404).json({ error: 'PDF not found' });
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="${row.report_ref || 'transit-report'}.pdf"`);
-        res.send(row.pdf_report);
-    });
-});
-
-// Reject transit claim
-app.post('/api/transit-claims/:id/reject', requireAuth, requireRole('supervisor'), (req, res) => {
-    const claimId = req.params.id;
-    const { reason } = req.body;
-    
-    db.get(`SELECT tc.*, e.name as employee_name, e.supervisor_id, tc.employee_id
-            FROM transit_claims tc
-            JOIN employees e ON tc.employee_id = e.id
-            WHERE tc.id = ? AND tc.status = 'pending'`, [claimId], (err, claim) => {
-        if (err) return res.status(500).json({ error: 'Database error' });
-        if (!claim) return res.status(404).json({ error: 'Claim not found or not pending' });
-        if (claim.supervisor_id !== req.user.employeeId) {
-            return res.status(403).json({ error: 'You can only reject claims from your direct reports' });
-        }
-        
-        // Look up supervisor name
-        db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err2, supervisor) => {
-        const supervisorName = (supervisor && supervisor.name) || 'your supervisor';
-        
-        db.run(`UPDATE transit_claims SET status = 'rejected', rejection_reason = ?, approved_by = ?, approved_date = CURRENT_TIMESTAMP WHERE id = ?`,
-               [reason || 'No reason provided', req.user.employeeId, claimId], function(err) {
-            if (err) return res.status(500).json({ error: 'Failed to reject claim' });
-            
-            const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-            createNotification(claim.employee_id, 'transit_rejected',
-                `❌ Your transit benefit for ${mn[claim.claim_month - 1]} ${claim.claim_year} was rejected by ${supervisorName}. Reason: ${reason || 'Not specified'}`);
-            
-            res.json({ success: true, message: 'Transit claim rejected' });
-        });
-        }); // end supervisor name lookup
     });
 });
 
