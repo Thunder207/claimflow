@@ -4869,6 +4869,41 @@
                     return_reason: sanitizeForDisplay(expense.return_reason || '')
                 }));
 
+                // Also load transit claims and merge them in
+                try {
+                    const transitResp = await apiCall('/api/transit-claims/history');
+                    if (transitResp.ok) {
+                        const transitData = await transitResp.json();
+                        const transitClaims = (transitData.claims || []).map(tc => {
+                            const mn = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+                            return {
+                                id: 'transit-' + tc.id,
+                                _transitId: tc.id,
+                                _isTransit: true,
+                                category: 'Public Transit Benefit',
+                                expense_type: '🚍 Public Transit',
+                                meal_name: '',
+                                amount: tc.claim_amount,
+                                date: tc.approved_date || tc.submitted_date || tc.created_at,
+                                vendor: 'Public Transit',
+                                description: `${mn[tc.claim_month - 1]} ${tc.claim_year} — Receipt: $${parseFloat(tc.receipt_amount).toFixed(2)}`,
+                                status: tc.status,
+                                rejection_reason: tc.rejection_reason || '',
+                                approval_comment: '',
+                                return_reason: '',
+                                location: '',
+                                trip_name: null,
+                                report_ref: tc.report_ref || null,
+                                has_pdf: !!(tc.report_generated_at)
+                            };
+                        });
+                        sanitizedExpenses.push(...transitClaims);
+                    }
+                } catch (e) { console.log('Transit history load skipped:', e); }
+
+                // Sort by date descending
+                sanitizedExpenses.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
                 // Cache for filtering
                 allExpensesCache = sanitizedExpenses;
 
@@ -5006,6 +5041,34 @@
             const statusText = expense.status === 'approved' ? '✅ Approved' :
                              expense.status === 'rejected' ? '❌ Rejected' :
                              expense.status === 'returned' ? '↩️ Needs Correction' : '⏳ Pending';
+
+            // Transit claim rendering
+            if (expense._isTransit) {
+                const pdfBtn = expense.has_pdf 
+                    ? `<button onclick="downloadTransitPDF(${expense._transitId})" style="background:#667eea;color:white;border:none;padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600;margin-top:6px;">📄 Download PDF</button>`
+                    : '';
+                return `
+                    <div class="expense-item" style="margin: 0; border-radius: 0; border-top: 1px solid #eee; border-left: 3px solid #17a2b8;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 15px; flex-wrap: wrap;">
+                            <div style="flex-grow: 1;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <div style="font-weight: bold; color: #2c3e50; font-size: 15px;">
+                                        🚍 Public Transit Benefit
+                                        <span style="color: #27ae60; font-size: 16px; font-weight: bold; margin-left: 8px;">$${parseFloat(expense.amount).toFixed(2)}</span>
+                                    </div>
+                                    <span class="status-badge ${statusClass}">${statusText}</span>
+                                </div>
+                                <div style="color: #666; font-size: 13px;">
+                                    📅 ${expense.date ? new Date(expense.date).toLocaleDateString() : '—'} • ${expense.description}
+                                </div>
+                                ${expense.report_ref ? `<div style="font-size: 12px; color: #6c757d; margin-top: 4px;">📄 Ref: ${expense.report_ref}</div>` : ''}
+                                ${expense.rejection_reason ? `<div style="font-size: 12px; color: #721c24; margin-top: 4px; padding: 6px 10px; background: #f8d7da; border-radius: 6px;">❌ <strong>Rejected:</strong> ${expense.rejection_reason}</div>` : ''}
+                                ${pdfBtn}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
 
             return `
                 <div class="expense-item" style="margin: 0; border-radius: 0; border-top: 1px solid #eee;">

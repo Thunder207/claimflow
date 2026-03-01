@@ -2055,6 +2055,38 @@ try {
                 const rawExpenses = await response.json();
                 // Filter out estimate expenses — those are travel auth estimates, not actual expenses
                 allLoadedExpenses = rawExpenses.filter(e => e.status !== 'estimate');
+                
+                // Merge approved/rejected transit claims into the expense list for audit trail
+                try {
+                    const transitResp = await fetch('/api/transit-claims/supervisor-history', {
+                        headers: { 'Authorization': 'Bearer ' + sessionId }
+                    });
+                    if (transitResp.ok) {
+                        const transitData = await transitResp.json();
+                        const mn = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+                        (transitData.claims || []).forEach(tc => {
+                            allLoadedExpenses.push({
+                                id: 'transit-' + tc.id,
+                                _isTransit: true,
+                                _transitId: tc.id,
+                                employee_name: tc.employee_name,
+                                employee_number: tc.employee_number,
+                                department: tc.department,
+                                expense_type: 'Public Transit Benefit',
+                                category: '🚍 Public Transit',
+                                amount: tc.claim_amount,
+                                date: tc.approved_date || tc.submitted_date,
+                                vendor: 'Public Transit',
+                                description: `${mn[tc.claim_month - 1]} ${tc.claim_year} — Receipt: $${parseFloat(tc.receipt_amount).toFixed(2)}`,
+                                status: tc.status,
+                                trip_name: null,
+                                report_ref: tc.report_ref || null,
+                                rejection_reason: tc.rejection_reason || '',
+                                approver_name: tc.approver_name || ''
+                            });
+                        });
+                    }
+                } catch (e) { console.log('Transit history merge skipped:', e); }
 
                 await updateDashboardStats(allLoadedExpenses);
                 displayFilteredExpenses(allLoadedExpenses);
