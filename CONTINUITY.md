@@ -139,3 +139,32 @@ Trip Submission:
 - ⬜ Step 5: Lisa Brown approves trip expenses
 
 **To resume Step 4**: Login as anna.lee@company.com/anna123, Trips tab, select "Toronto Business Meeting", click ✈️ Flight, enter 600/600 in departure/return fields, click "Submit Trip for Approval".
+
+---
+
+## v7.0 — Phone Benefit (2026-03-01)
+
+**Git Tag:** `v7.0-phone-benefit-2026-03-01`  
+**Commit:** `76f4521`  
+**Full Docs:** `PHONE-BENEFIT-COMPLETION-REPORT.md`
+
+### What Changed
+- New "📱 Phone Benefit" expense category (dropdown option #2)
+- 3 new DB tables: `phone_claims`, `phone_claim_receipts`, `phb_report_sequence`
+- 3 new admin settings: `phone_plan_max` ($50), `phone_device_max` ($50), `phone_claim_window` (2)
+- 12 new API endpoints (`/api/phone-claims/*`, `/api/settings/phone`)
+- Employee form: card-based month dropdown, plan+device amounts, multi-file receipt upload
+- Supervisor: pending queue, two-click approve/reject, receipt viewer, audit trail
+- PDF generation on approval (PHB-YYYY-NNNNN), receipt appendix
+- Integrated into Expense History "Benefits" section
+
+### Key Rollback Info
+| Tag | What |
+|-----|------|
+| `v7.0-phone-benefit-2026-03-01` | Phone Benefit complete |
+| `v6.3-hotel-receipt-2026-02-25` | Pre-phone-benefit (rollback target) |
+| `v5.1-ux-optimized-2026-02-24-VERIFIED` | Golden rollback (user-verified stable) |
+
+### Also Fixed in This Session
+- **Estimate expenses removed from history** — `WHERE e.status != 'estimate'` filter in `/api/my-expenses`
+- **Trip PDF download for employees** — `downloadTripPDF()` function + 📄 PDF button on approved trip cards
