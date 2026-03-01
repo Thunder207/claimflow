@@ -1855,10 +1855,10 @@ try {
                                 </div>
                             </div>
                             <div style="display: flex; gap: 8px;">
-                                <button onclick="approveTransitClaim(${claim.id})" style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+                                <button onclick="approveTransitClaim(${claim.id}, this)" style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
                                     ✅ Approve
                                 </button>
-                                <button onclick="rejectTransitClaim(${claim.id}, '${claim.employee_name}')" style="background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+                                <button onclick="rejectTransitClaim(${claim.id}, '${claim.employee_name}', this)" style="background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
                                     ❌ Reject
                                 </button>
                             </div>
@@ -1873,11 +1873,30 @@ try {
         }
         
         let _transitActionInProgress = false;
-        async function approveTransitClaim(claimId) {
+        async function approveTransitClaim(claimId, btn) {
             if (_transitActionInProgress) return;
+            
+            // Two-click confirmation: first click shows confirm UI, second click approves
+            if (!btn || !btn.dataset.confirmed) {
+                if (btn) {
+                    const parent = btn.parentElement;
+                    const rejectBtn = parent.querySelector('button:last-child');
+                    if (rejectBtn) rejectBtn.style.display = 'none';
+                    btn.dataset.confirmed = 'pending';
+                    btn.innerHTML = '✅ Confirm Approve';
+                    btn.style.background = '#1e7e34';
+                    // Add cancel button
+                    const cancelBtn = document.createElement('button');
+                    cancelBtn.innerHTML = '✖ Cancel';
+                    cancelBtn.style.cssText = 'background:#6c757d;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;';
+                    cancelBtn.onclick = function(e) { e.stopPropagation(); loadPendingTransitClaims(); };
+                    parent.appendChild(cancelBtn);
+                }
+                return;
+            }
+            
             _transitActionInProgress = true;
-            const confirmed = confirm('Approve this transit benefit claim?');
-            if (!confirmed) { _transitActionInProgress = false; return; }
+            if (btn) { btn.innerHTML = '⏳ Approving...'; btn.disabled = true; }
             try {
                 const resp = await fetch(`/api/transit-claims/${claimId}/approve`, {
                     method: 'POST',
@@ -1896,9 +1915,39 @@ try {
             _transitActionInProgress = false;
         }
         
-        async function rejectTransitClaim(claimId, employeeName) {
-            const reason = prompt(`Reason for rejecting ${employeeName}'s transit claim:`);
-            if (reason === null) return; // Cancelled
+        async function rejectTransitClaim(claimId, employeeName, btn) {
+            if (_transitActionInProgress) return;
+            
+            // Show inline rejection form
+            if (btn) {
+                const parent = btn.closest('div[style*="display: flex; gap"]');
+                if (!parent) return;
+                parent.innerHTML = `
+                    <div style="display:flex;flex-direction:column;gap:8px;width:100%;">
+                        <label style="font-size:13px;font-weight:600;color:#dc3545;">Rejection reason for ${employeeName}:</label>
+                        <input type="text" id="reject-reason-${claimId}" placeholder="Enter reason..." 
+                               style="padding:8px 12px;border:2px solid #dc3545;border-radius:6px;font-size:13px;width:100%;">
+                        <div style="display:flex;gap:8px;">
+                            <button onclick="submitTransitReject(${claimId})" 
+                                    style="background:#dc3545;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">
+                                ❌ Confirm Reject
+                            </button>
+                            <button onclick="loadPendingTransitClaims()" 
+                                    style="background:#6c757d;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">
+                                ✖ Cancel
+                            </button>
+                        </div>
+                    </div>`;
+                const input = document.getElementById('reject-reason-' + claimId);
+                if (input) input.focus();
+            }
+        }
+        
+        async function submitTransitReject(claimId) {
+            if (_transitActionInProgress) return;
+            _transitActionInProgress = true;
+            const input = document.getElementById('reject-reason-' + claimId);
+            const reason = input ? input.value.trim() : '';
             try {
                 const resp = await fetch(`/api/transit-claims/${claimId}/reject`, {
                     method: 'POST',
@@ -1915,6 +1964,7 @@ try {
             } catch (err) {
                 showMessage('danger', 'Network error');
             }
+            _transitActionInProgress = false;
         }
 
         async function loadExpensesWithSearch() {
