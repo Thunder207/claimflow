@@ -1387,12 +1387,9 @@
                         <span style="font-size: 12px; color: #999;">Uncheck to set different rates per night</span>
                     </div>
                     
-                    <!-- Hotel Receipt Upload (Trip level only — hidden on Travel Auth) -->
-                    <div id="dp-hotel-receipt-section" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ffc107;">
-                        <label style="font-size: 13px; font-weight: 600; color: #856404; display: block; margin-bottom: 6px;">📷 Hotel Receipt / Folio (multi-page OK)</label>
-                        <input type="file" id="dp-hotel-receipt" multiple accept="image/*,.pdf,.heic" onchange="dpHotelReceiptChanged(this)" style="width: 100%; padding: 8px; background: white; border: 2px dashed #ffc107; border-radius: 8px; font-size: 13px;">
-                        <div id="dp-hotel-receipt-list" style="font-size: 12px; color: #666; margin-top: 6px;"></div>
-                        <div style="font-size: 11px; color: #999; margin-top: 4px;">Upload all pages of your hotel folio. JPG, PNG, PDF, HEIC (max 10 files)</div>
+                    <!-- AT level: estimates only, no receipt -->
+                    <div style="margin-top: 12px; font-size: 12px; color: #999; font-style: italic;">
+                        📝 This is an estimate — hotel receipts are uploaded on the Trips tab after your trip.
                     </div>
                 </div>
 
@@ -7802,8 +7799,12 @@
                     <input type="number" value="${h.total > 0 ? h.total.toFixed(2) : ''}" onchange="tdpHotelFieldChanged(${idx},'total',this.value)" min="0" step="0.01" placeholder="0.00" ${canEdit ? '' : 'disabled'} style="width: 100%; padding: 8px; border: 1px solid #e91e63; border-radius: 6px; font-size: 14px; font-weight: 600;"></div>`;
                 html += `</div>`;
                 html += `<div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;">`;
-                html += `<div style="flex: 1; min-width: 200px;"><label style="font-size: 12px; font-weight: 600; color: #880e4f; display: block; margin-bottom: 3px;">📝 Estimated — receipt at trip stage</label>
-                    <div style="font-size: 11px; color: #999; padding: 8px; background: #f5f5f5; border-radius: 6px;">Receipts are uploaded when completing the actual trip expenses.</div></div>`;
+                html += `<div style="flex: 1; min-width: 200px;"><label style="font-size: 12px; font-weight: 600; color: #880e4f; display: block; margin-bottom: 3px;">📷 Receipt / Folio (multi-page OK)</label>
+                    <input type="file" id="tdp-hotel-receipt-${idx}" multiple accept="image/*,.pdf,.heic" onchange="tdpHotelReceiptChanged(${idx},this)" ${canEdit ? '' : 'disabled'} style="width: 100%; padding: 6px; background: white; border: 1px solid #e91e63; border-radius: 6px; font-size: 12px;">
+                    <div id="tdp-hotel-receipt-list-${idx}" style="font-size: 11px; color: #666; margin-top: 2px;">
+                    ${h.receiptFiles && h.receiptFiles.length > 0 ? h.receiptFiles.map(f => `📎 ${escapeHtml(f.name)}`).join('<br>') : (h.receiptName ? `📎 ${escapeHtml(h.receiptName)}` : '')}
+                    </div>
+                    <div style="font-size: 10px; color: #999; margin-top: 2px;">Upload all pages of your hotel folio. JPG, PNG, PDF, HEIC (max 10 files)</div></div>`;
                 html += `</div>`;
                 if (distLines) {
                     html += `<div style="margin-top: 10px; padding: 8px; background: #fce4ec; border-radius: 6px; font-size: 12px; color: #880e4f;">${distLines}</div>`;
@@ -8088,13 +8089,6 @@
             
             card.style.display = hotelDays.length > 0 ? 'block' : 'none';
             
-            // Show hotel receipt upload only on Trips tab (not Travel Auth)
-            const receiptSection = document.getElementById('dp-hotel-receipt-section');
-            if (receiptSection) {
-                const isTripsTab = document.getElementById('submit-tab')?.classList.contains('active');
-                receiptSection.style.display = (hotelDays.length > 0 && isTripsTab) ? 'block' : 'none';
-            }
-            
             const nightsEl = document.getElementById('dp-hotel-nights-count');
             if (nightsEl) nightsEl.textContent = hotelDays.filter(d => d.hotelOn).length;
             
@@ -8115,24 +8109,6 @@
             dpSetDayCardHotelMode();
         }
         
-        let dpHotelReceiptFiles = [];
-        
-        function dpHotelReceiptChanged(input) {
-            if (!input.files || input.files.length === 0) {
-                dpHotelReceiptFiles = [];
-                document.getElementById('dp-hotel-receipt-list').innerHTML = '';
-                return;
-            }
-            dpHotelReceiptFiles = Array.from(input.files);
-            const listEl = document.getElementById('dp-hotel-receipt-list');
-            let html = '';
-            for (let i = 0; i < input.files.length; i++) {
-                html += `<div>📄 ${input.files[i].name} ✅</div>`;
-            }
-            html += `<strong style="color:#856404;">${input.files.length} file${input.files.length > 1 ? 's' : ''} uploaded</strong>`;
-            listEl.innerHTML = html;
-        }
-
         function dpHotelSummaryChanged() {
             const sameRate = document.getElementById('dp-hotel-same-rate');
             if (!sameRate || !sameRate.checked) return;
