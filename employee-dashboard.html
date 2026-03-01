@@ -7794,12 +7794,8 @@
                     <input type="number" value="${h.total > 0 ? h.total.toFixed(2) : ''}" onchange="tdpHotelFieldChanged(${idx},'total',this.value)" min="0" step="0.01" placeholder="0.00" ${canEdit ? '' : 'disabled'} style="width: 100%; padding: 8px; border: 1px solid #e91e63; border-radius: 6px; font-size: 14px; font-weight: 600;"></div>`;
                 html += `</div>`;
                 html += `<div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;">`;
-                html += `<div style="flex: 1; min-width: 200px;"><label style="font-size: 12px; font-weight: 600; color: #880e4f; display: block; margin-bottom: 3px;">📷 Receipt (multi-page OK)</label>
-                    <input type="file" id="tdp-hotel-receipt-${idx}" multiple accept="image/*,.pdf,.heic" onchange="tdpHotelReceiptChanged(${idx},this)" ${canEdit ? '' : 'disabled'} style="width: 100%; padding: 6px; background: white; border: 1px solid #e91e63; border-radius: 6px; font-size: 12px;">
-                    <div id="tdp-hotel-receipt-list-${idx}" style="font-size: 11px; color: #666; margin-top: 2px;">
-                    ${h.receiptFiles && h.receiptFiles.length > 0 ? h.receiptFiles.map(f => `📎 ${escapeHtml(f.name)}`).join('<br>') : (h.receiptName ? `📎 ${escapeHtml(h.receiptName)}` : '')}
-                    </div>
-                    <div style="font-size: 10px; color: #999; margin-top: 2px;">Upload all pages of your hotel folio. JPG, PNG, PDF, HEIC (max 10 files)</div></div>`;
+                html += `<div style="flex: 1; min-width: 200px;"><label style="font-size: 12px; font-weight: 600; color: #880e4f; display: block; margin-bottom: 3px;">📝 Estimated — receipt at trip stage</label>
+                    <div style="font-size: 11px; color: #999; padding: 8px; background: #f5f5f5; border-radius: 6px;">Receipts are uploaded when completing the actual trip expenses.</div></div>`;
                 html += `</div>`;
                 if (distLines) {
                     html += `<div style="margin-top: 10px; padding: 8px; background: #fce4ec; border-radius: 6px; font-size: 12px; color: #880e4f;">${distLines}</div>`;
