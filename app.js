@@ -1,9 +1,13 @@
 // Prevent unhandled rejections from crashing the server
+const pdfDebug = { lastError: null, log: [] };
+function pdfLog(...args) { const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '); pdfDebug.log.push(new Date().toISOString().substr(11,8) + ' ' + msg); if (pdfDebug.log.length > 50) pdfDebug.log.shift(); console.log('📄', msg); }
 process.on('unhandledRejection', (reason, promise) => {
     console.error('❌ Unhandled Rejection:', reason);
+    pdfDebug.lastError = 'unhandledRejection: ' + String(reason && reason.stack || reason);
 });
 process.on('uncaughtException', (err) => {
     console.error('❌ Uncaught Exception:', err);
+    pdfDebug.lastError = 'uncaughtException: ' + err.message + '\n' + err.stack;
 });
 
 const express = require('express');
@@ -5948,7 +5952,7 @@ function generateTransitBenefitPDF(claimIds, db) {
         const idList = Array.isArray(claimIds) ? claimIds : [claimIds];
         const placeholders = idList.map(() => '?').join(',');
 
-        console.log('📄 [PDF-GEN] Querying claims:', idList);
+        pdfLog('[PDF-GEN] Querying claims:', idList);
         db.all(`SELECT tc.*, 
                        emp.name as employee_name, emp.email as employee_email, emp.employee_number, emp.department, emp.position,
                        sup.name as supervisor_name, sup.email as supervisor_email
@@ -5957,7 +5961,7 @@ function generateTransitBenefitPDF(claimIds, db) {
                 LEFT JOIN employees sup ON emp.supervisor_id = sup.id
                 WHERE tc.id IN (${placeholders})
                 ORDER BY tc.claim_year, tc.claim_month`, idList, (err, claims) => {
-            console.log('📄 [PDF-GEN] Query result:', err ? 'ERROR: ' + err.message : claims ? claims.length + ' claims' : 'null');
+            pdfLog('[PDF-GEN] Query result:', err ? 'ERROR: ' + err.message : claims ? claims.length + ' claims' : 'null');
             if (err || !claims || claims.length === 0) return reject(err || new Error('No claims found'));
 
             const first = claims[0];
@@ -6009,9 +6013,9 @@ function generateTransitBenefitPDF(claimIds, db) {
             drawLine(doc.y); doc.moveDown(0.3);
 
             // Get transit settings for max display
-            console.log('📄 [PDF-GEN] Doc created, querying settings...');
+            pdfLog('[PDF-GEN] Doc created, querying settings...');
             db.get(`SELECT value FROM app_settings WHERE key = 'transit_monthly_max'`, (err, setting) => {
-              console.log('📄 [PDF-GEN] Settings callback:', err ? 'ERROR' : (setting ? setting.value : 'null'));
+              pdfLog('[PDF-GEN] Settings callback:', err ? 'ERROR' : (setting ? setting.value : 'null'));
               try {
                 const monthlyMax = parseFloat(setting ? setting.value : '100.00') || 100.00;
 
@@ -6128,10 +6132,10 @@ function generateTransitBenefitPDF(claimIds, db) {
                         .restore();
                 }
 
-                console.log('📄 [PDF-GEN] Calling doc.end()...');
+                pdfLog('[PDF-GEN] Calling doc.end()...');
                 doc.end();
               } catch (innerErr) {
-                console.error('❌ PDF inner error:', innerErr.message, innerErr.stack);
+                pdfLog('[ERROR] PDF inner:', innerErr.message, innerErr.stack); pdfDebug.lastError = innerErr.stack;
                 reject(innerErr);
               }
             });
@@ -6189,7 +6193,7 @@ app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor
             // Async: Generate PDF and email
             (async () => {
                 try {
-                    console.log('📄 [PDF] Starting async PDF generation for claim', claimId);
+                    pdfLog('[PDF] Starting async PDF generation for claim', claimId);
                     // Find all claims in the same batch (multi-month submissions)
                     const batchClaims = await new Promise((res, rej) => {
                         if (claim.expense_batch_id) {
@@ -6201,7 +6205,7 @@ app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor
                     });
                     const claimIdsForPDF = batchClaims.map(c => c.id);
                     
-                    console.log('📄 [PDF] Batch claims:', claimIdsForPDF);
+                    pdfLog('[PDF] Batch claims:', claimIdsForPDF);
                     // Generate PTB reference
                     const refNumber = await generatePTBRefNumber(db);
                     
@@ -6212,11 +6216,11 @@ app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor
                         });
                     }
                     
-                    console.log('📄 [PDF] Ref number:', refNumber, '- now generating PDF...');
+                    pdfLog('[PDF] Ref number:', refNumber, '- now generating PDF...');
                     // Generate PDF
                     const pdfBuffer = await generateTransitBenefitPDF(claimIdsForPDF, db);
                     
-                    console.log('📄 [PDF] Generated buffer:', pdfBuffer ? pdfBuffer.length + ' bytes' : 'NULL');
+                    pdfLog('[PDF] Generated buffer:', pdfBuffer ? pdfBuffer.length + ' bytes' : 'NULL');
                     if (pdfBuffer) {
                         // Store PDF on first claim
                         await new Promise((res, rej) => {
@@ -6274,12 +6278,17 @@ app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor
                         }
                     }
                 } catch (pdfErr) {
-                    console.error('❌ Transit PDF generation error:', pdfErr.message, pdfErr.stack);
+                    pdfLog('[ERROR] PDF gen:', pdfErr.message, pdfErr.stack); pdfDebug.lastError = pdfErr.stack;
                 }
             })().catch(err => console.error('❌ Transit PDF async error:', err));
         });
         }); // end supervisor name lookup
     });
+});
+
+// Debug: PDF generation status
+app.get('/api/transit-claims/pdf-debug', requireAuth, (req, res) => {
+    res.json(pdfDebug);
 });
 
 // Download transit claim PDF
