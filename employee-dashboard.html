@@ -8147,12 +8147,12 @@
                 });
                 const data = await resp.json();
                 if (data.success) {
-                    showNotification('✅ PDF generated! Ref: ' + data.ref, 'success');
+                    showMessage('success', '✅ PDF generated! Ref: ' + data.ref);
                     checkTripReportEmployee(tripId);
                 } else {
-                    showNotification(data.error || 'Failed to generate report', 'error');
+                    showMessage('error', data.error || 'Failed to generate report');
                 }
-            } catch(e) { showNotification('Network error', 'error'); }
+            } catch(e) { showMessage('error', 'Network error'); }
         }
 
         // Auto-check reports for approved trips

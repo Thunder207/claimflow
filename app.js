@@ -1,3 +1,11 @@
+// Prevent unhandled rejections from crashing the server
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Unhandled Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err);
+});
+
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const multer = require('multer');
@@ -6171,6 +6179,7 @@ app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor
             // Async: Generate PDF and email
             (async () => {
                 try {
+                    console.log('📄 [PDF] Starting async PDF generation for claim', claimId);
                     // Find all claims in the same batch (multi-month submissions)
                     const batchClaims = await new Promise((res, rej) => {
                         if (claim.expense_batch_id) {
@@ -6182,6 +6191,7 @@ app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor
                     });
                     const claimIdsForPDF = batchClaims.map(c => c.id);
                     
+                    console.log('📄 [PDF] Batch claims:', claimIdsForPDF);
                     // Generate PTB reference
                     const refNumber = await generatePTBRefNumber(db);
                     
@@ -6192,9 +6202,11 @@ app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor
                         });
                     }
                     
+                    console.log('📄 [PDF] Ref number:', refNumber, '- now generating PDF...');
                     // Generate PDF
                     const pdfBuffer = await generateTransitBenefitPDF(claimIdsForPDF, db);
                     
+                    console.log('📄 [PDF] Generated buffer:', pdfBuffer ? pdfBuffer.length + ' bytes' : 'NULL');
                     if (pdfBuffer) {
                         // Store PDF on first claim
                         await new Promise((res, rej) => {
@@ -6252,7 +6264,7 @@ app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor
                         }
                     }
                 } catch (pdfErr) {
-                    console.error('❌ Transit PDF generation error:', pdfErr.message);
+                    console.error('❌ Transit PDF generation error:', pdfErr.message, pdfErr.stack);
                 }
             })();
         });
