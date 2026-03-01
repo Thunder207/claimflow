@@ -482,11 +482,19 @@ function initializeDatabase() {
             approved_by INTEGER,
             rejection_reason TEXT,
             expense_batch_id TEXT,
+            report_ref TEXT,
+            pdf_report BLOB,
+            report_generated_at DATETIME,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (employee_id) REFERENCES employees (id),
             FOREIGN KEY (approved_by) REFERENCES employees (id),
             UNIQUE(employee_id, claim_month, claim_year)
+        )`,
+
+        `CREATE TABLE IF NOT EXISTS ptb_report_sequence (
+            year INTEGER PRIMARY KEY,
+            last_number INTEGER DEFAULT 0
         )`
     ];
     
@@ -608,6 +616,17 @@ function insertDefaultData() {
             if (err && !err.message.includes('duplicate column')) {
                 console.error('❌ Error adding report_generated_at column:', err.message);
             }
+        });
+
+        // Transit claims PDF columns
+        db.run(`ALTER TABLE transit_claims ADD COLUMN report_ref TEXT DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {}
+        });
+        db.run(`ALTER TABLE transit_claims ADD COLUMN pdf_report BLOB DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {}
+        });
+        db.run(`ALTER TABLE transit_claims ADD COLUMN report_generated_at DATETIME DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {}
         });
     }
     
@@ -5873,6 +5892,236 @@ app.post('/api/transit-claims', requireAuth, upload.fields([
 });
 
 // ============================================
+// TRANSIT CLAIMS — PDF GENERATION
+// ============================================
+
+function generatePTBRefNumber(db) {
+    return new Promise((resolve, reject) => {
+        const year = new Date().getFullYear();
+        db.run(`INSERT OR IGNORE INTO ptb_report_sequence (year, last_number) VALUES (?, 0)`, [year], (err) => {
+            if (err) return reject(err);
+            db.run(`UPDATE ptb_report_sequence SET last_number = last_number + 1 WHERE year = ?`, [year], function(err) {
+                if (err) return reject(err);
+                db.get(`SELECT last_number FROM ptb_report_sequence WHERE year = ?`, [year], (err, row) => {
+                    if (err) return reject(err);
+                    resolve(`PTB-${year}-${String(row.last_number).padStart(5, '0')}`);
+                });
+            });
+        });
+    });
+}
+
+function generateTransitBenefitPDF(claimIds, db) {
+    return new Promise((resolve, reject) => {
+        const PDFDocument = require('pdfkit');
+
+        function fmtDateShort(dateStr) {
+            if (!dateStr) return 'N/A';
+            const d = new Date(dateStr + (dateStr.length === 10 ? 'T12:00:00' : ''));
+            if (isNaN(d)) return String(dateStr);
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+        }
+        function fmtTimestamp(dateStr) {
+            if (!dateStr) return 'N/A';
+            const d = new Date(dateStr);
+            if (isNaN(d)) return String(dateStr);
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            let h = d.getHours(), ampm = h >= 12 ? 'PM' : 'AM';
+            h = h % 12 || 12;
+            const min = String(d.getMinutes()).padStart(2, '0');
+            return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} at ${h}:${min} ${ampm}`;
+        }
+        function fmtDollars(val) {
+            const n = parseFloat(val || 0);
+            return '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        }
+
+        const idList = Array.isArray(claimIds) ? claimIds : [claimIds];
+        const placeholders = idList.map(() => '?').join(',');
+
+        db.all(`SELECT tc.*, 
+                       emp.name as employee_name, emp.email as employee_email, emp.employee_number, emp.department, emp.position,
+                       sup.name as supervisor_name, sup.email as supervisor_email
+                FROM transit_claims tc
+                JOIN employees emp ON tc.employee_id = emp.id
+                LEFT JOIN employees sup ON emp.supervisor_id = sup.id
+                WHERE tc.id IN (${placeholders})
+                ORDER BY tc.claim_year, tc.claim_month`, idList, (err, claims) => {
+            if (err || !claims || claims.length === 0) return reject(err || new Error('No claims found'));
+
+            const first = claims[0];
+            const refNumber = first.report_ref || 'PENDING';
+            const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+            const MARGIN = 72;
+            const doc = new PDFDocument({ size: 'LETTER', margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN }, bufferPages: true });
+            const buffers = [];
+            doc.on('data', chunk => buffers.push(chunk));
+            doc.on('end', () => resolve(Buffer.concat(buffers)));
+
+            const pageW = 612 - MARGIN * 2;
+            const LEFT = MARGIN;
+            const RIGHT = 612 - MARGIN;
+            const COLORS = { header: '#1a3a5c', green: '#28a745', blue: '#007bff', body: '#000000', muted: '#666666' };
+
+            function drawLine(y, color) {
+                doc.save().moveTo(LEFT, y).lineTo(RIGHT, y).strokeColor(color || '#cccccc').lineWidth(0.5).stroke().restore();
+            }
+
+            // ═══════ PAGE 1 — COVER ═══════
+            doc.fontSize(18).fillColor(COLORS.header).font('Helvetica-Bold').text('PUBLIC TRANSIT BENEFIT EXPENSE REPORT', { align: 'center' });
+            doc.moveDown(0.2);
+            doc.fontSize(10).fillColor(COLORS.muted).font('Helvetica').text('ClaimFlow \u2014 Expense Management', { align: 'center' });
+            doc.moveDown(0.8);
+            drawLine(doc.y);
+            doc.moveDown(0.5);
+
+            // Reference & date
+            doc.fontSize(10).fillColor(COLORS.body);
+            doc.font('Helvetica-Bold').text('Reference: ', { continued: true }).font('Helvetica').text(refNumber);
+            doc.font('Helvetica-Bold').text('Generated: ', { continued: true }).font('Helvetica').text(fmtTimestamp(new Date().toISOString()));
+            doc.moveDown(0.8);
+
+            // Employee info
+            doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('EMPLOYEE INFORMATION');
+            doc.moveDown(0.3);
+            drawLine(doc.y); doc.moveDown(0.3);
+            doc.fontSize(10).fillColor(COLORS.body);
+            [['Name', first.employee_name], ['Employee #', first.employee_number], ['Department', first.department], ['Position', first.position]].forEach(([l, v]) => {
+                doc.font('Helvetica-Bold').text(l + ': ', { continued: true }).font('Helvetica').text(v || 'N/A');
+            });
+            doc.moveDown(0.8);
+
+            // Claim details table
+            doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('CLAIM DETAILS');
+            doc.moveDown(0.3);
+            drawLine(doc.y); doc.moveDown(0.3);
+
+            // Get transit settings for max display
+            db.get(`SELECT value FROM app_settings WHERE key = 'transit_monthly_max'`, (err, setting) => {
+                const monthlyMax = parseFloat(setting ? setting.value : '100.00');
+
+                // Table header
+                const col1 = LEFT, col2 = LEFT + 170, col3 = LEFT + 310;
+                let tY = doc.y;
+                doc.save().rect(LEFT - 4, tY - 2, pageW + 8, 18).fill('#e8ecf1').restore();
+                doc.fontSize(9).font('Helvetica-Bold').fillColor(COLORS.body);
+                doc.text('Month', col1, tY, { width: 160 });
+                doc.text('Receipt Amount', col2, tY, { width: 130, align: 'right' });
+                doc.text('Claim Amount', col3, tY, { width: 130, align: 'right' });
+                tY += 20;
+                drawLine(tY - 2);
+
+                let totalReceipt = 0, totalClaim = 0;
+                claims.forEach((claim, idx) => {
+                    const bg = (idx % 2 === 1) ? '#f8f9fa' : null;
+                    if (bg) doc.save().rect(LEFT - 4, tY - 2, pageW + 8, 18).fill(bg).restore();
+
+                    const monthLabel = `${monthNames[claim.claim_month - 1]} ${claim.claim_year}`;
+                    const receiptAmt = parseFloat(claim.receipt_amount);
+                    const claimAmt = parseFloat(claim.claim_amount);
+                    const capped = receiptAmt > monthlyMax;
+
+                    doc.fontSize(9).font('Helvetica').fillColor(COLORS.body);
+                    doc.text(monthLabel, col1, tY, { width: 160 });
+                    doc.text(fmtDollars(receiptAmt), col2, tY, { width: 130, align: 'right' });
+                    doc.text(fmtDollars(claimAmt) + (capped ? ' (capped)' : ''), col3, tY, { width: 130, align: 'right' });
+                    tY += 18;
+
+                    totalReceipt += receiptAmt;
+                    totalClaim += claimAmt;
+                });
+
+                drawLine(tY);
+                tY += 5;
+                doc.fontSize(10).font('Helvetica-Bold').fillColor(COLORS.body);
+                doc.text('TOTAL', col1, tY, { width: 160 });
+                doc.text(fmtDollars(totalReceipt), col2, tY, { width: 130, align: 'right' });
+                doc.text(fmtDollars(totalClaim), col3, tY, { width: 130, align: 'right' });
+                tY += 22;
+
+                doc.fontSize(9).fillColor(COLORS.muted).font('Helvetica');
+                doc.text(`Monthly Maximum: ${fmtDollars(monthlyMax)} (admin-configured)`, LEFT, tY);
+                doc.moveDown(1.5);
+
+                // Approval section
+                const aY = doc.y;
+                doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('APPROVAL');
+                doc.moveDown(0.3);
+                drawLine(doc.y); doc.moveDown(0.3);
+                doc.fontSize(10).fillColor(COLORS.body).font('Helvetica');
+
+                doc.font('Helvetica-Bold').text('Submitted: ', { continued: true });
+                doc.font('Helvetica').text(fmtTimestamp(first.submitted_date) + ' \u2014 by ' + (first.employee_name || 'Employee'));
+
+                doc.font('Helvetica-Bold').text('Approved: ', { continued: true });
+                doc.font('Helvetica').text(fmtTimestamp(first.approved_date) + ' \u2014 by ' + (first.supervisor_name || 'Supervisor'));
+
+                doc.moveDown(2);
+
+                // Signature lines
+                const sigY = doc.y;
+                doc.fontSize(10).fillColor(COLORS.body);
+                doc.text('_________________________________', LEFT, sigY);
+                doc.text('Employee: ' + (first.employee_name || 'N/A'), LEFT, sigY + 15);
+                doc.text('Date: _______________', LEFT, sigY + 28);
+                doc.text('_________________________________', LEFT + 250, sigY);
+                doc.text('Supervisor: ' + (first.supervisor_name || 'N/A'), LEFT + 250, sigY + 15);
+                doc.text('Date: _______________', LEFT + 250, sigY + 28);
+
+                doc.moveDown(3);
+                doc.fontSize(8).fillColor(COLORS.muted).text(
+                    'This report was auto-generated by ClaimFlow on ' + fmtTimestamp(new Date().toISOString()) + '. Reference: ' + refNumber,
+                    LEFT, doc.y, { width: pageW, align: 'center' }
+                );
+
+                // ═══════ PAGE 2+ — RECEIPT IMAGES ═══════
+                const fs = require('fs');
+                const path = require('path');
+                claims.forEach(claim => {
+                    if (claim.receipt_file) {
+                        const receiptPath = path.join(__dirname, 'uploads', claim.receipt_file);
+                        if (fs.existsSync(receiptPath)) {
+                            doc.addPage();
+                            doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('ATTACHED RECEIPT', { align: 'center' });
+                            doc.moveDown(0.3);
+                            doc.fontSize(10).fillColor(COLORS.muted).font('Helvetica').text(
+                                `${monthNames[claim.claim_month - 1]} ${claim.claim_year} \u2014 ${fmtDollars(claim.receipt_amount)}`, { align: 'center' }
+                            );
+                            doc.moveDown(0.5);
+
+                            try {
+                                const ext = path.extname(receiptPath).toLowerCase();
+                                if (['.jpg', '.jpeg', '.png'].includes(ext)) {
+                                    doc.image(receiptPath, LEFT, doc.y, { fit: [pageW, 580], align: 'center' });
+                                } else {
+                                    doc.fontSize(10).fillColor(COLORS.muted).text('Receipt file attached: ' + claim.receipt_file, { align: 'center' });
+                                }
+                            } catch (imgErr) {
+                                doc.fontSize(10).fillColor(COLORS.muted).text('Receipt file: ' + claim.receipt_file + ' (could not embed)', { align: 'center' });
+                            }
+                        }
+                    }
+                });
+
+                // Footer on all pages
+                const pageRange = doc.bufferedPageRange();
+                const totalPages = pageRange.count;
+                for (let i = 0; i < totalPages; i++) {
+                    doc.switchToPage(i);
+                    doc.save().fontSize(8).fillColor(COLORS.muted).font('Helvetica')
+                        .text(`Page ${i + 1} of ${totalPages}     Ref: ${refNumber}`, LEFT, 740, { width: pageW, align: 'center' })
+                        .restore();
+                }
+
+                doc.end();
+            });
+        });
+    });
+}
+
+// ============================================
 // TRANSIT CLAIMS — SUPERVISOR APPROVAL
 // ============================================
 
@@ -5912,8 +6161,108 @@ app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor
             createNotification(claim.employee_id, 'transit_approved',
                 `✅ Your transit benefit for ${mn[claim.claim_month - 1]} ${claim.claim_year} ($${claim.claim_amount}) has been approved by ${req.user.name}.`);
             
+            // Return success immediately — PDF generation happens async
             res.json({ success: true, message: 'Transit claim approved' });
+            
+            // Async: Generate PDF and email
+            (async () => {
+                try {
+                    // Find all claims in the same batch (multi-month submissions)
+                    const batchClaims = await new Promise((res, rej) => {
+                        if (claim.expense_batch_id) {
+                            db.all(`SELECT id FROM transit_claims WHERE expense_batch_id = ? AND status = 'approved'`,
+                                [claim.expense_batch_id], (e, rows) => e ? rej(e) : res(rows || []));
+                        } else {
+                            res([{ id: claimId }]);
+                        }
+                    });
+                    const claimIdsForPDF = batchClaims.map(c => c.id);
+                    
+                    // Generate PTB reference
+                    const refNumber = await generatePTBRefNumber(db);
+                    
+                    // Store ref on all claims in batch
+                    for (const cid of claimIdsForPDF) {
+                        await new Promise((res, rej) => {
+                            db.run(`UPDATE transit_claims SET report_ref = ? WHERE id = ?`, [refNumber, cid], e => e ? rej(e) : res());
+                        });
+                    }
+                    
+                    // Generate PDF
+                    const pdfBuffer = await generateTransitBenefitPDF(claimIdsForPDF, db);
+                    
+                    if (pdfBuffer) {
+                        // Store PDF on first claim
+                        await new Promise((res, rej) => {
+                            db.run(`UPDATE transit_claims SET pdf_report = ?, report_generated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                                [pdfBuffer, claimIdsForPDF[0]], e => e ? rej(e) : res());
+                        });
+                        console.log(`✅ Transit PDF generated: ${refNumber} (${claimIdsForPDF.length} claims)`);
+                        
+                        // Send emails (reuse SMTP settings from trip approval)
+                        try {
+                            const smtpSettings = await new Promise((res, rej) => {
+                                db.all(`SELECT key, value FROM app_settings WHERE key IN ('smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'audit_email')`, [], (e, rows) => {
+                                    if (e) return rej(e);
+                                    const s = {};
+                                    (rows || []).forEach(r => { s[r.key] = r.value; });
+                                    res(s);
+                                });
+                            });
+                            
+                            if (smtpSettings.smtp_host) {
+                                const nodemailer = require('nodemailer');
+                                const transporter = nodemailer.createTransport({
+                                    host: smtpSettings.smtp_host,
+                                    port: parseInt(smtpSettings.smtp_port || '587'),
+                                    secure: (smtpSettings.smtp_port === '465'),
+                                    auth: { user: smtpSettings.smtp_user, pass: smtpSettings.smtp_pass }
+                                });
+                                
+                                const recipients = [];
+                                if (claim.employee_email) recipients.push({ email: claim.employee_email, name: claim.employee_name });
+                                
+                                // Get supervisor email
+                                const sup = await new Promise((res, rej) => {
+                                    db.get(`SELECT email, name FROM employees WHERE id = ?`, [req.user.employeeId], (e, r) => e ? rej(e) : res(r));
+                                });
+                                if (sup && sup.email) recipients.push({ email: sup.email, name: sup.name });
+                                if (smtpSettings.audit_email) recipients.push({ email: smtpSettings.audit_email, name: 'Audit/Finance' });
+                                
+                                for (const recip of recipients) {
+                                    try {
+                                        await transporter.sendMail({
+                                            from: smtpSettings.smtp_from || smtpSettings.smtp_user,
+                                            to: recip.email,
+                                            subject: `Transit Benefit Report ${refNumber} — ${claim.employee_name}`,
+                                            text: `Dear ${recip.name},\n\nPlease find attached the transit benefit expense report for ${claim.employee_name}.\n\nReference: ${refNumber}\n\nThis is an automated message from ClaimFlow.`,
+                                            attachments: [{ filename: `${refNumber}.pdf`, content: pdfBuffer }]
+                                        });
+                                    } catch (emailErr) {
+                                        console.error(`❌ Email to ${recip.email} failed:`, emailErr.message);
+                                    }
+                                }
+                            }
+                        } catch (emailErr) {
+                            console.error('❌ Email sending error:', emailErr.message);
+                        }
+                    }
+                } catch (pdfErr) {
+                    console.error('❌ Transit PDF generation error:', pdfErr.message);
+                }
+            })();
         });
+    });
+});
+
+// Download transit claim PDF
+app.get('/api/transit-claims/:id/pdf', requireAuth, (req, res) => {
+    db.get(`SELECT tc.pdf_report, tc.report_ref FROM transit_claims tc WHERE tc.id = ?`, [req.params.id], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row || !row.pdf_report) return res.status(404).json({ error: 'PDF not found' });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${row.report_ref || 'transit-report'}.pdf"`);
+        res.send(row.pdf_report);
     });
 });
 
