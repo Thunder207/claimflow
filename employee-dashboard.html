@@ -1386,6 +1386,14 @@
                         </label>
                         <span style="font-size: 12px; color: #999;">Uncheck to set different rates per night</span>
                     </div>
+                    
+                    <!-- Hotel Receipt Upload (Trip level) -->
+                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ffc107;">
+                        <label style="font-size: 13px; font-weight: 600; color: #856404; display: block; margin-bottom: 6px;">📷 Hotel Receipt / Folio (multi-page OK)</label>
+                        <input type="file" id="dp-hotel-receipt" multiple accept="image/*,.pdf,.heic" onchange="dpHotelReceiptChanged(this)" style="width: 100%; padding: 8px; background: white; border: 2px dashed #ffc107; border-radius: 8px; font-size: 13px;">
+                        <div id="dp-hotel-receipt-list" style="font-size: 12px; color: #666; margin-top: 6px;"></div>
+                        <div style="font-size: 11px; color: #999; margin-top: 4px;">Upload all pages of your hotel folio. JPG, PNG, PDF, HEIC (max 10 files)</div>
+                    </div>
                 </div>
 
                 <div id="dp-day-cards" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;"></div>
@@ -8100,6 +8108,24 @@
             dpSetDayCardHotelMode();
         }
         
+        let dpHotelReceiptFiles = [];
+        
+        function dpHotelReceiptChanged(input) {
+            if (!input.files || input.files.length === 0) {
+                dpHotelReceiptFiles = [];
+                document.getElementById('dp-hotel-receipt-list').innerHTML = '';
+                return;
+            }
+            dpHotelReceiptFiles = Array.from(input.files);
+            const listEl = document.getElementById('dp-hotel-receipt-list');
+            let html = '';
+            for (let i = 0; i < input.files.length; i++) {
+                html += `<div>📄 ${input.files[i].name} ✅</div>`;
+            }
+            html += `<strong style="color:#856404;">${input.files.length} file${input.files.length > 1 ? 's' : ''} uploaded</strong>`;
+            listEl.innerHTML = html;
+        }
+
         function dpHotelSummaryChanged() {
             const sameRate = document.getElementById('dp-hotel-same-rate');
             if (!sameRate || !sameRate.checked) return;
