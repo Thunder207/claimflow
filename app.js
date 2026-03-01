@@ -6008,7 +6008,8 @@ function generateTransitBenefitPDF(claimIds, db) {
 
             // Get transit settings for max display
             db.get(`SELECT value FROM app_settings WHERE key = 'transit_monthly_max'`, (err, setting) => {
-                const monthlyMax = parseFloat(setting ? setting.value : '100.00');
+              try {
+                const monthlyMax = parseFloat(setting ? setting.value : '100.00') || 100.00;
 
                 // Table header
                 const col1 = LEFT, col2 = LEFT + 170, col3 = LEFT + 310;
@@ -6124,6 +6125,10 @@ function generateTransitBenefitPDF(claimIds, db) {
                 }
 
                 doc.end();
+              } catch (innerErr) {
+                console.error('❌ PDF inner error:', innerErr);
+                reject(innerErr);
+              }
             });
         });
     });
