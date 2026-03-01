@@ -656,6 +656,15 @@ try {
                 </div>
             </div>
 
+            <div id="transit-history-section" style="display: none; margin-bottom: 25px;">
+                <div style="background: linear-gradient(135deg, #f0f4f0 0%, #f8faf8 100%); border: 2px solid #6c757d; border-radius: 12px; padding: 20px;">
+                    <h4 style="color: #495057; margin: 0 0 15px 0; cursor: pointer;" onclick="toggleTransitHistory()">
+                        📋 Transit Benefit Claims — History <span id="transit-history-toggle" style="font-size: 12px;">▼</span>
+                    </h4>
+                    <div id="transit-history-list"></div>
+                </div>
+            </div>
+
             <div id="expenses-container" aria-live="polite" aria-label="Expenses list">
                 <div class="loading">
                     <div class="spinner" role="status" aria-label="Loading expenses"></div>
@@ -1869,6 +1878,72 @@ try {
             } catch (err) {
                 console.error('Error loading transit claims:', err);
                 section.style.display = 'none';
+            }
+            
+            // Also load history
+            loadTransitClaimsHistory();
+        }
+        
+        async function loadTransitClaimsHistory() {
+            const section = document.getElementById('transit-history-section');
+            const list = document.getElementById('transit-history-list');
+            if (!section || !list) return;
+            if (currentUser.role !== 'supervisor') { section.style.display = 'none'; return; }
+            
+            try {
+                const resp = await fetch('/api/transit-claims/supervisor-history', {
+                    headers: { 'Authorization': 'Bearer ' + sessionId }
+                });
+                if (!resp.ok) { section.style.display = 'none'; return; }
+                const data = await resp.json();
+                const claims = data.claims || [];
+                if (claims.length === 0) { section.style.display = 'none'; return; }
+                
+                section.style.display = 'block';
+                const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                
+                list.innerHTML = claims.map(claim => {
+                    const isApproved = claim.status === 'approved';
+                    const borderColor = isApproved ? '#28a745' : '#dc3545';
+                    const icon = isApproved ? '✅' : '❌';
+                    const statusText = isApproved ? 'Approved' : 'Rejected';
+                    const dateStr = claim.approved_date ? new Date(claim.approved_date).toLocaleDateString() : '—';
+                    const approverStr = claim.approver_name || '—';
+                    
+                    return `<div style="background: white; border-radius: 8px; padding: 12px 15px; margin-bottom: 8px; border-left: 4px solid ${borderColor};">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                            <div>
+                                <strong style="color: #2c3e50;">${claim.employee_name}</strong>
+                                <span style="color: #6c757d; font-size: 12px;"> — ${claim.department || ''} (${claim.employee_number || ''})</span>
+                                <div style="margin-top: 3px; font-size: 13px; color: #495057;">
+                                    🚍 ${mn[claim.claim_month - 1]} ${claim.claim_year} — 
+                                    <strong>$${parseFloat(claim.claim_amount).toFixed(2)}</strong>
+                                </div>
+                            </div>
+                            <div style="text-align: right; font-size: 12px;">
+                                <div><span style="color: ${borderColor}; font-weight: 600;">${icon} ${statusText}</span></div>
+                                <div style="color: #6c757d;">by ${approverStr} — ${dateStr}</div>
+                                ${!isApproved && claim.rejection_reason ? `<div style="color: #dc3545; font-style: italic; margin-top: 2px;">"${claim.rejection_reason}"</div>` : ''}
+                                ${isApproved && claim.report_ref ? `<div style="color: #6c757d; margin-top: 2px;">📄 ${claim.report_ref}</div>` : ''}
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('');
+            } catch (err) {
+                console.error('Error loading transit history:', err);
+                section.style.display = 'none';
+            }
+        }
+        
+        function toggleTransitHistory() {
+            const list = document.getElementById('transit-history-list');
+            const toggle = document.getElementById('transit-history-toggle');
+            if (list.style.display === 'none') {
+                list.style.display = 'block';
+                toggle.textContent = '▼';
+            } else {
+                list.style.display = 'none';
+                toggle.textContent = '▶';
             }
         }
         

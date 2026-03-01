@@ -6183,6 +6183,25 @@ app.get('/api/transit-claims/pending', requireAuth, requireRole('supervisor'), (
     });
 });
 
+// Supervisor transit claims history (approved + rejected) — audit trail
+app.get('/api/transit-claims/supervisor-history', requireAuth, requireRole('supervisor'), (req, res) => {
+    db.all(`SELECT tc.id, tc.claim_month, tc.claim_year, tc.receipt_amount, tc.claim_amount, 
+                   tc.status, tc.submitted_date, tc.approved_date, tc.approved_by, tc.rejection_reason,
+                   tc.report_ref, tc.report_generated_at,
+                   e.name as employee_name, e.department, e.employee_number,
+                   approver.name as approver_name
+            FROM transit_claims tc
+            JOIN employees e ON tc.employee_id = e.id
+            LEFT JOIN employees approver ON tc.approved_by = approver.id
+            WHERE e.supervisor_id = ? AND tc.status IN ('approved', 'rejected')
+            ORDER BY tc.approved_date DESC, tc.submitted_date DESC
+            LIMIT 50`,
+           [req.user.employeeId], (err, claims) => {
+        if (err) return res.status(500).json({ error: 'Failed to load transit history' });
+        res.json({ claims: claims || [] });
+    });
+});
+
 // Approve transit claim
 app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor'), (req, res) => {
     const claimId = req.params.id;
