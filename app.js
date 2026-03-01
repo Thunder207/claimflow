@@ -5948,6 +5948,7 @@ function generateTransitBenefitPDF(claimIds, db) {
         const idList = Array.isArray(claimIds) ? claimIds : [claimIds];
         const placeholders = idList.map(() => '?').join(',');
 
+        console.log('📄 [PDF-GEN] Querying claims:', idList);
         db.all(`SELECT tc.*, 
                        emp.name as employee_name, emp.email as employee_email, emp.employee_number, emp.department, emp.position,
                        sup.name as supervisor_name, sup.email as supervisor_email
@@ -5956,6 +5957,7 @@ function generateTransitBenefitPDF(claimIds, db) {
                 LEFT JOIN employees sup ON emp.supervisor_id = sup.id
                 WHERE tc.id IN (${placeholders})
                 ORDER BY tc.claim_year, tc.claim_month`, idList, (err, claims) => {
+            console.log('📄 [PDF-GEN] Query result:', err ? 'ERROR: ' + err.message : claims ? claims.length + ' claims' : 'null');
             if (err || !claims || claims.length === 0) return reject(err || new Error('No claims found'));
 
             const first = claims[0];
@@ -6007,7 +6009,9 @@ function generateTransitBenefitPDF(claimIds, db) {
             drawLine(doc.y); doc.moveDown(0.3);
 
             // Get transit settings for max display
+            console.log('📄 [PDF-GEN] Doc created, querying settings...');
             db.get(`SELECT value FROM app_settings WHERE key = 'transit_monthly_max'`, (err, setting) => {
+              console.log('📄 [PDF-GEN] Settings callback:', err ? 'ERROR' : (setting ? setting.value : 'null'));
               try {
                 const monthlyMax = parseFloat(setting ? setting.value : '100.00') || 100.00;
 
@@ -6124,9 +6128,10 @@ function generateTransitBenefitPDF(claimIds, db) {
                         .restore();
                 }
 
+                console.log('📄 [PDF-GEN] Calling doc.end()...');
                 doc.end();
               } catch (innerErr) {
-                console.error('❌ PDF inner error:', innerErr);
+                console.error('❌ PDF inner error:', innerErr.message, innerErr.stack);
                 reject(innerErr);
               }
             });
@@ -6181,8 +6186,7 @@ app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor
             // Return success immediately — PDF generation happens async
             res.json({ success: true, message: 'Transit claim approved' });
             
-            // Async: Generate PDF and email (wrapped in setTimeout to decouple from request)
-            setTimeout(() => {
+            // Async: Generate PDF and email
             (async () => {
                 try {
                     console.log('📄 [PDF] Starting async PDF generation for claim', claimId);
@@ -6273,7 +6277,6 @@ app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor
                     console.error('❌ Transit PDF generation error:', pdfErr.message, pdfErr.stack);
                 }
             })().catch(err => console.error('❌ Transit PDF async error:', err));
-            }, 100);
         });
         }); // end supervisor name lookup
     });
