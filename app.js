@@ -6181,7 +6181,8 @@ app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor
             // Return success immediately — PDF generation happens async
             res.json({ success: true, message: 'Transit claim approved' });
             
-            // Async: Generate PDF and email
+            // Async: Generate PDF and email (wrapped in setTimeout to decouple from request)
+            setTimeout(() => {
             (async () => {
                 try {
                     console.log('📄 [PDF] Starting async PDF generation for claim', claimId);
@@ -6271,7 +6272,8 @@ app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor
                 } catch (pdfErr) {
                     console.error('❌ Transit PDF generation error:', pdfErr.message, pdfErr.stack);
                 }
-            })();
+            })().catch(err => console.error('❌ Transit PDF async error:', err));
+            }, 100);
         });
         }); // end supervisor name lookup
     });
