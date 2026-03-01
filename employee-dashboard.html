@@ -2761,6 +2761,10 @@
         function downloadTransitPDF(claimId) {
             window.open(`/api/transit-claims/${claimId}/pdf?auth=${sessionId}`, '_blank');
         }
+
+        function downloadTripPDF(tripId) {
+            window.open(`/api/trips/${tripId}/report?token=${sessionId}`, '_blank');
+        }
         
         // Generate PDF retroactively for old approved claim
         async function generateTransitPDF(claimId, btn) {
@@ -5014,7 +5018,8 @@
                             start: exp.trip_start || null,
                             end: exp.trip_end || null,
                             status: exp.trip_status || null,
-                            destination: exp.trip_destination || ''
+                            destination: exp.trip_destination || '',
+                            tripId: exp.trip_id || null
                         };
                     }
                     trips[exp.trip_name].expenses.push(exp);
@@ -5022,6 +5027,7 @@
                     if (exp.trip_start) trips[exp.trip_name].start = exp.trip_start;
                     if (exp.trip_end) trips[exp.trip_name].end = exp.trip_end;
                     if (exp.trip_status) trips[exp.trip_name].status = exp.trip_status;
+                    if (exp.trip_id) trips[exp.trip_name].tripId = exp.trip_id;
                 } else {
                     standalone.push(exp);
                 }
@@ -5067,7 +5073,10 @@
                                     ${dateRange ? `${dateRange} · ` : ''}${trip.expenses.length} expense${trip.expenses.length > 1 ? 's' : ''} · <strong style="color:#27ae60;">$${tripTotal.toFixed(2)}</strong>
                                 </div>
                             </div>
-                            ${statusBadge(overallStatus)}
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                ${trip.status === 'approved' && trip.tripId ? `<button onclick="event.stopPropagation();downloadTripPDF(${trip.tripId})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>` : ''}
+                                ${statusBadge(overallStatus)}
+                            </div>
                         </div>
                         <div id="${tripId}" style="display:none;border-radius:0 0 12px 12px;overflow:hidden;background:#fff;border:1px solid #e2e8f0;border-top:none;">
                             <table style="width:100%;border-collapse:collapse;font-size:13px;">
