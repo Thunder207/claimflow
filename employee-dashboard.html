@@ -8208,7 +8208,7 @@
             });
 
             // Vehicle/Mileage costs (only if personal vehicle is selected)
-            const personalButton = document.querySelector('[data-mode="personal"]');
+            const personalButton = document.querySelector('#tdp-transport-toggles [data-mode="personal"]');
             const isPersonalVehicleActive = personalButton && personalButton.classList.contains('active');
             
             if (isPersonalVehicleActive) {
@@ -8470,7 +8470,7 @@
                 button.style.backgroundColor = 'white';
                 button.style.borderColor = '#6c757d';
                 button.style.color = '#6c757d';
-                section.style.display = 'none';
+                if (section) section.style.display = 'none';
                 
                 // Clear values for deactivated mode
                 clearTransportMode(mode);
@@ -8480,10 +8480,12 @@
                 button.style.backgroundColor = '#17a2b8';
                 button.style.borderColor = '#17a2b8';
                 button.style.color = 'white';
-                section.style.display = 'block';
-                setTimeout(() => {
-                    section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                }, 150);
+                if (section) {
+                    section.style.display = 'block';
+                    setTimeout(() => {
+                        section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }, 150);
+                }
             }
             
             // Handle special case for personal vehicle - show/hide vehicle section
@@ -8498,7 +8500,7 @@
             tdpRecalcTotal();
             
             // Save transport preferences  
-            dpSaveTransport();
+            saveTdpTransport();
         }
 
         function clearTransportMode(mode) {
@@ -8566,7 +8568,7 @@
             // Only include totals for active transport modes
             const activeModes = ['flight', 'train', 'bus', 'rental', 'taxi'];
             activeModes.forEach(mode => {
-                const button = document.querySelector(`[data-mode="${mode}"]`);
+                const button = document.querySelector(`#tdp-transport-toggles [data-mode="${mode}"]`);
                 if (button && button.classList.contains('active')) {
                     totalTransport += calculateTransportSubtotal(mode);
                 }
@@ -8586,7 +8588,7 @@
             // Save active modes and their values
             const modes = ['personal', 'flight', 'train', 'bus', 'rental', 'taxi'];
             modes.forEach(mode => {
-                const button = document.querySelector(`[data-mode="${mode}"]`);
+                const button = document.querySelector(`#tdp-transport-toggles [data-mode="${mode}"]`);
                 const isActive = button && button.classList.contains('active');
                 
                 transportData[mode] = {
@@ -8665,7 +8667,7 @@
             // Load each transport mode
             Object.keys(transportData).forEach(mode => {
                 const modeData = transportData[mode];
-                const button = document.querySelector(`[data-mode="${mode}"]`);
+                const button = document.querySelector(`#tdp-transport-toggles [data-mode="${mode}"]`);
                 const section = document.getElementById(`tdp-${mode}-section`);
                 
                 if (modeData.active && button && section) {
@@ -8725,7 +8727,7 @@
             // Validate each active mode has required values
             const modes = ['personal', 'flight', 'train', 'bus', 'rental', 'taxi'];
             for (const mode of modes) {
-                const button = document.querySelector(`[data-mode="${mode}"]`);
+                const button = document.querySelector(`#tdp-transport-toggles [data-mode="${mode}"]`);
                 if (button && button.classList.contains('active')) {
                     if (!validateTransportMode(mode)) {
                         return false;
