@@ -1183,7 +1183,7 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
         }
     
     // CRITICAL FIX: Validate expense type and handle common aliases
-    const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other', 'transport', 'transport_flight', 'transport_train', 'transport_bus', 'transport_rental'];
+    const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other', 'transport', 'transport_flight', 'transport_train', 'transport_bus', 'transport_rental', 'transport_taxi'];
     
     // Handle common expense type aliases
     if (expense_type === 'meals') {
@@ -4279,7 +4279,7 @@ app.post('/api/travel-auth/:id/expenses', requireAuth, async (req, res) => {
     }
     
     // CRITICAL FIX: Validate expense type for travel auth
-    const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other', 'transport', 'transport_flight', 'transport_train', 'transport_bus', 'transport_rental'];
+    const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other', 'transport', 'transport_flight', 'transport_train', 'transport_bus', 'transport_rental', 'transport_taxi'];
     if (!validExpenseTypes.includes(expense_type)) {
         return res.status(400).json({ 
             error: `Invalid expense type "${expense_type}". Valid types: ${validExpenseTypes.join(', ')}`,

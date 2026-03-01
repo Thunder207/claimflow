@@ -1113,7 +1113,7 @@
 
                 <!-- 🚗 SMART TRANSPORTATION SECTION -->
                 <div id="tdp-transport-section" style="background: linear-gradient(135deg, #e8f4f8 0%, #d1ecf1 100%); padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #17a2b8;">
-                    <h4 style="color: #0c5460; margin: 0 0 15px 0;">🚗 Transportation to Destination</h4>
+                    <h4 style="color: #0c5460; margin: 0 0 15px 0;">🚗 Transportation</h4>
                     <div style="margin-bottom: 15px;">
                         <p style="color: #0c5460; font-size: 13px; margin-bottom: 10px;">How are you traveling to your destination? (select all that apply)</p>
                         <div id="tdp-transport-toggles" style="display: flex; flex-wrap: wrap; gap: 8px;">
@@ -1132,6 +1132,22 @@
                             <button type="button" class="transport-toggle" data-mode="rental" onclick="tdpToggleTransport('rental')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
                                 🚙 Rental Car
                             </button>
+                            <button type="button" class="transport-toggle" data-mode="taxi" onclick="tdpToggleTransport('taxi')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                                🚕 Taxi
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Taxi Section (AT) -->
+                    <div id="tdp-taxi-section" style="display: none; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); padding: 16px; border-radius: 10px; margin-bottom: 12px; border: 1px solid #ffc107;">
+                        <h5 style="color: #e65100; margin: 0 0 12px 0;">🚕 Taxi</h5>
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <label style="min-width: 130px; font-weight: 600; font-size: 13px;">Estimated Cost:</label>
+                            <span style="font-size: 15px;">$</span>
+                            <input type="number" id="tdp-taxi-cost" step="0.01" min="0" value="0" oninput="tdpUpdateTransportTotal()" style="flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px;">
+                        </div>
+                        <div style="font-size: 13px; color: #555; text-align: right;">
+                            🚕 Taxi Subtotal: <span id="tdp-taxi-total">$0.00</span>
                         </div>
                     </div>
 
@@ -1376,7 +1392,7 @@
 
                 <!-- 🚗 SMART TRANSPORTATION SECTION -->
                 <div id="dp-transport-section" style="background: linear-gradient(135deg, #e8f4f8 0%, #d1ecf1 100%); padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #17a2b8;">
-                    <h4 style="color: #0c5460; margin: 0 0 15px 0;">🚗 Transportation to Destination</h4>
+                    <h4 style="color: #0c5460; margin: 0 0 15px 0;">🚗 Transportation</h4>
                     <div style="margin-bottom: 15px;">
                         <p style="color: #0c5460; font-size: 13px; margin-bottom: 10px;">How are you traveling to your destination? (select all that apply)</p>
                         <div id="dp-transport-toggles" style="display: flex; flex-wrap: wrap; gap: 8px;">
@@ -1395,6 +1411,22 @@
                             <button type="button" class="transport-toggle" data-mode="rental" onclick="dpToggleTransport('rental')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
                                 🚙 Rental Car
                             </button>
+                            <button type="button" class="transport-toggle" data-mode="taxi" onclick="dpToggleTransport('taxi')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                                🚕 Taxi
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Taxi Section (Trip) -->
+                    <div id="dp-taxi-section" style="display: none; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); padding: 16px; border-radius: 10px; margin-bottom: 12px; border: 1px solid #ffc107;">
+                        <h5 style="color: #e65100; margin: 0 0 12px 0;">🚕 Taxi</h5>
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <label style="min-width: 130px; font-weight: 600; font-size: 13px;">Cost:</label>
+                            <span style="font-size: 15px;">$</span>
+                            <input type="number" id="dp-taxi-cost" step="0.01" min="0" value="0" oninput="dpRecalcTotal(); dpSaveTransport();" style="flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px;">
+                        </div>
+                        <div style="font-size: 13px; color: #555; text-align: right;">
+                            🚕 Taxi Subtotal: <span id="dp-taxi-total">$0.00</span>
                         </div>
                     </div>
 
@@ -1658,7 +1690,7 @@
 
                 <!-- Transportation Section -->
                 <div class="form-group" style="margin-top: 25px;">
-                    <label style="display: block; margin-bottom: 10px; font-weight: bold; color: #2c3e50;">🚗 Transportation to Destination</label>
+                    <label style="display: block; margin-bottom: 10px; font-weight: bold; color: #2c3e50;">🚗 Transportation</label>
                     <p style="color: #6c757d; font-size: 13px; margin-bottom: 15px;">How are you traveling to your destination? (select all that apply)</p>
                     <div id="at-transport-toggles" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;">
                         <button type="button" class="transport-toggle" data-mode="personal" onclick="atToggleTransport('personal')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
@@ -1676,6 +1708,22 @@
                         <button type="button" class="transport-toggle" data-mode="rental" onclick="atToggleTransport('rental')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
                             🚙 Rental Car
                         </button>
+                        <button type="button" class="transport-toggle" data-mode="taxi" onclick="atToggleTransport('taxi')" style="padding: 8px 12px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                            🚕 Taxi
+                        </button>
+                    </div>
+
+                    <!-- Taxi Section (AT form) -->
+                    <div id="at-taxi-section" style="display: none; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); padding: 16px; border-radius: 10px; margin-bottom: 12px; border: 1px solid #ffc107;">
+                        <h5 style="color: #e65100; margin: 0 0 12px 0;">🚕 Taxi</h5>
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <label style="min-width: 130px; font-weight: 600; font-size: 13px;">Estimated Cost:</label>
+                            <span style="font-size: 15px;">$</span>
+                            <input type="number" id="at-taxi-cost" step="0.01" min="0" value="0" oninput="atRecalcTotal()" style="flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px;">
+                        </div>
+                        <div style="font-size: 13px; color: #555; text-align: right;">
+                            🚕 Taxi Subtotal: <span id="at-taxi-total">$0.00</span>
+                        </div>
                     </div>
 
                     <!-- Personal Vehicle Section -->
@@ -4459,8 +4507,8 @@
                 if (vtEl) vtEl.textContent = `$${vehicleTotal.toFixed(2)}`;
             }
 
-            // Transportation costs (Flight, Train, Bus, Rental)
-            const transportModes = ['flight', 'train', 'bus', 'rental'];
+            // Transportation costs (Flight, Train, Bus, Rental, Taxi)
+            const transportModes = ['flight', 'train', 'bus', 'rental', 'taxi'];
             let transportTotal = 0;
             
             transportModes.forEach(mode => {
@@ -4490,6 +4538,9 @@
                             const rentalIns = parseFloat(document.getElementById('dp-rental-insurance')?.value || 0);
                             const rentalFuel = parseFloat(document.getElementById('dp-rental-fuel')?.value || 0);
                             subtotal = (rentalDays * rentalRate) + rentalIns + rentalFuel;
+                            break;
+                        case 'taxi':
+                            subtotal = parseFloat(document.getElementById('dp-taxi-cost')?.value || 0);
                             break;
                     }
                     transportTotal += subtotal;
@@ -7191,7 +7242,8 @@
                     'flight': { bg: '#ffc107', border: '#ffc107', color: 'black' },
                     'train': { bg: '#28a745', border: '#28a745', color: 'white' },
                     'bus': { bg: '#e91e63', border: '#e91e63', color: 'white' },
-                    'rental': { bg: '#9c27b0', border: '#9c27b0', color: 'white' }
+                    'rental': { bg: '#9c27b0', border: '#9c27b0', color: 'white' },
+                    'taxi': { bg: '#e65100', border: '#e65100', color: 'white' }
                 };
                 
                 const colors = modeColors[mode] || modeColors['flight'];
@@ -7221,7 +7273,7 @@
             let transportTotal = 0;
             
             // Check each active transport mode
-            const modes = ['personal', 'flight', 'train', 'bus', 'rental'];
+            const modes = ['personal', 'flight', 'train', 'bus', 'rental', 'taxi'];
             modes.forEach(mode => {
                 const button = document.querySelector(`#at-transport-toggles [data-mode="${mode}"]`);
                 if (button && button.classList.contains('active')) {
@@ -7268,6 +7320,12 @@
                             subtotal = (rentalDays * rentalRate) + rentalInsurance + rentalFuel;
                             const rtEl = document.getElementById('at-rental-total');
                             if (rtEl) rtEl.textContent = `$${subtotal.toFixed(2)}`;
+                            break;
+                            
+                        case 'taxi':
+                            subtotal = parseFloat(document.getElementById('at-taxi-cost')?.value || 0);
+                            const taxiEl = document.getElementById('at-taxi-total');
+                            if (taxiEl) taxiEl.textContent = `$${subtotal.toFixed(2)}`;
                             break;
                     }
                     
@@ -8150,7 +8208,8 @@
                     'flight': { bg: '#ffc107', border: '#ffc107', color: 'black' },
                     'train': { bg: '#198754', border: '#198754', color: 'white' },
                     'bus': { bg: '#e83e8c', border: '#e83e8c', color: 'white' },
-                    'rental': { bg: '#6f42c1', border: '#6f42c1', color: 'white' }
+                    'rental': { bg: '#6f42c1', border: '#6f42c1', color: 'white' },
+                    'taxi': { bg: '#e65100', border: '#e65100', color: 'white' }
                 };
                 
                 const colors = modeColors[mode] || modeColors['flight'];
@@ -8216,7 +8275,7 @@
                 const transportData = {};
                 
                 // Save active modes and their values
-                const modes = ['personal', 'flight', 'train', 'bus', 'rental'];
+                const modes = ['personal', 'flight', 'train', 'bus', 'rental', 'taxi'];
                 modes.forEach(mode => {
                     const button = document.querySelector(`#dp-transport-toggles [data-mode="${mode}"]`);
                     const isActive = button && button.classList.contains('active');
@@ -8264,6 +8323,12 @@
                                     rate: document.getElementById('dp-rental-rate')?.value || '',
                                     insurance: document.getElementById('dp-rental-insurance')?.value || '',
                                     fuel: document.getElementById('dp-rental-fuel')?.value || ''
+                                };
+                                break;
+                                
+                            case 'taxi':
+                                transportData[mode].data = {
+                                    cost: document.getElementById('dp-taxi-cost')?.value || ''
                                 };
                                 break;
                                 
@@ -8404,6 +8469,10 @@
                     const rentalFuel = parseFloat(document.getElementById('tdp-rental-fuel').value) || 0;
                     subtotal = (rentalDays * rentalRate) + rentalInsurance + rentalFuel;
                     break;
+                    
+                case 'taxi':
+                    subtotal = parseFloat(document.getElementById('tdp-taxi-cost')?.value) || 0;
+                    break;
             }
             
             // Update subtotal display
@@ -8419,7 +8488,7 @@
             let totalTransport = 0;
             
             // Only include totals for active transport modes
-            const activeModes = ['flight', 'train', 'bus', 'rental'];
+            const activeModes = ['flight', 'train', 'bus', 'rental', 'taxi'];
             activeModes.forEach(mode => {
                 const button = document.querySelector(`[data-mode="${mode}"]`);
                 if (button && button.classList.contains('active')) {
@@ -8439,7 +8508,7 @@
             const transportData = {};
             
             // Save active modes and their values
-            const modes = ['personal', 'flight', 'train', 'bus', 'rental'];
+            const modes = ['personal', 'flight', 'train', 'bus', 'rental', 'taxi'];
             modes.forEach(mode => {
                 const button = document.querySelector(`[data-mode="${mode}"]`);
                 const isActive = button && button.classList.contains('active');
@@ -8483,6 +8552,12 @@
                                 rate: document.getElementById('tdp-rental-rate').value,
                                 insurance: document.getElementById('tdp-rental-insurance').value,
                                 fuel: document.getElementById('tdp-rental-fuel').value
+                            };
+                            break;
+                            
+                        case 'taxi':
+                            transportData[mode].data = {
+                                cost: document.getElementById('tdp-taxi-cost').value
                             };
                             break;
                             
@@ -8569,19 +8644,10 @@
         }
 
         function validateTransportation() {
-            // Check if at least one transport mode is selected
-            const modes = ['personal', 'flight', 'train', 'bus', 'rental'];
-            const hasActiveMode = modes.some(mode => {
-                const button = document.querySelector(`[data-mode="${mode}"]`);
-                return button && button.classList.contains('active');
-            });
-            
-            if (!hasActiveMode) {
-                showToast('Please select at least one transportation mode', 'error');
-                return false;
-            }
+            // Transportation is optional — no mode selection required
             
             // Validate each active mode has required values
+            const modes = ['personal', 'flight', 'train', 'bus', 'rental', 'taxi'];
             for (const mode of modes) {
                 const button = document.querySelector(`[data-mode="${mode}"]`);
                 if (button && button.classList.contains('active')) {
