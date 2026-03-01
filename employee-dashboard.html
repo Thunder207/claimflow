@@ -1878,6 +1878,61 @@
         let currentUser = null;
         let sessionId = null;
 
+        // 📸 Client-side image compression for faster uploads
+        // Resizes images to max 1200px width, JPEG quality 0.7 (~200-400KB)
+        function compressImage(file, maxWidth = 1200, quality = 0.7) {
+            return new Promise((resolve) => {
+                // Skip non-image files (PDFs etc)
+                if (!file.type.startsWith('image/')) {
+                    resolve(file);
+                    return;
+                }
+                // Skip already small files (<500KB)
+                if (file.size < 500 * 1024) {
+                    resolve(file);
+                    return;
+                }
+                const img = new Image();
+                const canvas = document.createElement('canvas');
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    img.onload = () => {
+                        let w = img.width, h = img.height;
+                        if (w > maxWidth) {
+                            h = Math.round(h * maxWidth / w);
+                            w = maxWidth;
+                        }
+                        canvas.width = w;
+                        canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, w, h);
+                        canvas.toBlob((blob) => {
+                            if (blob && blob.size < file.size) {
+                                const compressed = new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' });
+                                console.log(`📸 Compressed ${file.name}: ${(file.size/1024).toFixed(0)}KB → ${(compressed.size/1024).toFixed(0)}KB`);
+                                resolve(compressed);
+                            } else {
+                                resolve(file); // Original was smaller
+                            }
+                        }, 'image/jpeg', quality);
+                    };
+                    img.onerror = () => resolve(file);
+                    img.src = e.target.result;
+                };
+                reader.onerror = () => resolve(file);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // Compress an array of files
+        async function compressFiles(files) {
+            const result = [];
+            for (const f of files) {
+                result.push(await compressImage(f));
+            }
+            return result;
+        }
+
         // Input sanitization utility - prevent XSS attacks
         function sanitizeInput(input) {
             if (typeof input !== 'string') return '';
@@ -2397,7 +2452,8 @@
             formData.append('description', document.getElementById('description').value);
 
             if (fileInput.files[0]) {
-                formData.append('receipt', fileInput.files[0]);
+                const compressedReceipt = await compressImage(fileInput.files[0]);
+                formData.append('receipt', compressedReceipt);
             }
 
             try {
@@ -2982,8 +3038,9 @@
                 const formData = new FormData();
                 formData.append('claims', JSON.stringify(claims));
                 
-                // Add receipt files in the same order as claims
-                receipts.forEach(file => {
+                // Compress receipt images before upload
+                const compressedReceipts = await compressFiles(receipts);
+                compressedReceipts.forEach(file => {
                     formData.append('receipts', file);
                 });
                 
@@ -3260,11 +3317,11 @@
                 
                 claims.push({ month, year, plan_receipt: planVal, device_receipt: deviceVal });
                 
-                // Tag files with claim index
+                // Compress and tag files with claim index
                 for (let i = 0; i < receiptInput.files.length; i++) {
-                    const f = receiptInput.files[i];
-                    const taggedName = claims.length === 1 ? f.name : `claim${claims.length - 1}_${f.name}`;
-                    formData.append('receipts', new File([f], taggedName, { type: f.type }));
+                    const compressed = await compressImage(receiptInput.files[i]);
+                    const taggedName = claims.length === 1 ? compressed.name : `claim${claims.length - 1}_${compressed.name}`;
+                    formData.append('receipts', new File([compressed], taggedName, { type: compressed.type }));
                 }
             }
             
