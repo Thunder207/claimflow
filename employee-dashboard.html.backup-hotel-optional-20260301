@@ -7778,9 +7778,9 @@
                 }
                 html += `</div>`;
                 html += `<div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">`;
-                html += `<div style="flex: 1; min-width: 160px;"><label style="font-size: 12px; font-weight: 600; color: #880e4f; display: block; margin-bottom: 3px;">Hotel Name</label>
+                html += `<div style="flex: 1; min-width: 160px;"><label style="font-size: 12px; font-weight: 600; color: #880e4f; display: block; margin-bottom: 3px;">Hotel Name *</label>
                     <input type="text" value="${escapeHtml(h.name)}" onchange="tdpHotelFieldChanged(${idx},'name',this.value)" placeholder="e.g., Marriott Downtown" ${canEdit ? '' : 'disabled'} style="width: 100%; padding: 8px; border: 1px solid #e91e63; border-radius: 6px; font-size: 14px;"></div>`;
-                html += `<div style="flex: 1; min-width: 140px;"><label style="font-size: 12px; font-weight: 600; color: #880e4f; display: block; margin-bottom: 3px;">City</label>
+                html += `<div style="flex: 1; min-width: 140px;"><label style="font-size: 12px; font-weight: 600; color: #880e4f; display: block; margin-bottom: 3px;">City *</label>
                     <input type="text" value="${escapeHtml(h.city)}" onchange="tdpHotelFieldChanged(${idx},'city',this.value)" placeholder="e.g., Ottawa, ON" ${canEdit ? '' : 'disabled'} style="width: 100%; padding: 8px; border: 1px solid #e91e63; border-radius: 6px; font-size: 14px;"></div>`;
                 html += `</div>`;
                 html += `<div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">`;
@@ -7794,12 +7794,9 @@
                     <input type="number" value="${h.total > 0 ? h.total.toFixed(2) : ''}" onchange="tdpHotelFieldChanged(${idx},'total',this.value)" min="0" step="0.01" placeholder="0.00" ${canEdit ? '' : 'disabled'} style="width: 100%; padding: 8px; border: 1px solid #e91e63; border-radius: 6px; font-size: 14px; font-weight: 600;"></div>`;
                 html += `</div>`;
                 html += `<div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;">`;
-                html += `<div style="flex: 1; min-width: 200px;"><label style="font-size: 12px; font-weight: 600; color: #880e4f; display: block; margin-bottom: 3px;">📷 Receipt (multi-page OK)</label>
-                    <input type="file" id="tdp-hotel-receipt-${idx}" multiple accept="image/*,.pdf,.heic" onchange="tdpHotelReceiptChanged(${idx},this)" ${canEdit ? '' : 'disabled'} style="width: 100%; padding: 6px; background: white; border: 1px solid #e91e63; border-radius: 6px; font-size: 12px;">
-                    <div id="tdp-hotel-receipt-list-${idx}" style="font-size: 11px; color: #666; margin-top: 2px;">
-                    ${h.receiptFiles && h.receiptFiles.length > 0 ? h.receiptFiles.map(f => `📎 ${escapeHtml(f.name)}`).join('<br>') : (h.receiptName ? `📎 ${escapeHtml(h.receiptName)}` : '')}
-                    </div>
-                    <div style="font-size: 10px; color: #999; margin-top: 2px;">Upload all pages of your hotel folio. JPG, PNG, PDF, HEIC (max 10 files)</div></div>`;
+                html += `<div style="flex: 1; min-width: 200px;"><label style="font-size: 12px; font-weight: 600; color: #880e4f; display: block; margin-bottom: 3px;">📷 Receipt</label>
+                    <input type="file" id="tdp-hotel-receipt-${idx}" accept="image/*,application/pdf" capture="environment" onchange="tdpHotelReceiptChanged(${idx},this)" ${canEdit ? '' : 'disabled'} style="width: 100%; padding: 6px; background: white; border: 1px solid #e91e63; border-radius: 6px; font-size: 12px;">
+                    ${h.receiptName ? `<div style="font-size: 11px; color: #666; margin-top: 2px;">📎 ${escapeHtml(h.receiptName)}</div>` : ''}</div>`;
                 html += `</div>`;
                 if (distLines) {
                     html += `<div style="margin-top: 10px; padding: 8px; background: #fce4ec; border-radius: 6px; font-size: 12px; color: #880e4f;">${distLines}</div>`;
@@ -7872,20 +7869,9 @@
         function tdpHotelReceiptChanged(idx, input) {
             const h = tdpHotels[idx];
             if (!h) return;
-            if (input.files && input.files.length > 0) {
-                h.receiptFiles = Array.from(input.files);
-                h.receiptFile = input.files[0]; // backward compat
+            if (input.files && input.files[0]) {
+                h.receiptFile = input.files[0];
                 h.receiptName = input.files[0].name;
-                // Update receipt list display
-                const listEl = document.getElementById(`tdp-hotel-receipt-list-${idx}`);
-                if (listEl) {
-                    let html = '';
-                    for (let i = 0; i < input.files.length; i++) {
-                        html += `📄 ${input.files[i].name} ✅<br>`;
-                    }
-                    html += `<strong style="color:#880e4f;">${input.files.length} file${input.files.length > 1 ? 's' : ''} uploaded</strong>`;
-                    listEl.innerHTML = html;
-                }
             }
         }
 
@@ -9336,27 +9322,21 @@
         async function tdpSubmitTrip() {
             if (!tdpState.tripId) return;
             
-            // Validate hotel overlap (only for hotels with actual data)
-            const hotelsWithData = tdpHotels.filter(h => h.total && h.total > 0);
-            if (hotelsWithData.length > 1 && tdpValidateHotelOverlap()) {
+            // Validate hotel overlap
+            if (tdpValidateHotelOverlap()) {
                 showMessage('error', '⚠️ Hotel date ranges overlap. Please fix before submitting.');
                 return;
             }
             
-            // Validate hotel fields — only if hotel data is partially entered
-            // Hotels are OPTIONAL — empty hotels are fine (skip them)
-            const validHotels = [];
+            // Validate hotel fields
             for (let i = 0; i < tdpHotels.length; i++) {
                 const h = tdpHotels[i];
-                // Hotel is considered "entered" only if the user set a total > 0
-                // Pre-filled dates/city from trip defaults don't count
-                const hasHotelData = (h.total && h.total > 0);
-                
-                if (!hasHotelData) continue; // No hotel cost — skip it
-                
-                // Partial data — validate required fields
+                if (!h.name || !h.city) {
+                    showMessage('error', `⚠️ Hotel #${i+1}: Name and City are required.`);
+                    return;
+                }
                 if (!h.checkin || !h.checkout) {
-                    showMessage('error', `⚠️ Hotel #${i+1}: Check-in and Check-out dates are required when hotel info is entered.`);
+                    showMessage('error', `⚠️ Hotel #${i+1}: Check-in and Check-out dates are required.`);
                     return;
                 }
                 if (tdpCalcNights(h.checkin, h.checkout) < 1) {
@@ -9364,11 +9344,9 @@
                     return;
                 }
                 if (!h.total || h.total <= 0) {
-                    showMessage('error', `⚠️ Hotel #${i+1}: Total invoice amount is required when hotel info is entered.`);
+                    showMessage('error', `⚠️ Hotel #${i+1}: Total invoice amount is required.`);
                     return;
                 }
-                // Name and City are optional
-                validHotels.push(h);
             }
             
             // Validate transportation before showing confirm
