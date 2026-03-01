@@ -1387,8 +1387,8 @@
                         <span style="font-size: 12px; color: #999;">Uncheck to set different rates per night</span>
                     </div>
                     
-                    <!-- Hotel Receipt Upload (Trip level) -->
-                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ffc107;">
+                    <!-- Hotel Receipt Upload (Trip level only — hidden on Travel Auth) -->
+                    <div id="dp-hotel-receipt-section" style="display: none; margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ffc107;">
                         <label style="font-size: 13px; font-weight: 600; color: #856404; display: block; margin-bottom: 6px;">📷 Hotel Receipt / Folio (multi-page OK)</label>
                         <input type="file" id="dp-hotel-receipt" multiple accept="image/*,.pdf,.heic" onchange="dpHotelReceiptChanged(this)" style="width: 100%; padding: 8px; background: white; border: 2px dashed #ffc107; border-radius: 8px; font-size: 13px;">
                         <div id="dp-hotel-receipt-list" style="font-size: 12px; color: #666; margin-top: 6px;"></div>
@@ -8087,6 +8087,13 @@
             if (!card) return;
             
             card.style.display = hotelDays.length > 0 ? 'block' : 'none';
+            
+            // Show hotel receipt upload only on Trips tab (not Travel Auth)
+            const receiptSection = document.getElementById('dp-hotel-receipt-section');
+            if (receiptSection) {
+                const isTripsTab = document.getElementById('submit-tab')?.classList.contains('active');
+                receiptSection.style.display = (hotelDays.length > 0 && isTripsTab) ? 'block' : 'none';
+            }
             
             const nightsEl = document.getElementById('dp-hotel-nights-count');
             if (nightsEl) nightsEl.textContent = hotelDays.filter(d => d.hotelOn).length;
