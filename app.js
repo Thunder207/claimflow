@@ -1598,7 +1598,7 @@ app.get('/api/my-expenses', requireAuth, (req, res) => {
         SELECT e.*, t.trip_name, t.destination as trip_destination, t.start_date as trip_start, t.end_date as trip_end, t.status as trip_status
         FROM expenses e
         LEFT JOIN trips t ON e.trip_id = t.id
-        WHERE e.employee_id = ? 
+        WHERE e.employee_id = ? AND e.status != 'estimate'
         ORDER BY e.created_at DESC
     `;
     
