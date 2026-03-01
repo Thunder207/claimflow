@@ -2172,75 +2172,97 @@ try {
         }
 
         async function approvePhoneClaim(claimId, btn) {
-            // Two-click pattern (same as transit)
-            const actionsDiv = document.getElementById(`phone-actions-${claimId}`);
-            if (!actionsDiv) return;
+            if (_phoneActionInProgress) return;
             
-            // Replace with confirm/cancel
-            actionsDiv.innerHTML = `
-                <span style="color:#28a745;font-weight:600;font-size:13px;">Approve this claim?</span>
-                <button id="phone-confirm-${claimId}" style="background:#28a745;color:white;border:none;padding:8px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">✅ Confirm Approve</button>
-                <button id="phone-cancel-${claimId}" style="background:#6c757d;color:white;border:none;padding:8px 14px;border-radius:6px;font-size:13px;cursor:pointer;">Cancel</button>
-            `;
-            
-            document.getElementById(`phone-cancel-${claimId}`).onclick = () => loadPendingPhoneClaims();
-            document.getElementById(`phone-confirm-${claimId}`).onclick = async () => {
-                _phoneActionInProgress = true;
-                try {
-                    const resp = await fetch(`/api/phone-claims/${claimId}/approve`, {
-                        method: 'POST',
-                        headers: { 'Authorization': 'Bearer ' + sessionId, 'Content-Type': 'application/json' }
-                    });
-                    const result = await resp.json();
-                    if (resp.ok && result.success) {
-                        showMessage('success', '✅ Phone claim approved');
-                        loadPendingPhoneClaims();
-                    } else {
-                        showMessage('danger', result.error || 'Failed to approve');
-                    }
-                } catch (err) {
-                    showMessage('danger', 'Network error');
+            // Two-click pattern — same as transit
+            if (!btn || !btn.dataset.confirmed) {
+                if (btn) {
+                    const parent = btn.parentElement;
+                    const rejectBtn = parent.querySelector('button:nth-child(3)');
+                    if (rejectBtn) rejectBtn.style.display = 'none';
+                    const receiptBtn = parent.querySelector('button:nth-child(1)');
+                    if (receiptBtn && receiptBtn !== btn) receiptBtn.style.display = 'none';
+                    btn.dataset.confirmed = 'pending';
+                    btn.innerHTML = '✅ Confirm Approve';
+                    btn.style.background = '#1e7e34';
+                    const cancelBtn = document.createElement('button');
+                    cancelBtn.innerHTML = '✖ Cancel';
+                    cancelBtn.style.cssText = 'background:#6c757d;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;';
+                    cancelBtn.onclick = function(e) { e.stopPropagation(); loadPendingPhoneClaims(); };
+                    parent.appendChild(cancelBtn);
                 }
-                _phoneActionInProgress = false;
-            };
+                return;
+            }
+            
+            _phoneActionInProgress = true;
+            if (btn) { btn.innerHTML = '⏳ Approving...'; btn.disabled = true; }
+            try {
+                const resp = await fetch(`/api/phone-claims/${claimId}/approve`, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + sessionId, 'Content-Type': 'application/json' }
+                });
+                const result = await resp.json();
+                if (resp.ok && result.success) {
+                    showMessage('success', '✅ Phone claim approved');
+                    loadPendingPhoneClaims();
+                } else {
+                    showMessage('danger', result.error || 'Failed to approve');
+                }
+            } catch (err) {
+                showMessage('danger', 'Network error');
+            }
+            _phoneActionInProgress = false;
         }
 
         async function rejectPhoneClaim(claimId, employeeName, btn) {
-            const actionsDiv = document.getElementById(`phone-actions-${claimId}`);
-            if (!actionsDiv) return;
+            if (_phoneActionInProgress) return;
             
-            actionsDiv.innerHTML = `
-                <div style="width:100%;">
-                    <input type="text" id="phone-reject-reason-${claimId}" placeholder="Reason for rejection..." style="width:100%;padding:8px;border:2px solid #dc3545;border-radius:6px;margin-bottom:8px;font-size:13px;">
-                    <div style="display:flex;gap:8px;">
-                        <button id="phone-reject-confirm-${claimId}" style="background:#dc3545;color:white;border:none;padding:8px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">❌ Confirm Reject</button>
-                        <button id="phone-reject-cancel-${claimId}" style="background:#6c757d;color:white;border:none;padding:8px 14px;border-radius:6px;font-size:13px;cursor:pointer;">Cancel</button>
-                    </div>
-                </div>
-            `;
-            
-            document.getElementById(`phone-reject-cancel-${claimId}`).onclick = () => loadPendingPhoneClaims();
-            document.getElementById(`phone-reject-confirm-${claimId}`).onclick = async () => {
-                _phoneActionInProgress = true;
-                const reason = document.getElementById(`phone-reject-reason-${claimId}`).value.trim();
-                try {
-                    const resp = await fetch(`/api/phone-claims/${claimId}/reject`, {
-                        method: 'POST',
-                        headers: { 'Authorization': 'Bearer ' + sessionId, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ reason: reason || 'No reason provided' })
-                    });
-                    const result = await resp.json();
-                    if (resp.ok && result.success) {
-                        showMessage('success', '❌ Phone claim rejected');
-                        loadPendingPhoneClaims();
-                    } else {
-                        showMessage('danger', result.error || 'Failed to reject');
-                    }
-                } catch (err) {
-                    showMessage('danger', 'Network error');
+            if (btn) {
+                const parent = btn.closest('div[id^="phone-actions"]');
+                if (!parent) return;
+                parent.innerHTML = `
+                    <div style="display:flex;flex-direction:column;gap:8px;width:100%;">
+                        <label style="font-size:13px;font-weight:600;color:#dc3545;">Rejection reason for ${employeeName}:</label>
+                        <input type="text" id="phone-reject-reason-${claimId}" placeholder="Enter reason..." 
+                               style="padding:8px 12px;border:2px solid #dc3545;border-radius:6px;font-size:13px;width:100%;">
+                        <div style="display:flex;gap:8px;">
+                            <button onclick="submitPhoneReject(${claimId})" 
+                                    style="background:#dc3545;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">
+                                ❌ Confirm Reject
+                            </button>
+                            <button onclick="loadPendingPhoneClaims()" 
+                                    style="background:#6c757d;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">
+                                ✖ Cancel
+                            </button>
+                        </div>
+                    </div>`;
+                const input = document.getElementById('phone-reject-reason-' + claimId);
+                if (input) input.focus();
+            }
+        }
+
+        async function submitPhoneReject(claimId) {
+            if (_phoneActionInProgress) return;
+            _phoneActionInProgress = true;
+            const input = document.getElementById('phone-reject-reason-' + claimId);
+            const reason = input ? input.value.trim() : '';
+            try {
+                const resp = await fetch(`/api/phone-claims/${claimId}/reject`, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + sessionId, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reason: reason || 'No reason provided' })
+                });
+                const result = await resp.json();
+                if (resp.ok && result.success) {
+                    showMessage('success', '❌ Phone claim rejected');
+                    loadPendingPhoneClaims();
+                } else {
+                    showMessage('danger', result.error || 'Failed to reject');
                 }
-                _phoneActionInProgress = false;
-            };
+            } catch (err) {
+                showMessage('danger', 'Network error');
+            }
+            _phoneActionInProgress = false;
         }
 
         async function loadExpensesWithSearch() {
