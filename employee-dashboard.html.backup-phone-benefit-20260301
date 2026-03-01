@@ -910,7 +910,6 @@
                         <select id="sa-category" required onchange="handleCategoryChange()">
                             <option value="">Choose category...</option>
                             <option value="Public Transit Benefit">🚍 Public Transit Benefit</option>
-                            <option value="Phone Benefit">📱 Phone Benefit</option>
                             <option value="Transport">🚗 Transport</option>
                             <option value="Phone/Telecom">📱 Phone/Telecom</option>
                             <option value="Office Supplies">📝 Office Supplies</option>
@@ -994,43 +993,6 @@
                     </div>
                     <div id="transit-history-list" style="display: flex; flex-direction: column; gap: 8px;">
                         <!-- History items will be populated by JavaScript -->
-                    </div>
-                </div>
-            </div>
-
-            <!-- 📱 Phone Benefit Form (shown when category selected) -->
-            <div id="phone-form-container" style="display: none; margin-top: 20px; border: 2px solid #7c4dff; border-radius: 12px; padding: 20px; background: linear-gradient(135deg, #ede7f6 0%, #f3e5f5 100%);">
-                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 15px;">
-                    <h4 style="color: #7c4dff; margin: 0; display: flex; align-items: center; gap: 8px;">
-                        📱 <span>Phone Benefit</span>
-                    </h4>
-                </div>
-                <p style="color: #666; font-size: 13px; margin: 0 0 15px 0;">
-                    Monthly reimbursement for phone plan and device. Maximum: <strong id="phone-max-display">$100.00</strong>/month (<span id="phone-plan-max-display">$50.00</span> plan + <span id="phone-device-max-display">$50.00</span> device)
-                </p>
-                
-                <div id="phone-claims-cards" style="display: flex; flex-direction: column; gap: 15px;">
-                    <!-- Phone claim cards added dynamically -->
-                </div>
-                
-                <button type="button" id="phone-add-month-btn" onclick="addPhoneClaimCard()" style="margin-top: 12px; padding: 10px 20px; background: #7c4dff; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;">
-                    + Add Another Month
-                </button>
-                
-                <div id="phone-summary" style="display: none; margin-top: 15px; padding: 12px; background: #f3e5f5; border-radius: 8px; font-size: 14px; color: #4a148c; font-weight: 600;">
-                </div>
-                
-                <button type="button" id="phone-submit-btn" onclick="submitPhoneClaims()" style="margin-top: 15px; width: 100%; padding: 14px; background: linear-gradient(135deg, #7c4dff 0%, #651fff 100%); color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer;">
-                    📱 Submit for Approval
-                </button>
-                
-                <!-- Phone History Section -->
-                <div id="phone-history-section" style="margin-top: 30px; display: none;">
-                    <hr style="border: none; border-top: 1px solid #dee2e6; margin-bottom: 15px;">
-                    <div style="color: #495057; font-size: 14px; font-weight: 600; margin-bottom: 10px;">
-                        Phone Benefit History
-                    </div>
-                    <div id="phone-history-list" style="display: flex; flex-direction: column; gap: 8px;">
                     </div>
                 </div>
             </div>
@@ -2397,25 +2359,17 @@
             const transitContainer = document.getElementById('transit-form-container');
             const addToDraftBtn = document.querySelector('button[data-i18n="add_to_draft"]');
 
-            const phoneContainer = document.getElementById('phone-form-container');
-
             if (category === 'Public Transit Benefit') {
+                // Hide regular fields + Add to Draft button, show transit form
                 regularFields.forEach(field => field.style.display = 'none');
                 if (addToDraftBtn) addToDraftBtn.style.display = 'none';
                 transitContainer.style.display = 'block';
-                phoneContainer.style.display = 'none';
                 loadTransitForm();
-            } else if (category === 'Phone Benefit') {
-                regularFields.forEach(field => field.style.display = 'none');
-                if (addToDraftBtn) addToDraftBtn.style.display = 'none';
-                transitContainer.style.display = 'none';
-                phoneContainer.style.display = 'block';
-                loadPhoneForm();
             } else {
+                // Show regular fields + Add to Draft button, hide transit form
                 regularFields.forEach(field => field.style.display = 'block');
                 if (addToDraftBtn) addToDraftBtn.style.display = '';
                 transitContainer.style.display = 'none';
-                phoneContainer.style.display = 'none';
             }
         }
 
@@ -2977,337 +2931,6 @@
             const months = ['January', 'February', 'March', 'April', 'May', 'June',
                            'July', 'August', 'September', 'October', 'November', 'December'];
             return months[monthNum - 1] || 'Unknown';
-        }
-
-        // ═══════════════════════════════════════════════════════════════════════════════
-        // 📱 PHONE BENEFIT FUNCTIONS
-        // ═══════════════════════════════════════════════════════════════════════════════
-
-        let phoneSettings = { plan_max: 50, device_max: 50, claim_window: 2 };
-        let phoneEligibleMonths = [];
-        let phoneExistingClaims = [];
-        let phoneClaimCardCounter = 0;
-        let phoneClaimCards = []; // track active cards
-
-        async function loadPhoneForm() {
-            try {
-                const settingsResp = await fetch('/api/settings/phone', { headers: { 'Authorization': `Bearer ${sessionId}` } });
-                if (settingsResp.ok) {
-                    phoneSettings = await settingsResp.json();
-                    document.getElementById('phone-plan-max-display').textContent = `$${phoneSettings.plan_max.toFixed(2)}`;
-                    document.getElementById('phone-device-max-display').textContent = `$${phoneSettings.device_max.toFixed(2)}`;
-                    document.getElementById('phone-max-display').textContent = `$${(phoneSettings.plan_max + phoneSettings.device_max).toFixed(2)}`;
-                }
-                
-                const eligibleResp = await fetch('/api/phone-claims/eligible', { headers: { 'Authorization': `Bearer ${sessionId}` } });
-                if (eligibleResp.ok) {
-                    const data = await eligibleResp.json();
-                    phoneEligibleMonths = data.eligible || [];
-                    phoneExistingClaims = data.existing || [];
-                }
-                
-                // Load history
-                const histResp = await fetch('/api/phone-claims/history', { headers: { 'Authorization': `Bearer ${sessionId}` } });
-                let phoneHistory = [];
-                if (histResp.ok) phoneHistory = await histResp.json();
-                
-                // Reset cards
-                phoneClaimCardCounter = 0;
-                phoneClaimCards = [];
-                document.getElementById('phone-claims-cards').innerHTML = '';
-                
-                // Add first card
-                addPhoneClaimCard();
-                
-                // Render history
-                renderPhoneHistory(phoneHistory);
-                
-            } catch (e) {
-                console.error('Phone form load error:', e);
-            }
-        }
-
-        function getAvailablePhoneMonths(excludeCardIndex) {
-            const mn = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-            const claimedSet = new Set(phoneExistingClaims.map(c => `${c.claim_month}-${c.claim_year}`));
-            // Also exclude months selected in other cards
-            const selectedInCards = new Set();
-            phoneClaimCards.forEach((card, idx) => {
-                if (idx !== excludeCardIndex) {
-                    const sel = document.getElementById(`phone-month-${card.id}`);
-                    if (sel && sel.value) selectedInCards.add(sel.value);
-                }
-            });
-            
-            return phoneEligibleMonths.filter(m => {
-                const key = `${m.month}-${m.year}`;
-                return !claimedSet.has(key) && !selectedInCards.has(key);
-            }).map(m => ({ value: `${m.month}-${m.year}`, label: `${mn[m.month - 1]} ${m.year}` }));
-        }
-
-        function addPhoneClaimCard() {
-            const available = getAvailablePhoneMonths(-1);
-            if (available.length === 0) {
-                showMessage('info', 'All eligible months have been claimed.');
-                return;
-            }
-            
-            const cardId = phoneClaimCardCounter++;
-            phoneClaimCards.push({ id: cardId });
-            
-            const container = document.getElementById('phone-claims-cards');
-            const div = document.createElement('div');
-            div.id = `phone-card-${cardId}`;
-            div.style.cssText = 'border: 1px solid #d1c4e9; border-radius: 10px; padding: 16px; background: white;';
-            
-            const monthOptions = available.map(m => `<option value="${m.value}">${m.label}</option>`).join('');
-            
-            div.innerHTML = `
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                    <strong style="color:#7c4dff;">Claiming for:</strong>
-                    <select id="phone-month-${cardId}" onchange="updatePhoneSummary()" style="padding:8px 12px;border-radius:8px;border:2px solid #7c4dff;font-size:14px;font-weight:600;">
-                        <option value="">Select month...</option>
-                        ${monthOptions}
-                    </select>
-                    ${phoneClaimCards.length > 1 ? `<button onclick="removePhoneCard(${cardId})" style="background:#dc3545;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;">✕</button>` : ''}
-                </div>
-                
-                <div style="border-top:1px solid #e0e0e0;padding-top:12px;margin-bottom:12px;">
-                    <div style="font-weight:600;color:#5e35b1;margin-bottom:8px;">── Phone Plan ──</div>
-                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
-                        <label style="min-width:120px;font-size:13px;">Receipt Amount:</label>
-                        <span style="font-size:15px;">$</span>
-                        <input type="number" id="phone-plan-${cardId}" step="0.01" min="0" placeholder="0.00" onchange="updatePhoneClaimAmounts(${cardId})" oninput="updatePhoneClaimAmounts(${cardId})" style="flex:1;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:14px;">
-                    </div>
-                    <div style="font-size:12px;color:#666;">
-                        Claim: <strong id="phone-plan-claim-${cardId}">$0.00</strong> · Max: $${phoneSettings.plan_max.toFixed(2)}
-                    </div>
-                </div>
-                
-                <div style="border-top:1px solid #e0e0e0;padding-top:12px;margin-bottom:12px;">
-                    <div style="font-weight:600;color:#5e35b1;margin-bottom:8px;">── Phone Device ──</div>
-                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
-                        <label style="min-width:120px;font-size:13px;">Receipt Amount:</label>
-                        <span style="font-size:15px;">$</span>
-                        <input type="number" id="phone-device-${cardId}" step="0.01" min="0" value="0" placeholder="0.00" onchange="updatePhoneClaimAmounts(${cardId})" oninput="updatePhoneClaimAmounts(${cardId})" style="flex:1;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:14px;">
-                    </div>
-                    <div style="font-size:12px;color:#666;">
-                        Claim: <strong id="phone-device-claim-${cardId}">$0.00</strong> · Max: $${phoneSettings.device_max.toFixed(2)}
-                        <br><span style="color:#999;font-size:11px;">Leave at $0 if you don't have a device payment</span>
-                    </div>
-                </div>
-                
-                <div style="border-top:1px solid #e0e0e0;padding-top:12px;">
-                    <div style="font-weight:600;color:#5e35b1;margin-bottom:8px;">── Receipt Upload ──</div>
-                    <input type="file" id="phone-receipt-${cardId}" multiple accept=".jpg,.jpeg,.png,.pdf" onchange="updatePhoneReceiptList(${cardId})" style="display:none;">
-                    <button type="button" onclick="document.getElementById('phone-receipt-${cardId}').click()" style="padding:8px 16px;background:#ede7f6;color:#5e35b1;border:2px dashed #b39ddb;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;width:100%;">
-                        📎 Upload Phone Bill (multiple pages OK)
-                    </button>
-                    <div id="phone-receipt-list-${cardId}" style="margin-top:8px;font-size:12px;color:#666;"></div>
-                    <div style="font-size:11px;color:#999;margin-top:4px;">Accepted: JPG, PNG, PDF (max 10 files, 10MB each)</div>
-                </div>
-                
-                <div style="margin-top:12px;padding:10px;background:#f3e5f5;border-radius:8px;text-align:center;">
-                    <span style="font-size:13px;color:#4a148c;font-weight:600;">Monthly Total: <strong id="phone-total-${cardId}">$0.00</strong></span>
-                </div>
-            `;
-            container.appendChild(div);
-            updatePhoneSummary();
-        }
-
-        function removePhoneCard(cardId) {
-            const idx = phoneClaimCards.findIndex(c => c.id === cardId);
-            if (idx >= 0) phoneClaimCards.splice(idx, 1);
-            const el = document.getElementById(`phone-card-${cardId}`);
-            if (el) el.remove();
-            updatePhoneSummary();
-        }
-
-        function updatePhoneClaimAmounts(cardId) {
-            const planInput = parseFloat(document.getElementById(`phone-plan-${cardId}`).value) || 0;
-            const deviceInput = parseFloat(document.getElementById(`phone-device-${cardId}`).value) || 0;
-            const planClaim = Math.min(planInput, phoneSettings.plan_max);
-            const deviceClaim = Math.min(deviceInput, phoneSettings.device_max);
-            const total = planClaim + deviceClaim;
-            
-            document.getElementById(`phone-plan-claim-${cardId}`).textContent = `$${planClaim.toFixed(2)}${planInput > phoneSettings.plan_max ? ' (capped)' : ''}`;
-            document.getElementById(`phone-device-claim-${cardId}`).textContent = `$${deviceClaim.toFixed(2)}${deviceInput > phoneSettings.device_max ? ' (capped)' : ''}`;
-            document.getElementById(`phone-total-${cardId}`).textContent = `$${total.toFixed(2)}`;
-            updatePhoneSummary();
-        }
-
-        function updatePhoneReceiptList(cardId) {
-            const input = document.getElementById(`phone-receipt-${cardId}`);
-            const listDiv = document.getElementById(`phone-receipt-list-${cardId}`);
-            if (!input.files.length) {
-                listDiv.innerHTML = '';
-                return;
-            }
-            let html = '';
-            for (let i = 0; i < input.files.length; i++) {
-                html += `<div style="padding:3px 0;">📄 ${input.files[i].name} ✅</div>`;
-            }
-            html += `<div style="color:#7c4dff;font-weight:600;">${input.files.length} file${input.files.length > 1 ? 's' : ''} uploaded</div>`;
-            listDiv.innerHTML = html;
-        }
-
-        function updatePhoneSummary() {
-            let grandTotal = 0;
-            let validCards = 0;
-            phoneClaimCards.forEach(card => {
-                const plan = parseFloat(document.getElementById(`phone-plan-${card.id}`)?.value) || 0;
-                const device = parseFloat(document.getElementById(`phone-device-${card.id}`)?.value) || 0;
-                const total = Math.min(plan, phoneSettings.plan_max) + Math.min(device, phoneSettings.device_max);
-                grandTotal += total;
-                if (total > 0) validCards++;
-            });
-            const summaryDiv = document.getElementById('phone-summary');
-            if (validCards > 0) {
-                summaryDiv.style.display = 'block';
-                summaryDiv.innerHTML = `Total Claim: <strong>$${grandTotal.toFixed(2)}</strong> (${validCards} month${validCards > 1 ? 's' : ''})`;
-            } else {
-                summaryDiv.style.display = 'none';
-            }
-        }
-
-        async function submitPhoneClaims() {
-            const claims = [];
-            const formData = new FormData();
-            let hasError = false;
-            
-            for (const card of phoneClaimCards) {
-                const monthSel = document.getElementById(`phone-month-${card.id}`);
-                const planInput = document.getElementById(`phone-plan-${card.id}`);
-                const receiptInput = document.getElementById(`phone-receipt-${card.id}`);
-                
-                if (!monthSel.value) {
-                    monthSel.style.border = '2px solid red';
-                    monthSel.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    showMessage('error', '❌ Please select a month for each claim.');
-                    hasError = true; break;
-                }
-                
-                const planVal = parseFloat(planInput.value) || 0;
-                if (planVal <= 0) {
-                    planInput.style.border = '2px solid red';
-                    planInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    showMessage('error', '❌ Phone plan amount is required.');
-                    hasError = true; break;
-                }
-                
-                if (!receiptInput.files.length) {
-                    showMessage('error', '❌ Please upload your phone bill receipt.');
-                    receiptInput.parentElement.querySelector('button').style.border = '2px solid red';
-                    receiptInput.parentElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    hasError = true; break;
-                }
-                
-                if (receiptInput.files.length > 10) {
-                    showMessage('error', '❌ Maximum 10 files per month.');
-                    hasError = true; break;
-                }
-                
-                const [month, year] = monthSel.value.split('-').map(Number);
-                const deviceVal = parseFloat(document.getElementById(`phone-device-${card.id}`).value) || 0;
-                
-                claims.push({ month, year, plan_receipt: planVal, device_receipt: deviceVal });
-                
-                // Tag files with claim index
-                for (let i = 0; i < receiptInput.files.length; i++) {
-                    const f = receiptInput.files[i];
-                    const taggedName = claims.length === 1 ? f.name : `claim${claims.length - 1}_${f.name}`;
-                    formData.append('receipts', new File([f], taggedName, { type: f.type }));
-                }
-            }
-            
-            if (hasError) return;
-            
-            formData.append('claims', JSON.stringify(claims));
-            
-            const btn = document.getElementById('phone-submit-btn');
-            btn.disabled = true;
-            btn.textContent = '⏳ Submitting...';
-            
-            try {
-                const resp = await fetch('/api/phone-claims', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${sessionId}` },
-                    body: formData
-                });
-                const result = await resp.json();
-                if (resp.ok && result.success) {
-                    showMessage('success', `✅ ${result.message}`);
-                    loadPhoneForm(); // Refresh
-                } else {
-                    showMessage('error', '❌ ' + (result.error || 'Submission failed'));
-                    alert('❌ ' + (result.error || 'Submission failed'));
-                }
-            } catch (e) {
-                showMessage('error', '❌ Network error');
-            } finally {
-                btn.disabled = false;
-                btn.textContent = '📱 Submit for Approval';
-            }
-        }
-
-        function renderPhoneHistory(history) {
-            const section = document.getElementById('phone-history-section');
-            const list = document.getElementById('phone-history-list');
-            if (!history || history.length === 0) {
-                section.style.display = 'none';
-                return;
-            }
-            section.style.display = 'block';
-            const mn = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-            list.innerHTML = history.map(h => {
-                const monthStr = `${mn[h.claim_month - 1]} ${h.claim_year}`;
-                const statusColors = { approved: '#28a745', pending: '#ffc107', rejected: '#dc3545' };
-                const statusIcons = { approved: '✅', pending: '⏳', rejected: '❌' };
-                const pdfBtn = (h.status === 'approved' && h.report_generated_at)
-                    ? `<button onclick="downloadPhonePDF(${h.id})" style="background:#667eea;color:white;border:none;padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer;">📄 PDF</button>`
-                    : (h.status === 'approved' ? `<button onclick="generatePhonePDF(${h.id}, this)" style="background:#ffc107;color:#212529;border:none;padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer;">📄 Generate</button>` : '');
-                return `
-                    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:white;border-radius:8px;border-left:3px solid ${statusColors[h.status] || '#ccc'};">
-                        <div>
-                            <div style="font-weight:600;color:#333;font-size:13px;">${statusIcons[h.status] || ''} ${monthStr}</div>
-                            <div style="font-size:12px;color:#666;">Plan: $${parseFloat(h.plan_claim_amount).toFixed(2)} + Device: $${parseFloat(h.device_claim_amount).toFixed(2)} = <strong>$${parseFloat(h.total_claim_amount).toFixed(2)}</strong></div>
-                            ${h.rejection_reason ? `<div style="font-size:11px;color:#dc3545;margin-top:2px;">"${h.rejection_reason}"</div>` : ''}
-                        </div>
-                        <div style="display:flex;align-items:center;gap:6px;">
-                            ${pdfBtn}
-                            <span style="background:${statusColors[h.status]};color:white;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;text-transform:capitalize;">${h.status}</span>
-                        </div>
-                    </div>`;
-            }).join('');
-        }
-
-        function downloadPhonePDF(claimId) {
-            window.open(`/api/phone-claims/${claimId}/pdf?auth=${sessionId}`, '_blank');
-        }
-
-        async function generatePhonePDF(claimId, btn) {
-            btn.disabled = true;
-            btn.textContent = '⏳...';
-            try {
-                const resp = await fetch(`/api/phone-claims/${claimId}/generate-pdf`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${sessionId}` }
-                });
-                if (resp.ok) {
-                    btn.textContent = '📄 PDF';
-                    btn.style.background = '#667eea';
-                    btn.style.color = 'white';
-                    btn.disabled = false;
-                    btn.onclick = () => downloadPhonePDF(claimId);
-                    showMessage('success', '✅ PDF generated');
-                } else {
-                    btn.textContent = '❌ Failed';
-                    btn.disabled = false;
-                }
-            } catch (e) {
-                btn.textContent = '❌ Error';
-                btn.disabled = false;
-            }
         }
 
         // ═══════════════════════════════════════════════════════════════════════════════
@@ -5292,37 +4915,6 @@
                     }
                 } catch (e) { console.log('Transit history load skipped:', e); }
 
-                // Also load phone claims and merge them in
-                try {
-                    const phoneResp = await apiCall('/api/phone-claims/history');
-                    if (phoneResp.ok) {
-                        const phoneData = await phoneResp.json();
-                        const mn = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-                        const phoneClaims = (phoneData || []).map(pc => ({
-                            id: 'phone-' + pc.id,
-                            _phoneId: pc.id,
-                            _isPhone: true,
-                            _isTransit: false,
-                            category: 'Phone Benefit',
-                            expense_type: '📱 Phone Benefit',
-                            meal_name: '',
-                            amount: pc.total_claim_amount,
-                            date: pc.approved_date || pc.submitted_date || pc.created_at,
-                            vendor: 'Phone Benefit',
-                            description: `${mn[pc.claim_month - 1]} ${pc.claim_year} — Plan: $${parseFloat(pc.plan_claim_amount).toFixed(2)} + Device: $${parseFloat(pc.device_claim_amount).toFixed(2)}`,
-                            status: pc.status,
-                            rejection_reason: pc.rejection_reason || '',
-                            approval_comment: '',
-                            return_reason: '',
-                            location: '',
-                            trip_name: null,
-                            report_ref: pc.report_ref || null,
-                            has_pdf: !!(pc.report_generated_at)
-                        }));
-                        sanitizedExpenses.push(...phoneClaims);
-                    }
-                } catch (e) { console.log('Phone history load skipped:', e); }
-
                 // Sort by date descending
                 sanitizedExpenses.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
@@ -5417,7 +5009,7 @@
             const standalone = [];  // everything else
 
             expenses.forEach(exp => {
-                if (exp._isTransit || exp._isPhone) {
+                if (exp._isTransit) {
                     benefits.push(exp);
                 } else if (exp.trip_name) {
                     if (!trips[exp.trip_name]) {
@@ -5521,28 +5113,13 @@
             if (benefits.length > 0) {
                 html += `<div style="margin:20px 0 8px;padding:8px 0;border-bottom:2px solid #0891b2;"><strong style="color:#0891b2;font-size:14px;text-transform:uppercase;letter-spacing:1px;">Benefits</strong></div>`;
                 benefits.forEach(b => {
-                    let pdfBtn = '';
-                    let icon = '🚍';
-                    let label = 'Public Transit';
-                    let borderColor = '#0891b2';
-                    
-                    if (b._isPhone) {
-                        icon = '📱';
-                        label = 'Phone Benefit';
-                        borderColor = '#7c4dff';
-                        if (b.has_pdf && b.status === 'approved') {
-                            pdfBtn = `<button onclick="event.stopPropagation();downloadPhonePDF(${b._phoneId})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`;
-                        }
-                    } else if (b._isTransit) {
-                        if (b.has_pdf && b.status === 'approved') {
-                            pdfBtn = `<button onclick="event.stopPropagation();downloadTransitPDF(${b._transitId})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`;
-                        }
-                    }
-                    
+                    const pdfBtn = (b.has_pdf && b.status === 'approved')
+                        ? `<button onclick="event.stopPropagation();downloadTransitPDF(${b._transitId})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`
+                        : '';
                     html += `
-                    <div style="background:#fff;border-radius:10px;padding:14px 18px;margin-bottom:10px;border-left:4px solid ${borderColor};display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                    <div style="background:#fff;border-radius:10px;padding:14px 18px;margin-bottom:10px;border-left:4px solid #0891b2;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
                         <div>
-                            <strong style="color:#1e293b;font-size:14px;">${icon} ${label} — ${b.description ? b.description.split('—')[0].trim() : ''}</strong>
+                            <strong style="color:#1e293b;font-size:14px;">🚍 Public Transit — ${b.description ? b.description.split('—')[0].trim() : ''}</strong>
                             <div style="font-size:13px;color:#64748b;margin-top:3px;">
                                 <strong style="color:#059669;">$${parseFloat(b.amount).toFixed(2)}</strong>
                                 ${b.date ? ` · ${b.status === 'approved' ? 'Approved' : 'Submitted'} ${fmtDate(b.date, true)}` : ''}
