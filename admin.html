@@ -1810,6 +1810,7 @@ try {
         // 🚍 TRANSIT CLAIMS APPROVAL (Supervisor)
         // ═══════════════════════════════════════════════════════════
         async function loadPendingTransitClaims() {
+            if (_transitActionInProgress) return; // Don't reload while confirm/action is open
             const section = document.getElementById('transit-claims-section');
             const list = document.getElementById('transit-claims-list');
             if (!section || !list) return;
@@ -1871,8 +1872,12 @@ try {
             }
         }
         
+        let _transitActionInProgress = false;
         async function approveTransitClaim(claimId) {
-            if (!confirm('Approve this transit benefit claim?')) return;
+            if (_transitActionInProgress) return;
+            _transitActionInProgress = true;
+            const confirmed = confirm('Approve this transit benefit claim?');
+            if (!confirmed) { _transitActionInProgress = false; return; }
             try {
                 const resp = await fetch(`/api/transit-claims/${claimId}/approve`, {
                     method: 'POST',
@@ -1888,6 +1893,7 @@ try {
             } catch (err) {
                 showMessage('danger', 'Network error');
             }
+            _transitActionInProgress = false;
         }
         
         async function rejectTransitClaim(claimId, employeeName) {
