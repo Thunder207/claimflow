@@ -5972,7 +5972,8 @@ function generateTransitBenefitPDF(claimIds, db) {
             const doc = new PDFDocument({ size: 'LETTER', margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN }, bufferPages: true });
             const buffers = [];
             doc.on('data', chunk => buffers.push(chunk));
-            doc.on('end', () => resolve(Buffer.concat(buffers)));
+            doc.on('end', () => { pdfLog('[PDF-GEN] doc end event, buffer size:', Buffer.concat(buffers).length); resolve(Buffer.concat(buffers)); });
+            doc.on('error', (err) => { pdfLog('[PDF-GEN] doc error event:', err.message); reject(err); });
 
             const pageW = 612 - MARGIN * 2;
             const LEFT = MARGIN;
@@ -6110,14 +6111,36 @@ function generateTransitBenefitPDF(claimIds, db) {
 
                             try {
                                 const ext = path.extname(receiptPath).toLowerCase();
-                                if (['.jpg', '.jpeg', '.png'].includes(ext)) {
-                                    doc.image(receiptPath, LEFT, doc.y, { fit: [pageW, 580], align: 'center' });
+                                const fileSize = fs.statSync(receiptPath).size;
+                                if (['.jpg', '.jpeg', '.png'].includes(ext) && fileSize > 100) {
+                                    // Validate image by reading header bytes
+                                    const header = Buffer.alloc(8);
+                                    const fd = fs.openSync(receiptPath, 'r');
+                                    fs.readSync(fd, header, 0, 8, 0);
+                                    fs.closeSync(fd);
+                                    
+                                    const isPNG = header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47;
+                                    const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
+                                    
+                                    if (isPNG || isJPEG) {
+                                        pdfLog('[PDF-GEN] Embedding receipt image:', receiptPath, fileSize + 'b');
+                                        doc.image(receiptPath, LEFT, doc.y, { fit: [pageW, 580], align: 'center' });
+                                    } else {
+                                        pdfLog('[PDF-GEN] Invalid image header, skipping:', claim.receipt_file);
+                                        doc.fontSize(10).fillColor(COLORS.muted).text('Receipt file: ' + claim.receipt_file + ' (unsupported format)', { align: 'center' });
+                                    }
+                                } else if (fileSize <= 100) {
+                                    pdfLog('[PDF-GEN] Receipt too small (' + fileSize + 'b), skipping:', claim.receipt_file);
+                                    doc.fontSize(10).fillColor(COLORS.muted).text('Receipt file: ' + claim.receipt_file + ' (file too small to embed)', { align: 'center' });
                                 } else {
                                     doc.fontSize(10).fillColor(COLORS.muted).text('Receipt file attached: ' + claim.receipt_file, { align: 'center' });
                                 }
                             } catch (imgErr) {
+                                pdfLog('[PDF-GEN] Image error:', imgErr.message);
                                 doc.fontSize(10).fillColor(COLORS.muted).text('Receipt file: ' + claim.receipt_file + ' (could not embed)', { align: 'center' });
                             }
+                        } else {
+                            pdfLog('[PDF-GEN] Receipt not found:', receiptPath);
                         }
                     }
                 });
