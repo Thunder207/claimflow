@@ -2904,11 +2904,14 @@
                     document.getElementById('sa-category').value = '';
                     handleCategoryChange();
                 } else {
-                    showMessage('error', result.error || 'Failed to submit. Please try again.');
+                    const errMsg = result.error || 'Failed to submit. Please try again.';
+                    showMessage('error', errMsg);
+                    alert('⚠️ ' + errMsg);
                 }
             } catch (error) {
                 console.error('Transit submission error:', error);
                 showMessage('error', 'Network error — please try again. ' + error.message);
+                alert('⚠️ Network error: ' + error.message);
             } finally {
                 btn.disabled = false;
                 btn.textContent = originalText;
@@ -5079,6 +5082,7 @@
 
                 textElement.textContent = cleanMessage;
                 messageElement.style.display = 'block';
+                messageElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
                 // Auto-hide after 7 seconds for error messages (users need time to read), 4 seconds for success
                 const hideTime = type === 'error' ? 7000 : 4000;
