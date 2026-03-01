@@ -5782,7 +5782,7 @@ app.get('/api/transit-claims/eligible', requireAuth, (req, res) => {
         
         // Get existing claims for eligible months
         const monthYearPairs = eligibleMonths.map(m => `(${m.month}, ${m.year})`).join(', ');
-        db.all(`SELECT id, employee_id, claim_month, claim_year, receipt_amount, claim_amount, receipt_file, status, expense_batch_id, submitted_date, approved_date, approved_by, rejection_reason, report_ref, report_generated_at, created_date FROM transit_claims WHERE employee_id = ? AND (claim_month, claim_year) IN (${monthYearPairs}) AND status != 'rejected'`, 
+        db.all(`SELECT id, employee_id, claim_month, claim_year, receipt_amount, claim_amount, receipt_file, status, expense_batch_id, submitted_date, approved_date, approved_by, rejection_reason, report_ref, report_generated_at, created_at FROM transit_claims WHERE employee_id = ? AND (claim_month, claim_year) IN (${monthYearPairs}) AND status != 'rejected'`, 
                [req.user.employeeId], (err, existingClaims) => {
             if (err) return res.status(500).json({ error: 'Failed to load existing claims' });
             
@@ -6263,7 +6263,7 @@ app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor
 // Download transit claim PDF
 // Full transit claim history for current employee (excludes PDF blob)
 app.get('/api/transit-claims/history', requireAuth, (req, res) => {
-    db.all(`SELECT id, employee_id, claim_month, claim_year, receipt_amount, claim_amount, receipt_file, status, expense_batch_id, submitted_date, approved_date, approved_by, rejection_reason, report_ref, report_generated_at, created_date 
+    db.all(`SELECT id, employee_id, claim_month, claim_year, receipt_amount, claim_amount, receipt_file, status, expense_batch_id, submitted_date, approved_date, approved_by, rejection_reason, report_ref, report_generated_at, created_at 
             FROM transit_claims WHERE employee_id = ? ORDER BY claim_year DESC, claim_month DESC`,
            [req.user.employeeId], (err, claims) => {
         if (err) return res.status(500).json({ error: 'Database error' });
