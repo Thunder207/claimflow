@@ -2346,7 +2346,6 @@
         let transitSettings = { monthly_max: 100.00, claim_window: 2 };
         let transitEligibleMonths = [];
         let transitExistingClaims = [];
-        let transitFullHistory = [];
         let transitClaimCardCounter = 0;
 
         /**
@@ -2395,16 +2394,8 @@
                     const data = await claimsResponse.json();
                     transitEligibleMonths = data.eligible_months || [];
                     transitExistingClaims = data.existing_claims || [];
+                    initializeTransitForm();
                 }
-                // Also fetch full history (includes all statuses, all months)
-                const historyResponse = await fetch('/api/transit-claims/history', {
-                    headers: { 'Authorization': `Bearer ${sessionId}` }
-                });
-                if (historyResponse.ok) {
-                    const histData = await historyResponse.json();
-                    transitFullHistory = histData.claims || [];
-                }
-                initializeTransitForm();
             } catch (error) {
                 console.error('Error loading transit form:', error);
                 showMessage('error', 'Failed to load transit benefit form');
@@ -2687,10 +2678,7 @@
             const historySection = document.getElementById('transit-history-section');
             const historyList = document.getElementById('transit-history-list');
             
-            // Use full history if available, fall back to existing claims
-            const claims = (transitFullHistory && transitFullHistory.length > 0) ? transitFullHistory : transitExistingClaims;
-            
-            if (!claims || claims.length === 0) {
+            if (!transitExistingClaims || transitExistingClaims.length === 0) {
                 historySection.style.display = 'none';
                 return;
             }
@@ -2699,10 +2687,9 @@
             historyList.innerHTML = '';
             
             // Sort claims by date (newest first)
-            const sortedClaims = [...claims].sort((a, b) => {
-                if (b.claim_year !== a.claim_year) return b.claim_year - a.claim_year;
-                return b.claim_month - a.claim_month;
-            });
+            const sortedClaims = [...transitExistingClaims].sort((a, b) => 
+                new Date(b.created_date || 0) - new Date(a.created_date || 0)
+            );
             
             sortedClaims.forEach(claim => {
                 const statusIcon = claim.status === 'approved' ? '✅' : claim.status === 'pending' ? '⏳' : '❌';
@@ -2718,22 +2705,9 @@
                     statusText = `Rejected — "${claim.rejection_reason || 'No reason provided'}"`;
                 }
                 
-                // PDF button for approved claims
-                let pdfButton = '';
-                if (claim.status === 'approved') {
-                    if (claim.report_ref && claim.report_generated_at) {
-                        // PDF exists — download button
-                        pdfButton = `<button onclick="downloadTransitPDF(${claim.id})" style="background: #0d6efd; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; white-space: nowrap;">📄 PDF</button>`;
-                    } else {
-                        // No PDF yet — generate button
-                        pdfButton = `<button onclick="generateTransitPDF(${claim.id}, this)" style="background: #6c757d; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; white-space: nowrap;">📄 Generate PDF</button>`;
-                    }
-                }
-                
                 const historyItem = document.createElement('div');
                 historyItem.style.cssText = `
                     display: flex; 
-                    flex-wrap: wrap;
                     justify-content: space-between; 
                     align-items: center; 
                     padding: 8px 12px; 
@@ -2741,53 +2715,18 @@
                     border-radius: 6px; 
                     border-left: 3px solid ${statusColor};
                     font-size: 13px;
-                    gap: 4px;
                 `;
                 
                 historyItem.innerHTML = `
-                    <span style="color: #495057; flex: 1; min-width: 0;">
+                    <span style="color: #495057;">
                         ${statusIcon} ${getMonthName(claim.claim_month)} ${claim.claim_year} 
                         <strong style="color: ${statusColor};">$${parseFloat(claim.claim_amount).toFixed(2)}</strong>
                     </span>
                     <span style="color: #6c757d; font-size: 12px;">${statusText}</span>
-                    ${pdfButton}
                 `;
                 
                 historyList.appendChild(historyItem);
             });
-        }
-        
-        // Download existing transit PDF
-        function downloadTransitPDF(claimId) {
-            window.open(`/api/transit-claims/${claimId}/pdf?auth=${sessionId}`, '_blank');
-        }
-        
-        // Generate PDF retroactively for old approved claim
-        async function generateTransitPDF(claimId, btn) {
-            btn.disabled = true;
-            btn.textContent = '⏳ Generating...';
-            try {
-                const resp = await fetch(`/api/transit-claims/${claimId}/generate-pdf`, {
-                    method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + sessionId }
-                });
-                const result = await resp.json();
-                if (resp.ok && result.success) {
-                    btn.textContent = '📄 PDF';
-                    btn.style.background = '#0d6efd';
-                    btn.disabled = false;
-                    btn.onclick = () => downloadTransitPDF(claimId);
-                    showMessage('success', '✅ PDF generated successfully');
-                } else {
-                    btn.textContent = '📄 Generate PDF';
-                    btn.disabled = false;
-                    showMessage('error', result.error || 'Failed to generate PDF');
-                }
-            } catch (err) {
-                btn.textContent = '📄 Generate PDF';
-                btn.disabled = false;
-                showMessage('error', 'Network error generating PDF');
-            }
         }
 
         /**
