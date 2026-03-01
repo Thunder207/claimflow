@@ -4992,11 +4992,15 @@
                 const overallStatus = statuses.length === 1 ? statuses[0] : 'mixed';
                 const statusBadge = getStatusBadgeHTML(overallStatus);
 
+                const tripId = 'trip-' + tripName.replace(/[^a-zA-Z0-9]/g, '-');
                 html += `
                     <div style="margin-bottom: 25px;">
-                        <div style="background: linear-gradient(135deg, #f0f4ff 0%, #e8ecf8 100%); padding: 15px 20px; border-radius: 12px 12px 0 0; border-left: 4px solid #667eea; display: flex; justify-content: space-between; align-items: center;">
+                        <div onclick="toggleTripExpenses('${tripId}')" style="background: linear-gradient(135deg, #f0f4ff 0%, #e8ecf8 100%); padding: 15px 20px; border-radius: 12px; border-left: 4px solid #667eea; display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;" role="button" aria-expanded="false" aria-controls="${tripId}">
                             <div>
-                                <strong style="font-size: 16px; color: #2c3e50;">🧳 ${tripName}</strong>
+                                <strong style="font-size: 16px; color: #2c3e50;">
+                                    <span id="${tripId}-arrow" style="display: inline-block; transition: transform 0.2s; margin-right: 4px;">▶</span>
+                                    🧳 ${tripName}
+                                </strong>
                                 <div style="font-size: 13px; color: #666; margin-top: 4px;">
                                     ${tripExpenses.length} expense${tripExpenses.length > 1 ? 's' : ''} •
                                     <strong style="color: #27ae60;">$${tripTotal.toFixed(2)}</strong>
@@ -5004,7 +5008,9 @@
                             </div>
                             ${statusBadge}
                         </div>
-                        ${tripExpenses.map(expense => renderExpenseItem(expense)).join('')}
+                        <div id="${tripId}" style="display: none; border-radius: 0 0 12px 12px; overflow: hidden;">
+                            ${tripExpenses.map(expense => renderExpenseItem(expense)).join('')}
+                        </div>
                     </div>
                 `;
             }
@@ -5018,6 +5024,20 @@
             }
 
             container.innerHTML = html;
+        }
+
+        function toggleTripExpenses(tripId) {
+            const el = document.getElementById(tripId);
+            const arrow = document.getElementById(tripId + '-arrow');
+            const header = el?.previousElementSibling;
+            if (!el) return;
+            const isHidden = el.style.display === 'none';
+            el.style.display = isHidden ? 'block' : 'none';
+            if (arrow) arrow.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
+            if (header) {
+                header.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+                header.style.borderRadius = isHidden ? '12px 12px 0 0' : '12px';
+            }
         }
 
         function getStatusBadgeHTML(status) {
