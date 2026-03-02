@@ -829,6 +829,12 @@
             .dp-tile { width: 68px; padding: 6px 2px; }
         }
     </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+    if (window.pdfjsLib) {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+</script>
 </head>
 <body>
     <div class="language-toggle">
@@ -1960,10 +1966,46 @@
         }
 
         // Compress an array of files
+        // Convert a PDF file to an array of JPEG image Files (one per page)
+        async function pdfToImages(file, scale = 2.0, quality = 0.85) {
+            if (!window.pdfjsLib) {
+                console.warn('pdf.js not loaded, keeping PDF as-is');
+                return [file];
+            }
+            try {
+                const arrayBuf = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuf }).promise;
+                const images = [];
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const viewport = page.getViewport({ scale });
+                    const canvas = document.createElement('canvas');
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+                    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+                    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', quality));
+                    const baseName = file.name.replace(/\.pdf$/i, '');
+                    images.push(new File([blob], `${baseName}_page${i}.jpg`, { type: 'image/jpeg' }));
+                }
+                console.log(`📄→📷 Converted ${file.name}: ${pdf.numPages} page(s) to JPEG`);
+                return images;
+            } catch (e) {
+                console.error('PDF to image conversion failed:', e);
+                return [file]; // fallback: keep original
+            }
+        }
+
         async function compressFiles(files) {
             const result = [];
             for (const f of files) {
-                result.push(await compressImage(f));
+                if (f.type === 'application/pdf') {
+                    const images = await pdfToImages(f);
+                    for (const img of images) {
+                        result.push(await compressImage(img));
+                    }
+                } else {
+                    result.push(await compressImage(f));
+                }
             }
             return result;
         }
