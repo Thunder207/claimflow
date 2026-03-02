@@ -5666,14 +5666,14 @@ function generateExpenseReportPDF(tripId, db) {
 
                     // Group transport receipts by mode for labeling
                     const modeLabels = {
-                        'flight': '✈️ Flight', 'train': '🚆 Train', 'bus': '🚌 Bus',
-                        'rental': '🚙 Rental Car', 'taxi': '🚕 Taxi'
+                        'flight': 'Flight', 'train': 'Train', 'bus': 'Bus',
+                        'rental': 'Rental Car', 'taxi': 'Taxi'
                     };
                     // Hotel modes are hotel_0, hotel_1, etc.
                     function getReceiptLabel(mode) {
                         if (mode.startsWith('hotel_')) {
                             const idx = parseInt(mode.split('_')[1]) || 0;
-                            return `🏨 Hotel #${idx + 1}`;
+                            return `Hotel #${idx + 1}`;
                         }
                         return modeLabels[mode] || mode;
                     }
@@ -5743,7 +5743,8 @@ function generateExpenseReportPDF(tripId, db) {
                     // ═══════════════════════════════════════════
                     // INDIVIDUAL EXPENSE RECEIPTS (from receipt_data BLOB)
                     // ═══════════════════════════════════════════
-                    const expensesWithReceipts = tripExpenses.filter(e => e.receipt_data && e.receipt_type);
+                    // Skip hotel expenses — their receipts are already in transport_receipts (hotel_0, hotel_1, etc.)
+                    const expensesWithReceipts = tripExpenses.filter(e => e.receipt_data && e.receipt_type && e.expense_type !== 'hotel');
                     for (const exp of expensesWithReceipts) {
                         doc.addPage();
                         const expLabel = getCategoryLabel(exp.expense_type, exp.meal_name);
@@ -5788,6 +5789,8 @@ function generateExpenseReportPDF(tripId, db) {
                             .restore();
                     }
 
+                    // Flush buffered pages to prevent duplicate blank pages from switchToPage
+                    doc.flushPages();
                     doc.end();
                 }).catch(reject);
             });
