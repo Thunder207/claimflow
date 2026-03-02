@@ -311,6 +311,8 @@ function initializeDatabase() {
             vendor TEXT,
             description TEXT,
             receipt_photo TEXT,
+            receipt_data BLOB,
+            receipt_type TEXT,
             status TEXT DEFAULT 'pending',
             approved_by TEXT,
             approved_at DATETIME,
@@ -667,6 +669,17 @@ function insertDefaultData() {
             }
         });
         
+        db.run(`ALTER TABLE expenses ADD COLUMN receipt_data BLOB`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding receipt_data column:', err.message);
+            }
+        });
+        db.run(`ALTER TABLE expenses ADD COLUMN receipt_type TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding receipt_type column:', err.message);
+            }
+        });
+
         db.run(`ALTER TABLE trips ADD COLUMN justification TEXT DEFAULT NULL`, (err) => {
             if (err && !err.message.includes('duplicate column')) {
                 console.error('❌ Error adding justification column:', err.message);
@@ -1325,11 +1338,16 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
         }
         
         const receiptPath = req.file ? `/uploads/${req.file.filename}` : null;
+        let receiptData = null;
+        const receiptType = req.file ? req.file.mimetype : null;
+        if (req.file) {
+            try { receiptData = fs.readFileSync(req.file.path); } catch (e) { console.warn('Could not read receipt file for BLOB storage:', e.message); }
+        }
         
         // Simple insert for ALL expense types (per diem already validated above)
         const query = `
-            INSERT INTO expenses (employee_name, employee_id, trip_id, expense_type, meal_name, date, location, amount, vendor, description, receipt_photo, category)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO expenses (employee_name, employee_id, trip_id, expense_type, meal_name, date, location, amount, vendor, description, receipt_photo, receipt_data, receipt_type, category)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         
         // Append future-date flag to description for supervisor visibility
@@ -1338,7 +1356,7 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
             finalDescription = (finalDescription ? finalDescription + ' | ' : '') + '⚠️ FUTURE-DATED EXPENSE (submitted before expense date)';
         }
         
-        const params = [employee.name, req.user.employeeId, trip_id || null, expense_type, meal_name, date, location, amount, vendor, finalDescription, receiptPath, category || null];
+        const params = [employee.name, req.user.employeeId, trip_id || null, expense_type, meal_name, date, location, amount, vendor, finalDescription, receiptPath, receiptData, receiptType, category || null];
         
         db.run(query, params, function(err) {
             if (err) {
@@ -1628,37 +1646,55 @@ app.get('/api/delegation/current', requireAuth, (req, res) => {
     });
 });
 
-// CONCUR ENHANCEMENT: Receipt preview endpoint
+// Upload receipt to existing expense
+app.post('/api/expenses/:id/receipt', requireAuth, upload.single('receipt'), (req, res) => {
+    const expenseId = req.params.id;
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    db.get(`SELECT id, employee_id FROM expenses WHERE id = ?`, [expenseId], (err, expense) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!expense) return res.status(404).json({ error: 'Expense not found' });
+        if (expense.employee_id !== req.user.employeeId) return res.status(403).json({ error: 'Access denied' });
+
+        const receiptPath = `/uploads/${req.file.filename}`;
+        let receiptData = null;
+        try { receiptData = fs.readFileSync(req.file.path); } catch (e) { console.warn('Could not read receipt for BLOB:', e.message); }
+
+        db.run(`UPDATE expenses SET receipt_photo = ?, receipt_data = ?, receipt_type = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [receiptPath, receiptData, req.file.mimetype, expenseId], (err) => {
+                if (err) return res.status(500).json({ error: 'Failed to save receipt' });
+                res.json({ success: true });
+            });
+    });
+});
+
+// Receipt preview/download endpoint
 app.get('/api/expenses/:id/receipt', requireAuth, (req, res) => {
     const { id } = req.params;
     
-    // Check if user can view this expense
     db.get(`
-        SELECT e.receipt_photo, e.employee_id, emp.name as employee_name 
+        SELECT e.receipt_photo, e.receipt_data, e.receipt_type, e.employee_id, emp.name as employee_name 
         FROM expenses e
         LEFT JOIN employees emp ON e.employee_id = emp.id
         WHERE e.id = ?
     `, [id], (err, expense) => {
-        if (err) {
-            console.error('❌ Error fetching expense receipt:', err);
-            return res.status(500).json({ error: 'Database error' });
-        }
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!expense) return res.status(404).json({ error: 'Expense not found' });
         
-        if (!expense) {
-            return res.status(404).json({ error: 'Expense not found' });
-        }
-        
-        // Allow if user owns expense, is supervisor of owner, or is admin
         const canView = expense.employee_id === req.user.employeeId || 
                         req.user.role === 'admin' || 
                         req.user.role === 'supervisor';
+        if (!canView) return res.status(403).json({ error: 'Access denied' });
         
-        if (!canView) {
-            return res.status(403).json({ error: 'Access denied' });
+        // Serve BLOB if available
+        if (expense.receipt_data && expense.receipt_type) {
+            res.setHeader('Content-Type', expense.receipt_type);
+            res.setHeader('Content-Disposition', 'inline');
+            return res.send(expense.receipt_data);
         }
         
         if (!expense.receipt_photo) {
-            return res.status(404).json({ error: 'No receipt photo found for this expense' });
+            return res.status(404).json({ error: 'No receipt found for this expense' });
         }
         
         res.json({
@@ -5656,6 +5692,42 @@ function generateExpenseReportPDF(tripId, db) {
                                         .text(`Receipt attached: ${receipt.file_name || 'file'} (${receipt.file_type || 'unknown type'} — not embeddable in PDF)`, LEFT, imgTop, { align: 'center' });
                                 }
                             }
+                        }
+                    }
+
+                    // ═══════════════════════════════════════════
+                    // INDIVIDUAL EXPENSE RECEIPTS (from receipt_data BLOB)
+                    // ═══════════════════════════════════════════
+                    const expensesWithReceipts = tripExpenses.filter(e => e.receipt_data && e.receipt_type);
+                    for (const exp of expensesWithReceipts) {
+                        doc.addPage();
+                        const expLabel = getCategoryLabel(exp.expense_type, exp.meal_name);
+                        doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold')
+                            .text(`ATTACHED RECEIPT — ${expLabel}`, LEFT, MARGIN);
+                        doc.fontSize(9).fillColor(COLORS.muted).font('Helvetica')
+                            .text(`Date: ${fmtDateShort(exp.date)} · Amount: ${fmtDollars(exp.amount)}${exp.vendor ? ' · ' + exp.vendor : ''}`, LEFT, MARGIN + 20);
+
+                        const imgTop = MARGIN + 40;
+                        const maxImgW = pageW;
+                        const maxImgH = 720 - imgTop - 20;
+
+                        if (exp.receipt_type.startsWith('image/')) {
+                            try {
+                                const header = exp.receipt_data.slice(0, 4);
+                                const isPNG = header[0] === 0x89 && header[1] === 0x50;
+                                const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
+                                if ((isPNG || isJPEG) && exp.receipt_data.length > 100) {
+                                    doc.image(exp.receipt_data, LEFT, imgTop, { fit: [maxImgW, maxImgH], align: 'center', valign: 'top' });
+                                } else {
+                                    doc.fontSize(10).fillColor(COLORS.muted).text('Receipt could not be embedded (unsupported format)', LEFT, imgTop, { align: 'center' });
+                                }
+                            } catch (imgErr) {
+                                console.error('PDF expense receipt embed error:', imgErr.message);
+                                doc.fontSize(10).fillColor(COLORS.muted).text('Receipt could not be embedded', LEFT, imgTop, { align: 'center' });
+                            }
+                        } else {
+                            doc.fontSize(10).fillColor(COLORS.muted)
+                                .text(`Receipt attached: ${exp.receipt_type} (not embeddable in PDF)`, LEFT, imgTop, { align: 'center' });
                         }
                     }
 
