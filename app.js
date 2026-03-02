@@ -3475,7 +3475,11 @@ app.post('/api/trips/:id/transport-receipts', requireAuth, upload.array('receipt
             const stmt = db.prepare(`INSERT INTO transport_receipts (trip_id, transport_mode, file_data, file_name, file_type, file_size, upload_order) VALUES (?, ?, ?, ?, ?, ?, ?)`);
             let order = 0;
             for (const file of req.files) {
-                stmt.run(tripId, mode, file.buffer, file.originalname, file.mimetype, file.size, ++order);
+                let fileData = file.buffer || null;
+                if (!fileData && file.path) {
+                    try { fileData = fs.readFileSync(file.path); } catch (e) { console.warn('Could not read transport receipt:', e.message); }
+                }
+                stmt.run(tripId, mode, fileData, file.originalname, file.mimetype, file.size, ++order);
             }
             stmt.finalize((err) => {
                 if (err) return res.status(500).json({ error: 'Failed to save receipts' });
@@ -6918,9 +6922,14 @@ function savePhoneReceipts(claimId, files, callback) {
     let saved = 0;
     files.forEach((file, order) => {
         const cleanName = file.originalname.replace(/^claim\d+_/, '');
+        // Read file from disk since multer uses diskStorage (file.buffer is undefined)
+        let fileData = file.buffer || null;
+        if (!fileData && file.path) {
+            try { fileData = fs.readFileSync(file.path); } catch (e) { console.warn('Could not read phone receipt file:', e.message); }
+        }
         db.run(`INSERT INTO phone_claim_receipts (phone_claim_id, file_data, file_name, file_type, file_size, upload_order)
                 VALUES (?, ?, ?, ?, ?, ?)`,
-            [claimId, file.buffer, cleanName, file.mimetype, file.size, order],
+            [claimId, fileData, cleanName, file.mimetype, file.size, order],
             (err) => {
                 if (err) console.error('❌ Error saving phone receipt:', err);
                 saved++;
