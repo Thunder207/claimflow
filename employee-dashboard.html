@@ -7923,7 +7923,6 @@
             const input = document.getElementById(`tdp-hotel-receipt-${idx}`);
             if (!input || !input.files || input.files.length === 0) return;
 
-            showMessage('info', '🔄 Compressing receipt...');
             const compressed = await compressFiles(input.files);
 
             // Append to existing receipts
@@ -7937,7 +7936,6 @@
 
             // Render the file list
             tdpRenderHotelReceiptList(idx);
-            showMessage('success', `✅ ${compressed.length} receipt page(s) added`);
         }
 
         function tdpRenderHotelReceiptList(idx) {
@@ -8614,7 +8612,6 @@
             const input = document.getElementById(`tdp-${mode}-receipts`);
             if (!input || !input.files || input.files.length === 0) return;
 
-            showMessage('info', '🔄 Compressing receipts...');
             const compressed = await compressFiles(input.files);
 
             // Append to existing receipts for this mode
@@ -8625,7 +8622,6 @@
             input.value = '';
 
             tdpRenderTransportReceiptList(mode);
-            showMessage('success', `✅ ${compressed.length} receipt(s) added`);
         }
 
         function tdpRenderTransportReceiptList(mode) {
