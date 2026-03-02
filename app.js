@@ -3464,7 +3464,7 @@ app.post('/api/trips/:id/transport-receipts', requireAuth, upload.array('receipt
     }
 
     // Verify trip belongs to user
-    db.get(`SELECT id FROM trips WHERE id = ? AND employee_id = ?`, [tripId, req.user.employee_id], (err, trip) => {
+    db.get(`SELECT id FROM trips WHERE id = ? AND employee_id = ?`, [tripId, req.user.employeeId], (err, trip) => {
         if (err) return res.status(500).json({ error: 'Database error' });
         if (!trip) return res.status(404).json({ error: 'Trip not found' });
 
@@ -3479,10 +3479,12 @@ app.post('/api/trips/:id/transport-receipts', requireAuth, upload.array('receipt
                 if (!fileData && file.path) {
                     try { fileData = fs.readFileSync(file.path); } catch (e) { console.warn('Could not read transport receipt:', e.message); }
                 }
+                console.log(`📎 Saving ${mode} receipt: ${file.originalname}, size=${fileData ? fileData.length : 0} bytes, path=${file.path}`);
                 stmt.run(tripId, mode, fileData, file.originalname, file.mimetype, file.size, ++order);
             }
             stmt.finalize((err) => {
-                if (err) return res.status(500).json({ error: 'Failed to save receipts' });
+                if (err) { console.error('❌ Transport receipt save error:', err); return res.status(500).json({ error: 'Failed to save receipts' }); }
+                console.log(`✅ ${req.files.length} ${mode} receipt(s) saved for trip #${tripId}`);
                 res.json({ success: true, count: req.files.length });
             });
         });
