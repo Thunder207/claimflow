@@ -3418,8 +3418,9 @@ app.post('/api/trips/:id/transport-receipts', requireAuth, upload.array('receipt
     const tripId = req.params.id;
     const mode = req.body.mode;
     const validModes = ['flight', 'train', 'bus', 'rental', 'taxi'];
+    const isHotelMode = mode && mode.startsWith('hotel_');
 
-    if (!mode || !validModes.includes(mode)) {
+    if (!mode || (!validModes.includes(mode) && !isHotelMode)) {
         return res.status(400).json({ error: 'Invalid transport mode' });
     }
     if (!req.files || req.files.length === 0) {

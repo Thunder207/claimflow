@@ -7841,12 +7841,13 @@
                     <input type="number" value="${h.total > 0 ? h.total.toFixed(2) : ''}" onchange="tdpHotelFieldChanged(${idx},'total',this.value)" min="0" step="0.01" placeholder="0.00" ${canEdit ? '' : 'disabled'} style="width: 100%; padding: 8px; border: 1px solid #e91e63; border-radius: 6px; font-size: 14px; font-weight: 600;"></div>`;
                 html += `</div>`;
                 html += `<div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;">`;
-                html += `<div style="flex: 1; min-width: 200px;"><label style="font-size: 12px; font-weight: 600; color: #880e4f; display: block; margin-bottom: 3px;">📷 Receipt / Folio (multi-page OK)</label>
-                    <input type="file" id="tdp-hotel-receipt-${idx}" multiple accept="image/*,.pdf,.heic" onchange="tdpHotelReceiptChanged(${idx},this)" ${canEdit ? '' : 'disabled'} style="width: 100%; padding: 6px; background: white; border: 1px solid #e91e63; border-radius: 6px; font-size: 12px;">
-                    <div id="tdp-hotel-receipt-list-${idx}" style="font-size: 11px; color: #666; margin-top: 2px;">
-                    ${h.receiptFiles && h.receiptFiles.length > 0 ? h.receiptFiles.map(f => `📎 ${escapeHtml(f.name)}`).join('<br>') : (h.receiptName ? `📎 ${escapeHtml(h.receiptName)}` : '')}
-                    </div>
-                    <div style="font-size: 10px; color: #999; margin-top: 2px;">Upload all pages of your hotel folio. JPG, PNG, PDF, HEIC (max 10 files)</div></div>`;
+                const existingCount = (h.receiptFiles && h.receiptFiles.length > 0) ? h.receiptFiles.length : 0;
+                const btnLabel = existingCount > 0 ? `📷 + Add Another Page (${existingCount} added)` : '📷 Add Receipt Page';
+                html += `<div style="flex: 1; min-width: 200px;"><label style="font-size: 12px; font-weight: 600; color: #880e4f; display: block; margin-bottom: 3px;">📷 Receipt / Folio</label>
+                    <input type="file" id="tdp-hotel-receipt-${idx}" accept="image/*,.pdf,.heic" onchange="tdpHotelReceiptChanged(${idx})" ${canEdit ? '' : 'disabled'} style="display: none;">
+                    <div id="tdp-hotel-receipt-list-${idx}" style="font-size: 12px; color: #666; margin-top: 2px;"></div>
+                    <button type="button" id="tdp-hotel-receipt-btn-${idx}" onclick="document.getElementById('tdp-hotel-receipt-${idx}').click()" ${canEdit ? '' : 'disabled'} style="margin-top: 6px; padding: 8px 16px; background: #880e4f; color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;">${btnLabel}</button>
+                    </div>`;
                 html += `</div>`;
                 if (distLines) {
                     html += `<div style="margin-top: 10px; padding: 8px; background: #fce4ec; border-radius: 6px; font-size: 12px; color: #880e4f;">${distLines}</div>`;
@@ -7916,24 +7917,62 @@
             tdpRecalcTotal();
         }
 
-        function tdpHotelReceiptChanged(idx, input) {
+        async function tdpHotelReceiptChanged(idx) {
             const h = tdpHotels[idx];
             if (!h) return;
-            if (input.files && input.files.length > 0) {
-                h.receiptFiles = Array.from(input.files);
-                h.receiptFile = input.files[0]; // backward compat
-                h.receiptName = input.files[0].name;
-                // Update receipt list display
-                const listEl = document.getElementById(`tdp-hotel-receipt-list-${idx}`);
-                if (listEl) {
-                    let html = '';
-                    for (let i = 0; i < input.files.length; i++) {
-                        html += `📄 ${input.files[i].name} ✅<br>`;
-                    }
-                    html += `<strong style="color:#880e4f;">${input.files.length} file${input.files.length > 1 ? 's' : ''} uploaded</strong>`;
-                    listEl.innerHTML = html;
-                }
+            const input = document.getElementById(`tdp-hotel-receipt-${idx}`);
+            if (!input || !input.files || input.files.length === 0) return;
+
+            showMessage('info', '🔄 Compressing receipt...');
+            const compressed = await compressFiles(input.files);
+
+            // Append to existing receipts
+            if (!h.receiptFiles) h.receiptFiles = [];
+            h.receiptFiles = h.receiptFiles.concat(compressed);
+            h.receiptFile = h.receiptFiles[0]; // backward compat
+            h.receiptName = h.receiptFiles[0].name;
+
+            // Clear input for next capture
+            input.value = '';
+
+            // Render the file list
+            tdpRenderHotelReceiptList(idx);
+            showMessage('success', `✅ ${compressed.length} receipt page(s) added`);
+        }
+
+        function tdpRenderHotelReceiptList(idx) {
+            const h = tdpHotels[idx];
+            if (!h) return;
+            const listEl = document.getElementById(`tdp-hotel-receipt-list-${idx}`);
+            const addBtn = document.getElementById(`tdp-hotel-receipt-btn-${idx}`);
+            const files = h.receiptFiles || [];
+
+            if (files.length === 0) {
+                if (listEl) listEl.innerHTML = '';
+                if (addBtn) addBtn.textContent = '📷 Add Receipt Page';
+                return;
             }
+
+            if (addBtn) addBtn.textContent = `📷 + Add Another Page (${files.length} added)`;
+
+            if (listEl) {
+                listEl.innerHTML = files.map((f, i) => {
+                    const sizeKB = f.size ? (f.size / 1024).toFixed(0) : '?';
+                    return `<div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin: 2px 0; background: rgba(255,255,255,0.7); border-radius: 6px; font-size: 12px;">
+                        <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">📄 Page ${i + 1}: ${f.name} (${sizeKB} KB)</span>
+                        <button type="button" onclick="tdpRemoveHotelReceipt(${idx}, ${i})" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 2px 6px; font-size: 11px; cursor: pointer;">✕</button>
+                    </div>`;
+                }).join('');
+            }
+        }
+
+        function tdpRemoveHotelReceipt(hotelIdx, fileIdx) {
+            const h = tdpHotels[hotelIdx];
+            if (!h || !h.receiptFiles) return;
+            h.receiptFiles.splice(fileIdx, 1);
+            h.receiptFile = h.receiptFiles.length > 0 ? h.receiptFiles[0] : null;
+            h.receiptName = h.receiptFiles.length > 0 ? h.receiptFiles[0].name : '';
+            tdpRenderHotelReceiptList(hotelIdx);
         }
 
         function tdpValidateHotelOverlap() {
@@ -9701,7 +9740,43 @@
                 }
             }
 
-            // Upload any hotel receipts that haven't been uploaded yet
+            // Upload hotel receipts from tdpHotels (multi-page compressed files)
+            for (let hi = 0; hi < tdpHotels.length; hi++) {
+                const h = tdpHotels[hi];
+                if (!h.receiptFiles || h.receiptFiles.length === 0) continue;
+                // Find the hotel expense IDs from grid days
+                const hotelExpenseIds = tdpState.days
+                    .filter(d => d.showHotel && d.hotelOn && d.hotelExpenseId)
+                    .map(d => d.hotelExpenseId);
+                // Upload first file as the expense receipt (for PDF embedding)
+                if (hotelExpenseIds.length > 0) {
+                    try {
+                        const formData = new FormData();
+                        formData.append('receipt', h.receiptFiles[0], h.receiptFiles[0].name);
+                        await fetch(`/api/expenses/${hotelExpenseIds[0]}/receipt`, {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${sessionId}` },
+                            body: formData
+                        });
+                    } catch (err) { console.error('Hotel receipt upload error:', err); }
+                }
+                // Upload all pages as transport-style receipts for full storage
+                try {
+                    const formData = new FormData();
+                    formData.append('mode', `hotel_${hi}`);
+                    for (const file of h.receiptFiles) {
+                        formData.append('receipts', file, file.name);
+                    }
+                    await fetch(`/api/trips/${tdpState.tripId}/transport-receipts`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${sessionId}` },
+                        body: formData
+                    });
+                    console.log(`✅ Hotel #${hi + 1} receipts uploaded (${h.receiptFiles.length} pages)`);
+                } catch (err) { console.error('Hotel multi-receipt upload error:', err); }
+            }
+
+            // Also upload legacy per-day hotel receipts if any
             for (const day of tdpState.days) {
                 if (day.showHotel && day.hotelOn && day.hotelExpenseId) {
                     const fileInput = document.getElementById(`tdp-receipt-${day.date}`);
