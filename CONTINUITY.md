@@ -1,8 +1,8 @@
 # ClaimFlow Continuity Document
-> Last updated: 2026-03-01 10:00 EST  
-> Git tag: `v7.1-transport-hotel-receipts-2026-03-01`  
+> Last updated: 2026-03-02 17:00 EST  
+> Git tag: `v7.2-receipt-pdf-embedding-2026-03-02`  
 > Live: https://claimflow-e0za.onrender.com  
-> Rollback: `v7.0-phone-benefit-2026-03-01` | Golden: `v5.1-ux-optimized-2026-02-24-VERIFIED`
+> Rollback: `v7.1-transport-hotel-receipts-2026-03-01` | Golden: `v5.1-ux-optimized-2026-02-24-VERIFIED`
 
 ## What Is ClaimFlow?
 
