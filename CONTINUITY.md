@@ -1,7 +1,8 @@
 # ClaimFlow Continuity Document
-> Last updated: 2026-02-23 22:57 EST  
-> Git tag: `v5.0-transport-e2e-verified-2026-02-23`  
-> Live: https://claimflow-e0za.onrender.com
+> Last updated: 2026-03-01 10:00 EST  
+> Git tag: `v7.1-transport-hotel-receipts-2026-03-01`  
+> Live: https://claimflow-e0za.onrender.com  
+> Rollback: `v7.0-phone-benefit-2026-03-01` | Golden: `v5.1-ux-optimized-2026-02-24-VERIFIED`
 
 ## What Is ClaimFlow?
 
