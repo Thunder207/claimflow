@@ -549,6 +549,20 @@ function initializeDatabase() {
             FOREIGN KEY (phone_claim_id) REFERENCES phone_claims (id) ON DELETE CASCADE
         )`,
 
+        // 🚗 Transport receipts (multi-file per mode per trip)
+        `CREATE TABLE IF NOT EXISTS transport_receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trip_id INTEGER NOT NULL,
+            transport_mode TEXT NOT NULL,
+            file_data BLOB NOT NULL,
+            file_name TEXT NOT NULL,
+            file_type TEXT NOT NULL,
+            file_size INTEGER DEFAULT 0,
+            upload_order INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (trip_id) REFERENCES trips (id) ON DELETE CASCADE
+        )`,
+
         // 📱 Phone Benefit report sequence
         `CREATE TABLE IF NOT EXISTS phb_report_sequence (
             year INTEGER PRIMARY KEY,
@@ -3395,6 +3409,71 @@ app.get('/api/trips/:id/variance', requireAuth, (req, res) => {
 });
 
 // Submit trip for approval
+// ============================================================
+// 🚗 Transport Receipt Endpoints
+// ============================================================
+
+// POST /api/trips/:id/transport-receipts — upload receipts for a transport mode
+app.post('/api/trips/:id/transport-receipts', requireAuth, upload.array('receipts', 20), (req, res) => {
+    const tripId = req.params.id;
+    const mode = req.body.mode;
+    const validModes = ['flight', 'train', 'bus', 'rental', 'taxi'];
+
+    if (!mode || !validModes.includes(mode)) {
+        return res.status(400).json({ error: 'Invalid transport mode' });
+    }
+    if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    // Verify trip belongs to user
+    db.get(`SELECT id FROM trips WHERE id = ? AND employee_id = ?`, [tripId, req.user.employee_id], (err, trip) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!trip) return res.status(404).json({ error: 'Trip not found' });
+
+        // Delete existing receipts for this mode (replace on re-upload)
+        db.run(`DELETE FROM transport_receipts WHERE trip_id = ? AND transport_mode = ?`, [tripId, mode], (delErr) => {
+            if (delErr) console.error('Delete old transport receipts error:', delErr);
+
+            const stmt = db.prepare(`INSERT INTO transport_receipts (trip_id, transport_mode, file_data, file_name, file_type, file_size, upload_order) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+            let order = 0;
+            for (const file of req.files) {
+                stmt.run(tripId, mode, file.buffer, file.originalname, file.mimetype, file.size, ++order);
+            }
+            stmt.finalize((err) => {
+                if (err) return res.status(500).json({ error: 'Failed to save receipts' });
+                res.json({ success: true, count: req.files.length });
+            });
+        });
+    });
+});
+
+// GET /api/trips/:id/transport-receipts — list receipts for a trip (optionally by mode)
+app.get('/api/trips/:id/transport-receipts', requireAuth, (req, res) => {
+    const tripId = req.params.id;
+    const mode = req.query.mode;
+    let query = `SELECT id, transport_mode, file_name, file_type, file_size, upload_order FROM transport_receipts WHERE trip_id = ?`;
+    const params = [tripId];
+    if (mode) { query += ` AND transport_mode = ?`; params.push(mode); }
+    query += ` ORDER BY transport_mode, upload_order`;
+
+    db.all(query, params, (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json(rows || []);
+    });
+});
+
+// GET /api/transport-receipts/:receiptId — download a single receipt
+app.get('/api/transport-receipts/:receiptId', requireAuth, (req, res) => {
+    db.get(`SELECT file_data, file_name, file_type FROM transport_receipts WHERE id = ?`, [req.params.receiptId], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row) return res.status(404).json({ error: 'Receipt not found' });
+        res.setHeader('Content-Type', row.file_type);
+        res.setHeader('Content-Disposition', `inline; filename="${row.file_name}"`);
+        res.send(row.file_data);
+    });
+});
+
 app.post('/api/trips/:id/submit', requireAuth, (req, res) => {
     const tripId = req.params.id;
     

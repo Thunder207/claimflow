@@ -1146,7 +1146,12 @@
                             <span style="font-size: 15px;">$</span>
                             <input type="number" id="tdp-taxi-cost" step="0.01" min="0" value="0" oninput="tdpUpdateTransportTotal()" style="flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px;">
                         </div>
-                        <div style="font-size: 13px; color: #555; text-align: right;">
+                        <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 8px;">
+                            <label style="color: #e65100; font-size: 13px; font-weight: 600;">📎 Receipt(s):</label>
+                            <input type="file" id="tdp-taxi-receipts" multiple accept="image/*,.pdf,.heic" onchange="tdpTransportReceiptChanged('taxi')" style="display: block; margin-top: 4px; font-size: 13px;">
+                            <div id="tdp-taxi-receipt-list" style="margin-top: 6px;"></div>
+                        </div>
+                        <div style="font-size: 13px; color: #555; text-align: right; margin-top: 8px;">
                             🚕 Taxi Subtotal: <span id="tdp-taxi-total">$0.00</span>
                         </div>
                     </div>
@@ -1174,7 +1179,12 @@
                                 <input type="text" id="tdp-flight-route" placeholder="e.g., YOW → YUL" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="saveTdpTransport();">
                             </div>
                         </div>
-                        <div style="text-align: right; color: #856404; font-weight: bold;">
+                        <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 8px;">
+                            <label style="color: #856404; font-size: 13px; font-weight: 600;">📎 Receipt(s):</label>
+                            <input type="file" id="tdp-flight-receipts" multiple accept="image/*,.pdf,.heic" onchange="tdpTransportReceiptChanged('flight')" style="display: block; margin-top: 4px; font-size: 13px;">
+                            <div id="tdp-flight-receipt-list" style="margin-top: 6px;"></div>
+                        </div>
+                        <div style="text-align: right; color: #856404; font-weight: bold; margin-top: 8px;">
                             ✈️ Flight Subtotal: <span id="tdp-flight-total">$0.00</span>
                         </div>
                     </div>
@@ -1196,7 +1206,12 @@
                             <label style="color: #155724; font-size: 13px; font-weight: 600;">Route (optional):</label>
                             <input type="text" id="tdp-train-route" placeholder="e.g., Ottawa → Montreal" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #28a745; font-size: 14px;" oninput="saveTdpTransport();">
                         </div>
-                        <div style="text-align: right; color: #155724; font-weight: bold; margin-top: 10px;">
+                        <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 8px;">
+                            <label style="color: #155724; font-size: 13px; font-weight: 600;">📎 Receipt(s):</label>
+                            <input type="file" id="tdp-train-receipts" multiple accept="image/*,.pdf,.heic" onchange="tdpTransportReceiptChanged('train')" style="display: block; margin-top: 4px; font-size: 13px;">
+                            <div id="tdp-train-receipt-list" style="margin-top: 6px;"></div>
+                        </div>
+                        <div style="text-align: right; color: #155724; font-weight: bold; margin-top: 8px;">
                             🚆 Train Subtotal: <span id="tdp-train-total">$0.00</span>
                         </div>
                     </div>
@@ -1218,7 +1233,12 @@
                             <label style="color: #880e4f; font-size: 13px; font-weight: 600;">Route (optional):</label>
                             <input type="text" id="tdp-bus-route" placeholder="e.g., Ottawa → Toronto" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #e91e63; font-size: 14px;" oninput="saveTdpTransport();">
                         </div>
-                        <div style="text-align: right; color: #880e4f; font-weight: bold; margin-top: 10px;">
+                        <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 8px;">
+                            <label style="color: #880e4f; font-size: 13px; font-weight: 600;">📎 Receipt(s):</label>
+                            <input type="file" id="tdp-bus-receipts" multiple accept="image/*,.pdf,.heic" onchange="tdpTransportReceiptChanged('bus')" style="display: block; margin-top: 4px; font-size: 13px;">
+                            <div id="tdp-bus-receipt-list" style="margin-top: 6px;"></div>
+                        </div>
+                        <div style="text-align: right; color: #880e4f; font-weight: bold; margin-top: 8px;">
                             🚌 Bus Subtotal: <span id="tdp-bus-total">$0.00</span>
                         </div>
                     </div>
@@ -1246,7 +1266,12 @@
                                 <input type="number" id="tdp-rental-fuel" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #9c27b0; font-size: 14px;" oninput="calculateTransportSubtotal('rental'); tdpRecalcTotal(); saveTdpTransport();">
                             </div>
                         </div>
-                        <div style="text-align: right; color: #4a148c; font-weight: bold;">
+                        <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 8px;">
+                            <label style="color: #4a148c; font-size: 13px; font-weight: 600;">📎 Receipt(s):</label>
+                            <input type="file" id="tdp-rental-receipts" multiple accept="image/*,.pdf,.heic" onchange="tdpTransportReceiptChanged('rental')" style="display: block; margin-top: 4px; font-size: 13px;">
+                            <div id="tdp-rental-receipt-list" style="margin-top: 6px;"></div>
+                        </div>
+                        <div style="text-align: right; color: #4a148c; font-weight: bold; margin-top: 8px;">
                             🚙 Rental Car Subtotal: <span id="tdp-rental-total">$0.00</span>
                         </div>
                     </div>
@@ -7531,6 +7556,18 @@
                 // Set currentTrip for transport functions
                 currentTrip = trip;
 
+                // Reset transport receipts for new trip
+                tdpTransportReceipts = {};
+                ['flight', 'train', 'bus', 'rental', 'taxi'].forEach(m => {
+                    const listEl = document.getElementById(`tdp-${m}-receipt-list`);
+                    if (listEl) listEl.innerHTML = '';
+                    const fileInput = document.getElementById(`tdp-${m}-receipts`);
+                    if (fileInput) fileInput.value = '';
+                });
+
+                // Load existing transport receipts from server
+                tdpLoadExistingTransportReceipts(tripId);
+
                 // Load transportation data
                 loadTdpTransport();
 
@@ -8503,17 +8540,134 @@
             saveTdpTransport();
         }
 
+        // Transport receipt storage: { flight: [File,...], train: [File,...], ... }
+        let tdpTransportReceipts = {};
+
         function clearTransportMode(mode) {
             // Clear all inputs for this transport mode
             const inputs = document.querySelectorAll(`#tdp-${mode}-section input`);
             inputs.forEach(input => {
-                input.value = '';
+                if (input.type === 'file') {
+                    input.value = '';
+                } else {
+                    input.value = '';
+                }
             });
+            
+            // Clear stored receipt files for this mode
+            delete tdpTransportReceipts[mode];
+            const listEl = document.getElementById(`tdp-${mode}-receipt-list`);
+            if (listEl) listEl.innerHTML = '';
             
             // Update subtotal
             const subtotalEl = document.getElementById(`tdp-${mode}-total`);
             if (subtotalEl) {
                 subtotalEl.textContent = '$0.00';
+            }
+        }
+
+        async function tdpTransportReceiptChanged(mode) {
+            const input = document.getElementById(`tdp-${mode}-receipts`);
+            if (!input || !input.files || input.files.length === 0) return;
+
+            showMessage('info', '🔄 Compressing receipts...');
+            const compressed = await compressFiles(input.files);
+
+            // Append to existing receipts for this mode
+            if (!tdpTransportReceipts[mode]) tdpTransportReceipts[mode] = [];
+            tdpTransportReceipts[mode] = tdpTransportReceipts[mode].concat(compressed);
+
+            // Clear the file input so user can add more
+            input.value = '';
+
+            tdpRenderTransportReceiptList(mode);
+            showMessage('success', `✅ ${compressed.length} receipt(s) added`);
+        }
+
+        function tdpRenderTransportReceiptList(mode) {
+            const listEl = document.getElementById(`tdp-${mode}-receipt-list`);
+            if (!listEl) return;
+
+            const files = tdpTransportReceipts[mode] || [];
+            if (files.length === 0) {
+                listEl.innerHTML = '';
+                return;
+            }
+
+            listEl.innerHTML = files.map((f, i) => {
+                const sizeKB = f.size ? (f.size / 1024).toFixed(0) : '?';
+                return `<div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin: 2px 0; background: rgba(255,255,255,0.7); border-radius: 6px; font-size: 12px;">
+                    <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">📄 ${f.name} (${sizeKB} KB)</span>
+                    <button type="button" onclick="tdpRemoveTransportReceipt('${mode}', ${i})" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 2px 6px; font-size: 11px; cursor: pointer;">✕</button>
+                </div>`;
+            }).join('');
+        }
+
+        function tdpRemoveTransportReceipt(mode, index) {
+            if (tdpTransportReceipts[mode]) {
+                tdpTransportReceipts[mode].splice(index, 1);
+                tdpRenderTransportReceiptList(mode);
+            }
+        }
+
+        async function tdpLoadExistingTransportReceipts(tripId) {
+            try {
+                const resp = await fetch(`/api/trips/${tripId}/transport-receipts`, {
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                if (!resp.ok) return;
+                const receipts = await resp.json();
+
+                // Group by mode and render
+                const byMode = {};
+                receipts.forEach(r => {
+                    if (!byMode[r.transport_mode]) byMode[r.transport_mode] = [];
+                    byMode[r.transport_mode].push(r);
+                });
+
+                Object.keys(byMode).forEach(mode => {
+                    const listEl = document.getElementById(`tdp-${mode}-receipt-list`);
+                    if (!listEl) return;
+                    const files = byMode[mode];
+                    listEl.innerHTML = files.map(f => {
+                        const sizeKB = f.file_size ? (f.file_size / 1024).toFixed(0) : '?';
+                        return `<div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin: 2px 0; background: rgba(255,255,255,0.7); border-radius: 6px; font-size: 12px;">
+                            <a href="/api/transport-receipts/${f.id}" target="_blank" style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #0066cc;">📄 ${f.file_name} (${sizeKB} KB)</a>
+                            <span style="color: #28a745; font-size: 11px;">✅ Uploaded</span>
+                        </div>`;
+                    }).join('');
+                });
+            } catch (err) {
+                console.warn('Failed to load existing transport receipts:', err);
+            }
+        }
+
+        async function tdpUploadTransportReceipts(tripId) {
+            const modes = Object.keys(tdpTransportReceipts);
+            for (const mode of modes) {
+                const files = tdpTransportReceipts[mode];
+                if (!files || files.length === 0) continue;
+
+                const formData = new FormData();
+                formData.append('mode', mode);
+                for (const file of files) {
+                    formData.append('receipts', file, file.name);
+                }
+
+                try {
+                    const resp = await fetch(`/api/trips/${tripId}/transport-receipts`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${sessionId}` },
+                        body: formData
+                    });
+                    if (!resp.ok) {
+                        console.error(`Failed to upload ${mode} receipts:`, resp.status);
+                    } else {
+                        console.log(`✅ ${mode} receipts uploaded (${files.length} files)`);
+                    }
+                } catch (err) {
+                    console.error(`Error uploading ${mode} receipts:`, err);
+                }
             }
         }
 
@@ -9552,6 +9706,13 @@
                         } catch (err) { console.error('Receipt upload error:', err); }
                     }
                 }
+            }
+
+            // Upload transport receipts
+            try {
+                await tdpUploadTransportReceipts(tdpState.tripId);
+            } catch (err) {
+                console.warn('Transport receipt upload error (non-critical):', err);
             }
 
             // Submit the trip
