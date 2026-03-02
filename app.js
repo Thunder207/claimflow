@@ -5153,7 +5153,14 @@ function generateExpenseReportPDF(tripId, db) {
                     });
                 });
 
-                Promise.all([fetchAtExp, fetchTripExp, fetchSettings]).then(([atExpenses, tripExpenses, settings]) => {
+                const fetchTransportReceipts = new Promise((res, rej) => {
+                    db.all(`SELECT id, transport_mode, file_data, file_name, file_type, file_size, upload_order FROM transport_receipts WHERE trip_id = ? ORDER BY transport_mode, upload_order`, [tripId], (e, rows) => {
+                        if (e) return rej(e);
+                        res(rows || []);
+                    });
+                });
+
+                Promise.all([fetchAtExp, fetchTripExp, fetchSettings, fetchTransportReceipts]).then(([atExpenses, tripExpenses, settings, transportReceipts]) => {
                     const pctThreshold = parseFloat(settings.variance_pct_threshold || '10');
                     const dollarThreshold = parseFloat(settings.variance_dollar_threshold || '100');
                     const refNumber = trip.report_ref || 'PENDING';
@@ -5573,19 +5580,96 @@ function generateExpenseReportPDF(tripId, db) {
                     );
 
                     // ═══════════════════════════════════════════
-                    // ADD FOOTERS TO CONTENT PAGES ONLY (NO SEPARATE PAGE-NUMBER PAGES)
+                    // PAGE 6+ — ATTACHED RECEIPTS
+                    // ═══════════════════════════════════════════
+
+                    // Group transport receipts by mode for labeling
+                    const modeLabels = {
+                        'flight': '✈️ Flight', 'train': '🚆 Train', 'bus': '🚌 Bus',
+                        'rental': '🚙 Rental Car', 'taxi': '🚕 Taxi'
+                    };
+                    // Hotel modes are hotel_0, hotel_1, etc.
+                    function getReceiptLabel(mode) {
+                        if (mode.startsWith('hotel_')) {
+                            const idx = parseInt(mode.split('_')[1]) || 0;
+                            return `🏨 Hotel #${idx + 1}`;
+                        }
+                        return modeLabels[mode] || mode;
+                    }
+
+                    // Group receipts by mode
+                    const receiptsByMode = {};
+                    transportReceipts.forEach(r => {
+                        if (!receiptsByMode[r.transport_mode]) receiptsByMode[r.transport_mode] = [];
+                        receiptsByMode[r.transport_mode].push(r);
+                    });
+
+                    const receiptModes = Object.keys(receiptsByMode);
+                    if (receiptModes.length > 0) {
+                        for (const mode of receiptModes) {
+                            const receipts = receiptsByMode[mode];
+                            const label = getReceiptLabel(mode);
+
+                            for (let ri = 0; ri < receipts.length; ri++) {
+                                const receipt = receipts[ri];
+                                doc.addPage();
+
+                                // Header
+                                doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold')
+                                    .text(`ATTACHED RECEIPT — ${label}`, LEFT, MARGIN);
+                                if (receipts.length > 1) {
+                                    doc.fontSize(10).fillColor(COLORS.muted).font('Helvetica')
+                                        .text(`Page ${ri + 1} of ${receipts.length}`, LEFT, MARGIN + 20);
+                                }
+                                doc.fontSize(9).fillColor(COLORS.muted).font('Helvetica')
+                                    .text(`File: ${receipt.file_name || 'receipt'}`, LEFT, MARGIN + (receipts.length > 1 ? 35 : 20));
+
+                                const imgTop = MARGIN + (receipts.length > 1 ? 55 : 40);
+                                const maxImgW = pageW;
+                                const maxImgH = 720 - imgTop - 20;
+
+                                // Only embed image types
+                                if (receipt.file_data && receipt.file_type && receipt.file_type.startsWith('image/')) {
+                                    try {
+                                        // Validate image header (PNG or JPEG)
+                                        const header = receipt.file_data.slice(0, 4);
+                                        const isPNG = header[0] === 0x89 && header[1] === 0x50;
+                                        const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
+
+                                        if ((isPNG || isJPEG) && receipt.file_data.length > 100) {
+                                            doc.image(receipt.file_data, LEFT, imgTop, {
+                                                fit: [maxImgW, maxImgH],
+                                                align: 'center',
+                                                valign: 'top'
+                                            });
+                                        } else {
+                                            doc.fontSize(10).fillColor(COLORS.muted)
+                                                .text('Receipt file could not be embedded (unsupported format)', LEFT, imgTop, { align: 'center' });
+                                        }
+                                    } catch (imgErr) {
+                                        console.error('PDF receipt embed error:', imgErr.message);
+                                        doc.fontSize(10).fillColor(COLORS.muted)
+                                            .text('Receipt file could not be embedded: ' + (receipt.file_name || 'unknown'), LEFT, imgTop, { align: 'center' });
+                                    }
+                                } else {
+                                    doc.fontSize(10).fillColor(COLORS.muted)
+                                        .text(`Receipt attached: ${receipt.file_name || 'file'} (${receipt.file_type || 'unknown type'} — not embeddable in PDF)`, LEFT, imgTop, { align: 'center' });
+                                }
+                            }
+                        }
+                    }
+
+                    // ═══════════════════════════════════════════
+                    // ADD FOOTERS TO ALL PAGES
                     // ═══════════════════════════════════════════
                     const pageRange = doc.bufferedPageRange();
-                    const actualPageCount = pageRange.count;
-                    // Only process actual content pages (should be exactly 5)
-                    for (let i = 0; i < Math.min(actualPageCount, 5); i++) {
+                    const totalPages = pageRange.count;
+                    for (let i = 0; i < totalPages; i++) {
                         doc.switchToPage(i);
-                        // Add footer to each content page
                         doc.save().fontSize(8).fillColor(COLORS.muted).font('Helvetica')
-                            .text(`Page ${i + 1} of 5     Ref: ${refNumber}`, LEFT, 740, { width: pageW, align: 'center' })
+                            .text(`Page ${i + 1} of ${totalPages}     Ref: ${refNumber}`, LEFT, 740, { width: pageW, align: 'center' })
                             .restore();
                     }
-                    // Ensure we don't add any more pages after this point
 
                     doc.end();
                 }).catch(reject);
