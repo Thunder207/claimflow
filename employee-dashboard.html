@@ -1148,8 +1148,9 @@
                         </div>
                         <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 8px;">
                             <label style="color: #e65100; font-size: 13px; font-weight: 600;">📎 Receipt(s):</label>
-                            <input type="file" id="tdp-taxi-receipts" multiple accept="image/*,.pdf,.heic" onchange="tdpTransportReceiptChanged('taxi')" style="display: block; margin-top: 4px; font-size: 13px;">
+                            <input type="file" id="tdp-taxi-receipts" accept="image/*,.pdf,.heic" onchange="tdpTransportReceiptChanged('taxi')" style="display: none;">
                             <div id="tdp-taxi-receipt-list" style="margin-top: 6px;"></div>
+                            <button type="button" id="tdp-taxi-add-receipt-btn" onclick="document.getElementById('tdp-taxi-receipts').click()" style="margin-top: 6px; padding: 8px 16px; background: #e65100; color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;">📷 Add Receipt Page</button>
                         </div>
                         <div style="font-size: 13px; color: #555; text-align: right; margin-top: 8px;">
                             🚕 Taxi Subtotal: <span id="tdp-taxi-total">$0.00</span>
@@ -1181,8 +1182,9 @@
                         </div>
                         <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 8px;">
                             <label style="color: #856404; font-size: 13px; font-weight: 600;">📎 Receipt(s):</label>
-                            <input type="file" id="tdp-flight-receipts" multiple accept="image/*,.pdf,.heic" onchange="tdpTransportReceiptChanged('flight')" style="display: block; margin-top: 4px; font-size: 13px;">
+                            <input type="file" id="tdp-flight-receipts" accept="image/*,.pdf,.heic" onchange="tdpTransportReceiptChanged('flight')" style="display: none;">
                             <div id="tdp-flight-receipt-list" style="margin-top: 6px;"></div>
+                            <button type="button" id="tdp-flight-add-receipt-btn" onclick="document.getElementById('tdp-flight-receipts').click()" style="margin-top: 6px; padding: 8px 16px; background: #856404; color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;">📷 Add Receipt Page</button>
                         </div>
                         <div style="text-align: right; color: #856404; font-weight: bold; margin-top: 8px;">
                             ✈️ Flight Subtotal: <span id="tdp-flight-total">$0.00</span>
@@ -1208,8 +1210,9 @@
                         </div>
                         <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 8px;">
                             <label style="color: #155724; font-size: 13px; font-weight: 600;">📎 Receipt(s):</label>
-                            <input type="file" id="tdp-train-receipts" multiple accept="image/*,.pdf,.heic" onchange="tdpTransportReceiptChanged('train')" style="display: block; margin-top: 4px; font-size: 13px;">
+                            <input type="file" id="tdp-train-receipts" accept="image/*,.pdf,.heic" onchange="tdpTransportReceiptChanged('train')" style="display: none;">
                             <div id="tdp-train-receipt-list" style="margin-top: 6px;"></div>
+                            <button type="button" id="tdp-train-add-receipt-btn" onclick="document.getElementById('tdp-train-receipts').click()" style="margin-top: 6px; padding: 8px 16px; background: #155724; color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;">📷 Add Receipt Page</button>
                         </div>
                         <div style="text-align: right; color: #155724; font-weight: bold; margin-top: 8px;">
                             🚆 Train Subtotal: <span id="tdp-train-total">$0.00</span>
@@ -1235,8 +1238,9 @@
                         </div>
                         <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 8px;">
                             <label style="color: #880e4f; font-size: 13px; font-weight: 600;">📎 Receipt(s):</label>
-                            <input type="file" id="tdp-bus-receipts" multiple accept="image/*,.pdf,.heic" onchange="tdpTransportReceiptChanged('bus')" style="display: block; margin-top: 4px; font-size: 13px;">
+                            <input type="file" id="tdp-bus-receipts" accept="image/*,.pdf,.heic" onchange="tdpTransportReceiptChanged('bus')" style="display: none;">
                             <div id="tdp-bus-receipt-list" style="margin-top: 6px;"></div>
+                            <button type="button" id="tdp-bus-add-receipt-btn" onclick="document.getElementById('tdp-bus-receipts').click()" style="margin-top: 6px; padding: 8px 16px; background: #880e4f; color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;">📷 Add Receipt Page</button>
                         </div>
                         <div style="text-align: right; color: #880e4f; font-weight: bold; margin-top: 8px;">
                             🚌 Bus Subtotal: <span id="tdp-bus-total">$0.00</span>
@@ -1268,8 +1272,9 @@
                         </div>
                         <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 8px;">
                             <label style="color: #4a148c; font-size: 13px; font-weight: 600;">📎 Receipt(s):</label>
-                            <input type="file" id="tdp-rental-receipts" multiple accept="image/*,.pdf,.heic" onchange="tdpTransportReceiptChanged('rental')" style="display: block; margin-top: 4px; font-size: 13px;">
+                            <input type="file" id="tdp-rental-receipts" accept="image/*,.pdf,.heic" onchange="tdpTransportReceiptChanged('rental')" style="display: none;">
                             <div id="tdp-rental-receipt-list" style="margin-top: 6px;"></div>
+                            <button type="button" id="tdp-rental-add-receipt-btn" onclick="document.getElementById('tdp-rental-receipts').click()" style="margin-top: 6px; padding: 8px 16px; background: #4a148c; color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;">📷 Add Receipt Page</button>
                         </div>
                         <div style="text-align: right; color: #4a148c; font-weight: bold; margin-top: 8px;">
                             🚙 Rental Car Subtotal: <span id="tdp-rental-total">$0.00</span>
@@ -8589,15 +8594,21 @@
             if (!listEl) return;
 
             const files = tdpTransportReceipts[mode] || [];
+            const addBtn = document.getElementById(`tdp-${mode}-add-receipt-btn`);
+
             if (files.length === 0) {
                 listEl.innerHTML = '';
+                if (addBtn) addBtn.textContent = '📷 Add Receipt Page';
                 return;
             }
+
+            // Update button to show "add another"
+            if (addBtn) addBtn.textContent = `📷 + Add Another Page (${files.length} added)`;
 
             listEl.innerHTML = files.map((f, i) => {
                 const sizeKB = f.size ? (f.size / 1024).toFixed(0) : '?';
                 return `<div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin: 2px 0; background: rgba(255,255,255,0.7); border-radius: 6px; font-size: 12px;">
-                    <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">📄 ${f.name} (${sizeKB} KB)</span>
+                    <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">📄 Page ${i + 1}: ${f.name} (${sizeKB} KB)</span>
                     <button type="button" onclick="tdpRemoveTransportReceipt('${mode}', ${i})" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 2px 6px; font-size: 11px; cursor: pointer;">✕</button>
                 </div>`;
             }).join('');
