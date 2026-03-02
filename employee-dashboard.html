@@ -8706,10 +8706,11 @@
                         headers: { 'Authorization': `Bearer ${sessionId}` },
                         body: formData
                     });
+                    const respData = await resp.json().catch(() => ({}));
                     if (!resp.ok) {
-                        console.error(`Failed to upload ${mode} receipts:`, resp.status);
+                        console.error(`Failed to upload ${mode} receipts:`, resp.status, respData);
                     } else {
-                        console.log(`✅ ${mode} receipts uploaded (${files.length} files)`);
+                        console.log(`✅ ${mode} receipts uploaded (${files.length} files)`, respData);
                     }
                 } catch (err) {
                     console.error(`Error uploading ${mode} receipts:`, err);

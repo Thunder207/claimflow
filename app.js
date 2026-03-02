@@ -3517,6 +3517,14 @@ app.get('/api/transport-receipts/:receiptId', requireAuth, (req, res) => {
     });
 });
 
+// Debug: check transport receipts for a trip
+app.get('/api/trips/:id/transport-receipts-debug', requireAuth, (req, res) => {
+    db.all(`SELECT id, transport_mode, file_name, file_type, file_size, upload_order, length(file_data) as data_length FROM transport_receipts WHERE trip_id = ?`, [req.params.id], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ trip_id: req.params.id, count: (rows || []).length, receipts: rows || [] });
+    });
+});
+
 app.post('/api/trips/:id/submit', requireAuth, (req, res) => {
     const tripId = req.params.id;
     
@@ -5203,6 +5211,9 @@ function generateExpenseReportPDF(tripId, db) {
                 });
 
                 Promise.all([fetchAtExp, fetchTripExp, fetchSettings, fetchTransportReceipts]).then(([atExpenses, tripExpenses, settings, transportReceipts]) => {
+                    console.log(`📊 PDF Gen: trip #${tripId} — ${transportReceipts.length} transport receipts, ${tripExpenses.length} expenses`);
+                    transportReceipts.forEach(r => console.log(`  📎 ${r.transport_mode}: ${r.file_name} (${r.file_type}, ${r.file_data ? r.file_data.length : 0} bytes)`));
+                    tripExpenses.filter(e => e.receipt_data).forEach(e => console.log(`  📎 expense receipt: ${e.expense_type} (${e.receipt_type}, ${e.receipt_data.length} bytes)`));
                     const pctThreshold = parseFloat(settings.variance_pct_threshold || '10');
                     const dollarThreshold = parseFloat(settings.variance_dollar_threshold || '100');
                     const refNumber = trip.report_ref || 'PENDING';
