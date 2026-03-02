@@ -5211,7 +5211,35 @@ function generateExpenseReportPDF(tripId, db) {
                     const doc = new PDFDocument({ size: 'LETTER', margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN }, bufferPages: true });
                     const buffers = [];
                     doc.on('data', chunk => buffers.push(chunk));
-                    doc.on('end', () => resolve(Buffer.concat(buffers)));
+                    doc.on('end', async () => {
+                        try {
+                            const reportPdf = Buffer.concat(buffers);
+                            // Merge any PDF receipt attachments using pdf-lib
+                            const pdfReceipts = [
+                                ...transportReceipts.filter(r => r.file_data && r.file_type === 'application/pdf'),
+                                ...tripExpenses.filter(e => e.receipt_data && e.receipt_type === 'application/pdf')
+                            ];
+                            if (pdfReceipts.length === 0) return resolve(reportPdf);
+
+                            const { PDFDocument: PDFLib } = require('pdf-lib');
+                            const mergedDoc = await PDFLib.load(reportPdf);
+                            for (const receipt of pdfReceipts) {
+                                try {
+                                    const data = receipt.file_data || receipt.receipt_data;
+                                    const srcDoc = await PDFLib.load(data);
+                                    const pages = await mergedDoc.copyPages(srcDoc, srcDoc.getPageIndices());
+                                    pages.forEach(p => mergedDoc.addPage(p));
+                                } catch (mergeErr) {
+                                    console.warn('Could not merge PDF receipt:', mergeErr.message);
+                                }
+                            }
+                            const merged = await mergedDoc.save();
+                            resolve(Buffer.from(merged));
+                        } catch (e) {
+                            console.error('PDF merge error, returning unmerged:', e.message);
+                            resolve(Buffer.concat(buffers));
+                        }
+                    });
 
                     const pageW = 612 - MARGIN * 2; // 468pt usable
                     const LEFT = MARGIN;
@@ -5695,7 +5723,7 @@ function generateExpenseReportPDF(tripId, db) {
                                     }
                                 } else {
                                     doc.fontSize(10).fillColor(COLORS.muted)
-                                        .text(`Receipt attached: ${receipt.file_name || 'file'} (${receipt.file_type || 'unknown type'} — not embeddable in PDF)`, LEFT, imgTop, { align: 'center' });
+                                        .text(`Receipt attached: ${receipt.file_name || 'file'} (${receipt.file_type || 'unknown type'} — PDF pages appended at end of report)`, LEFT, imgTop, { align: 'center' });
                                 }
                             }
                         }
@@ -5733,7 +5761,7 @@ function generateExpenseReportPDF(tripId, db) {
                             }
                         } else {
                             doc.fontSize(10).fillColor(COLORS.muted)
-                                .text(`Receipt attached: ${exp.receipt_type} (not embeddable in PDF)`, LEFT, imgTop, { align: 'center' });
+                                .text(`Receipt attached: ${exp.receipt_type} (PDF pages appended at end of report)`, LEFT, imgTop, { align: 'center' });
                         }
                     }
 
