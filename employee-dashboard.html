@@ -7476,30 +7476,35 @@
             localStorage.setItem('standalone_drafts_' + (currentUser?.id || ''), JSON.stringify(standaloneDrafts));
         }
 
+        function showStandaloneError(msg) {
+            const el = document.getElementById('standalone-error');
+            const txt = document.getElementById('standalone-error-text');
+            if (el && txt) { txt.textContent = msg; el.style.display = 'block'; el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => el.style.display = 'none', 5000); }
+            else { alert(msg); }
+        }
+        function showStandaloneSuccess(msg) {
+            const el = document.getElementById('standalone-success');
+            const txt = document.getElementById('standalone-success-text');
+            if (el && txt) { txt.textContent = msg; el.style.display = 'block'; el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => el.style.display = 'none', 3000); }
+        }
+
         function addStandaloneDraft() {
             try {
-            console.log('[AddToDraft] called');
-            const purpose = document.getElementById('sa-purpose').value.trim();
-            const date = document.getElementById('sa-date').value;
+            const purpose = document.getElementById('sa-purpose')?.value?.trim() || '';
+            const date = document.getElementById('sa-date')?.value || '';
             const items = getLineItemData();
 
             if (!purpose || !date) {
-                const missingField = !purpose ? document.getElementById('sa-purpose') : document.getElementById('sa-date');
-                missingField.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                missingField.style.border = '2px solid #dc3545';
-                setTimeout(() => missingField.style.border = '', 3000);
-                document.getElementById('standalone-error-text').textContent = !purpose ? 'Please enter a claim purpose.' : 'Please select a date.';
-                document.getElementById('standalone-error').style.display = 'block';
-                setTimeout(() => document.getElementById('standalone-error').style.display = 'none', 5000);
+                const fieldId = !purpose ? 'sa-purpose' : 'sa-date';
+                const field = document.getElementById(fieldId);
+                if (field) { field.scrollIntoView({ behavior: 'smooth', block: 'center' }); field.style.border = '2px solid #dc3545'; setTimeout(() => field.style.border = '', 3000); }
+                showStandaloneError(!purpose ? 'Please enter a claim purpose.' : 'Please select a date.');
                 return;
             }
 
             const validItems = items.filter(i => i.amount > 0);
             if (validItems.length === 0) {
-                document.getElementById('standalone-error-text').textContent = 'Add at least one line item with a valid amount.';
-                document.getElementById('standalone-error').style.display = 'block';
-                document.getElementById('standalone-error').scrollIntoView({ behavior: 'smooth', block: 'center' });
-                setTimeout(() => document.getElementById('standalone-error').style.display = 'none', 5000);
+                showStandaloneError('Add at least one line item with a valid amount.');
                 return;
             }
 
@@ -7517,18 +7522,17 @@
             renderStandaloneDrafts();
 
             // Reset form
-            document.getElementById('sa-purpose').value = '';
-            const _today = new Date();
-            document.getElementById('sa-date').value = _today.getFullYear() + '-' + String(_today.getMonth()+1).padStart(2,'0') + '-' + String(_today.getDate()).padStart(2,'0');
-            document.getElementById('claim-line-items').innerHTML = '';
+            const purposeEl = document.getElementById('sa-purpose');
+            if (purposeEl) purposeEl.value = '';
+            const dateEl = document.getElementById('sa-date');
+            if (dateEl) { const _t = new Date(); dateEl.value = _t.getFullYear() + '-' + String(_t.getMonth()+1).padStart(2,'0') + '-' + String(_t.getDate()).padStart(2,'0'); }
+            const lineContainer = document.getElementById('claim-line-items');
+            if (lineContainer) lineContainer.innerHTML = '';
             addClaimLineItem();
             updateClaimTotal();
 
-            document.getElementById('standalone-success-text').textContent = '➕ Claim "' + purpose + '" ($' + total.toFixed(2) + ') added to draft';
-            document.getElementById('standalone-success').style.display = 'block';
-            document.getElementById('standalone-success').scrollIntoView({ behavior: 'smooth', block: 'center' });
-            setTimeout(() => document.getElementById('standalone-success').style.display = 'none', 3000);
-            } catch(e) { console.error('[AddToDraft] Error:', e); alert('Error adding to draft: ' + e.message); }
+            showStandaloneSuccess('➕ Claim "' + purpose + '" ($' + total.toFixed(2) + ') added to draft');
+            } catch(e) { console.error('[AddToDraft] Error:', e); alert('Error: ' + e.message); }
         }
 
         function getCategoryIcon(cat) {
@@ -7628,8 +7632,7 @@
             const submitBtn = document.querySelector('[onclick="submitAllStandaloneExpenses()"]');
             if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '⏳ Submitting...'; }
 
-            document.getElementById('standalone-success-text').textContent = '📤 Submitting expenses...';
-            document.getElementById('standalone-success').style.display = 'block';
+            showStandaloneSuccess('📤 Submitting expenses...');
 
             let successCount = 0;
             let errors = [];
@@ -7709,16 +7712,13 @@
                 standaloneDrafts = [];
                 saveStandaloneDrafts();
                 renderStandaloneDrafts();
-                document.getElementById('standalone-success-text').textContent = '✅ ' + successCount + ' claim(s) submitted for approval!';
-                document.getElementById('standalone-success').style.display = 'block';
-                document.getElementById('standalone-error').style.display = 'none';
-                setTimeout(() => document.getElementById('standalone-success').style.display = 'none', 5000);
+                showStandaloneSuccess('✅ ' + successCount + ' claim(s) submitted for approval!');
+                const errDiv = document.getElementById('standalone-error');
+                if (errDiv) errDiv.style.display = 'none';
             }
 
             if (errors.length > 0) {
-                document.getElementById('standalone-error-text').textContent = 'Some failed: ' + errors.join(', ');
-                document.getElementById('standalone-error').style.display = 'block';
-                setTimeout(() => document.getElementById('standalone-error').style.display = 'none', 8000);
+                showStandaloneError('Some failed: ' + errors.join(', '));
             }
 
             // Re-enable submit button
