@@ -1589,8 +1589,63 @@ try {
                             </div>
                         </div>`;
                     } else {
-                        // === NON-TRIP EXPENSES (original flat cards) ===
+                        // === NON-TRIP EXPENSES — group by claim_group ===
+                        const claimGroups = {};
+                        const ungrouped = [];
                         group.expenses.forEach(expense => {
+                            if (expense.claim_group) {
+                                if (!claimGroups[expense.claim_group]) claimGroups[expense.claim_group] = [];
+                                claimGroups[expense.claim_group].push(expense);
+                            } else {
+                                ungrouped.push(expense);
+                            }
+                        });
+
+                        // Render claim group cards
+                        Object.entries(claimGroups).forEach(([claimId, claimExpenses]) => {
+                            const claimTotal = claimExpenses.reduce((s, e) => s + parseFloat(e.amount), 0);
+                            const pendingInClaim = claimExpenses.filter(e => e.status === 'pending');
+                            const pendingIds = pendingInClaim.map(e => e.id);
+                            // Extract purpose from description prefix [Purpose]
+                            const descMatch = (claimExpenses[0].description || '').match(/^\[(.+?)\]/);
+                            const claimPurpose = descMatch ? descMatch[1] : claimId;
+                            const empName = claimExpenses[0].employee_name || claimExpenses[0].employee_name_from_db || 'Unknown';
+                            const catIcons = { 'purchase': '🛒', 'kilometric': '🚗', 'parking': '🅿️', 'other': '📋' };
+
+                            html += `
+                            <div style="background: white; border-radius: 12px; border: 2px solid ${pendingInClaim.length > 0 ? '#f0ad4e' : '#27ae60'}; margin-bottom: 20px; overflow: hidden;">
+                                <div style="background: linear-gradient(135deg, #2c3e50, #4a90e2); color: white; padding: 16px 20px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                                        <div>
+                                            <div style="font-size: 18px; font-weight: bold;">📦 ${claimPurpose}</div>
+                                            <div style="font-size: 14px; opacity: 0.9; margin-top: 4px;">👤 ${empName} · 📅 ${claimExpenses[0].date}</div>
+                                        </div>
+                                        <div style="text-align: right;">
+                                            <div style="font-size: 22px; font-weight: bold;">$${claimTotal.toFixed(2)}</div>
+                                            <div style="font-size: 12px; opacity: 0.8;">${claimExpenses.length} item${claimExpenses.length > 1 ? 's' : ''}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="padding: 12px 20px;">
+                                    ${claimExpenses.map(exp => {
+                                        const icon = catIcons[exp.expense_type] || '📋';
+                                        const kmMatch = exp.description && exp.description.match(/(\d+(?:\.\d+)?)km/);
+                                        const label = kmMatch ? `${kmMatch[1]}km` : (exp.category || exp.expense_type);
+                                        return `<div style="padding: 6px 0; font-size: 14px; color: #555; border-bottom: 1px solid #f0f0f0;">
+                                            ${icon} ${label}: <strong>$${parseFloat(exp.amount).toFixed(2)}</strong>${exp.vendor ? ' — ' + exp.vendor : ''}
+                                        </div>`;
+                                    }).join('')}
+                                </div>
+                                ${pendingInClaim.length > 0 && currentUserRole === 'supervisor' ? `
+                                <div style="padding: 12px 20px; background: #fff8e1; border-top: 1px solid #eee; display: flex; gap: 10px; flex-wrap: wrap;">
+                                    <button class="btn btn-success" onclick="bulkApproveTrip([${pendingIds.join(',')}])" style="font-size: 14px; padding: 8px 20px;">✅ Approve All</button>
+                                    <button class="btn btn-danger" onclick="bulkRejectTrip([${pendingIds.join(',')}])" style="font-size: 13px; padding: 6px 14px;">❌ Reject All</button>
+                                </div>` : ''}
+                            </div>`;
+                        });
+
+                        // Render ungrouped expenses (original flat cards)
+                        ungrouped.forEach(expense => {
                             const statusClass = expense.status === 'approved' ? 'status-approved' : 
                                               expense.status === 'rejected' ? 'status-rejected' : 
                                               expense.status === 'returned' ? 'status-returned' : 'status-pending';

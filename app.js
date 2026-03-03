@@ -703,6 +703,13 @@ function insertDefaultData() {
             }
         });
 
+        // Add claim_group column for expense claim groups
+        db.run(`ALTER TABLE expenses ADD COLUMN claim_group TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding claim_group column:', err.message);
+            }
+        });
+
         // Transit claims PDF columns
         db.run(`ALTER TABLE transit_claims ADD COLUMN report_ref TEXT DEFAULT NULL`, (err) => {
             if (err && !err.message.includes('duplicate column')) {}
@@ -1205,7 +1212,7 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
         }
     
     // CRITICAL FIX: Validate expense type and handle common aliases
-    const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other', 'transport', 'transport_flight', 'transport_train', 'transport_bus', 'transport_rental', 'transport_taxi'];
+    const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other', 'transport', 'transport_flight', 'transport_train', 'transport_bus', 'transport_rental', 'transport_taxi', 'kilometric', 'parking', 'purchase'];
     
     // Handle common expense type aliases
     if (expense_type === 'meals') {
@@ -1378,6 +1385,111 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
             success: false,
             error: 'An error occurred while processing your expense. Please try again.'
         });
+    }
+});
+
+// === EXPENSE CLAIM GROUPS ===
+// Submit a group of expenses as a single claim
+app.post('/api/expense-claims', requireAuth, upload.array('receipts', 20), async (req, res) => {
+    try {
+        const { purpose, date, items } = req.body;
+        let parsedItems;
+        try {
+            parsedItems = typeof items === 'string' ? JSON.parse(items) : items;
+        } catch (e) {
+            return res.status(400).json({ success: false, error: 'Invalid items format' });
+        }
+
+        if (!purpose || !date || !Array.isArray(parsedItems) || parsedItems.length === 0) {
+            return res.status(400).json({ success: false, error: 'Purpose, date, and at least one line item are required.' });
+        }
+
+        const claimGroup = 'CLM-' + Date.now();
+
+        // Get employee info
+        const employee = await new Promise((resolve, reject) => {
+            db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err, row) => {
+                if (err) reject(err);
+                else resolve(row);
+            });
+        });
+
+        if (!employee) {
+            return res.status(404).json({ success: false, error: 'Employee not found' });
+        }
+
+        const results = [];
+        const files = req.files || [];
+
+        for (let i = 0; i < parsedItems.length; i++) {
+            const item = parsedItems[i];
+            let amount = parseFloat(item.amount);
+            const category = sanitizeString(item.category, 100);
+            const vendor = sanitizeString(item.vendor, 255);
+            const description = sanitizeString(item.description, 1000);
+            let expenseType = 'other';
+
+            // Calculate kilometric amount server-side
+            if (category === 'Kilometric' || item.expense_type === 'kilometric') {
+                expenseType = 'kilometric';
+                const km = parseFloat(item.km) || 0;
+                if (km <= 0) continue;
+                // NJC rate: $0.61/km for first 5000km, $0.55/km after
+                if (km <= 5000) {
+                    amount = km * 0.61;
+                } else {
+                    amount = (5000 * 0.61) + ((km - 5000) * 0.55);
+                }
+                amount = Math.round(amount * 100) / 100;
+            } else if (category === 'Parking' || item.expense_type === 'parking') {
+                expenseType = 'parking';
+            } else if (category === 'Purchase/Supply' || item.expense_type === 'purchase') {
+                expenseType = 'purchase';
+            } else {
+                expenseType = 'other';
+            }
+
+            if (isNaN(amount) || amount <= 0) continue;
+
+            const prefixedDesc = `[${sanitizeString(purpose, 200)}] ${description || category}`;
+
+            // Match receipt file by index
+            const receiptFile = files.find(f => f.fieldname === 'receipts' && f.originalname.startsWith(`item_${i}_`)) || files[i] || null;
+            const receiptPath = receiptFile ? `/uploads/${receiptFile.filename}` : null;
+            let receiptData = null;
+            const receiptType = receiptFile ? receiptFile.mimetype : null;
+            if (receiptFile) {
+                try { receiptData = fs.readFileSync(receiptFile.path); } catch (e) {}
+            }
+
+            const insertResult = await new Promise((resolve, reject) => {
+                db.run(
+                    `INSERT INTO expenses (employee_name, employee_id, expense_type, date, amount, vendor, description, receipt_photo, receipt_data, receipt_type, category, claim_group, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+                    [employee.name, req.user.employeeId, expenseType, date, amount, vendor, prefixedDesc, receiptPath, receiptData, receiptType, category, claimGroup],
+                    function(err) {
+                        if (err) reject(err);
+                        else resolve({ id: this.lastID });
+                    }
+                );
+            });
+
+            // Log audit
+            logExpenseAudit(insertResult.id, 'submitted', req.user.employeeId, employee.name,
+                `Claim group ${claimGroup}: ${expenseType} $${amount.toFixed(2)}`, null, 'pending');
+
+            results.push(insertResult);
+        }
+
+        res.json({
+            success: true,
+            claim_group: claimGroup,
+            count: results.length,
+            message: `✅ ${results.length} expense(s) submitted as claim "${purpose}"`
+        });
+    } catch (error) {
+        console.error('❌ Error processing expense claim:', error);
+        res.status(500).json({ success: false, error: 'Failed to process expense claim.' });
     }
 });
 
@@ -4404,7 +4516,7 @@ app.post('/api/travel-auth/:id/expenses', requireAuth, async (req, res) => {
     }
     
     // CRITICAL FIX: Validate expense type for travel auth
-    const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other', 'transport', 'transport_flight', 'transport_train', 'transport_bus', 'transport_rental', 'transport_taxi'];
+    const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other', 'transport', 'transport_flight', 'transport_train', 'transport_bus', 'transport_rental', 'transport_taxi', 'kilometric', 'parking', 'purchase'];
     if (!validExpenseTypes.includes(expense_type)) {
         return res.status(400).json({ 
             error: `Invalid expense type "${expense_type}". Valid types: ${validExpenseTypes.join(', ')}`,
