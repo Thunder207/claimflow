@@ -5219,21 +5219,20 @@ function generateExpenseReportPDF(tripId, db) {
                     const refNumber = trip.report_ref || 'PENDING';
 
                     const MARGIN = 72;
-                    const doc = new PDFDocument({ size: 'LETTER', margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN }, bufferPages: true });
+                    const doc = new PDFDocument({ size: 'LETTER', margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN } });
                     const buffers = [];
                     doc.on('data', chunk => buffers.push(chunk));
                     doc.on('end', async () => {
                         try {
                             const reportPdf = Buffer.concat(buffers);
-                            // Merge any PDF receipt attachments using pdf-lib
+                            const { PDFDocument: PDFLib, rgb, StandardFonts } = require('pdf-lib');
+                            const mergedDoc = await PDFLib.load(reportPdf);
+
+                            // Merge any PDF receipt attachments
                             const pdfReceipts = [
                                 ...transportReceipts.filter(r => r.file_data && r.file_type === 'application/pdf'),
                                 ...tripExpenses.filter(e => e.receipt_data && e.receipt_type === 'application/pdf')
                             ];
-                            if (pdfReceipts.length === 0) return resolve(reportPdf);
-
-                            const { PDFDocument: PDFLib } = require('pdf-lib');
-                            const mergedDoc = await PDFLib.load(reportPdf);
                             for (const receipt of pdfReceipts) {
                                 try {
                                     const data = receipt.file_data || receipt.receipt_data;
@@ -5244,10 +5243,28 @@ function generateExpenseReportPDF(tripId, db) {
                                     console.warn('Could not merge PDF receipt:', mergeErr.message);
                                 }
                             }
-                            const merged = await mergedDoc.save();
-                            resolve(Buffer.from(merged));
+
+                            // Add page footers to all pages
+                            const font = await mergedDoc.embedFont(StandardFonts.Helvetica);
+                            const totalPages = mergedDoc.getPageCount();
+                            for (let i = 0; i < totalPages; i++) {
+                                const page = mergedDoc.getPage(i);
+                                const footerText = `Page ${i + 1} of ${totalPages}     Ref: ${refNumber}`;
+                                const textWidth = font.widthOfTextAtSize(footerText, 8);
+                                const { width } = page.getSize();
+                                page.drawText(footerText, {
+                                    x: (width - textWidth) / 2,
+                                    y: 52,
+                                    size: 8,
+                                    font,
+                                    color: rgb(0.4, 0.4, 0.4)
+                                });
+                            }
+
+                            const finalPdf = await mergedDoc.save();
+                            resolve(Buffer.from(finalPdf));
                         } catch (e) {
-                            console.error('PDF merge error, returning unmerged:', e.message);
+                            console.error('PDF post-processing error, returning raw:', e.message);
                             resolve(Buffer.concat(buffers));
                         }
                     });
@@ -5780,17 +5797,7 @@ function generateExpenseReportPDF(tripId, db) {
                     // ═══════════════════════════════════════════
                     // ADD FOOTERS TO ALL PAGES
                     // ═══════════════════════════════════════════
-                    const pageRange = doc.bufferedPageRange();
-                    const totalPages = pageRange.count;
-                    for (let i = 0; i < totalPages; i++) {
-                        doc.switchToPage(i);
-                        doc.save().fontSize(8).fillColor(COLORS.muted).font('Helvetica')
-                            .text(`Page ${i + 1} of ${totalPages}     Ref: ${refNumber}`, LEFT, 740, { width: pageW, align: 'center' })
-                            .restore();
-                    }
-
-                    // Flush buffered pages to prevent duplicate blank pages from switchToPage
-                    doc.flushPages();
+                    // Footers added post-generation via pdf-lib (avoids PDFKit bufferPages duplication bug)
                     doc.end();
                 }).catch(reject);
             });
