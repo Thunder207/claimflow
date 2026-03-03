@@ -7450,7 +7450,8 @@
         function updateClaimTotal() {
             const items = getLineItemData();
             const total = items.reduce((s, i) => s + i.amount, 0);
-            document.getElementById('claim-total').textContent = '$' + total.toFixed(2);
+            const el = document.getElementById('claim-total');
+            if (el) el.textContent = '$' + total.toFixed(2);
         }
 
         // Load drafts from localStorage on init
