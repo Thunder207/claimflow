@@ -857,9 +857,14 @@ function insertDefaultData() {
     });
     
     // 📱 Seed default phone benefit settings
-    db.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('phone_monthly_max', '100.00')`, (err) => {
+    db.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('phone_plan_max', '50.00')`, (err) => {
         if (err && !err.message.includes('UNIQUE constraint failed')) {
-            console.error('❌ Error inserting phone_monthly_max:', err.message);
+            console.error('❌ Error inserting phone_plan_max:', err.message);
+        }
+    });
+    db.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('phone_device_max', '50.00')`, (err) => {
+        if (err && !err.message.includes('UNIQUE constraint failed')) {
+            console.error('❌ Error inserting phone_device_max:', err.message);
         }
     });
     db.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('phone_claim_window', '2')`, (err) => {
@@ -6795,12 +6800,13 @@ const monthNames = ['January','February','March','April','May','June','July','Au
 
 // GET /api/settings/phone — get phone benefit settings
 app.get('/api/settings/phone', requireAuth, (req, res) => {
-    db.all(`SELECT key, value FROM app_settings WHERE key IN ('phone_monthly_max', 'phone_claim_window')`, [], (err, rows) => {
+    db.all(`SELECT key, value FROM app_settings WHERE key IN ('phone_plan_max', 'phone_device_max', 'phone_claim_window')`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: 'Database error' });
         const settings = {};
         rows.forEach(r => settings[r.key] = r.value);
         res.json({
-            monthly_max: parseFloat(settings.phone_monthly_max || '100.00'),
+            plan_max: parseFloat(settings.phone_plan_max || '50.00'),
+            device_max: parseFloat(settings.phone_device_max || '50.00'),
             claim_window: parseInt(settings.phone_claim_window || '2')
         });
     });
@@ -6808,30 +6814,28 @@ app.get('/api/settings/phone', requireAuth, (req, res) => {
 
 // PUT /api/settings/phone — update phone benefit settings (admin only)
 app.put('/api/settings/phone', requireAuth, requireRole('admin'), (req, res) => {
-    const { monthly_max, claim_window } = req.body;
-    
-    const maxAmount = parseFloat(monthly_max);
-    const windowVal = parseInt(claim_window);
-    if (isNaN(maxAmount) || maxAmount <= 0 || maxAmount > 1000) {
-        return res.status(400).json({ error: 'Monthly maximum must be between $0.01 and $1,000.00' });
-    }
-    if (isNaN(windowVal) || windowVal < 0 || windowVal > 12) {
-        return res.status(400).json({ error: 'Claim window must be between 0 and 12 months' });
-    }
+    const { plan_max, device_max, claim_window } = req.body;
     
     // Get old values for audit
-    db.all(`SELECT key, value FROM app_settings WHERE key IN ('phone_monthly_max', 'phone_claim_window')`, [], (err, oldRows) => {
+    db.all(`SELECT key, value FROM app_settings WHERE key IN ('phone_plan_max', 'phone_device_max', 'phone_claim_window')`, [], (err, oldRows) => {
         const oldSettings = {};
         if (oldRows) oldRows.forEach(r => oldSettings[r.key] = r.value);
         
-        db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('phone_monthly_max', ?, ?, CURRENT_TIMESTAMP)`, [String(maxAmount), req.user.employeeId]);
-        db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('phone_claim_window', ?, ?, CURRENT_TIMESTAMP)`, [String(windowVal), req.user.employeeId]);
+        if (plan_max !== undefined) {
+            db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('phone_plan_max', ?, ?, CURRENT_TIMESTAMP)`, [String(plan_max), req.user.employeeId]);
+        }
+        if (device_max !== undefined) {
+            db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('phone_device_max', ?, ?, CURRENT_TIMESTAMP)`, [String(device_max), req.user.employeeId]);
+        }
+        if (claim_window !== undefined) {
+            db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('phone_claim_window', ?, ?, CURRENT_TIMESTAMP)`, [String(claim_window), req.user.employeeId]);
+        }
         
         // Audit log
         db.run(`INSERT INTO settings_audit_log (setting_key, old_value, new_value, changed_by) VALUES (?, ?, ?, ?)`,
             ['phone_benefit_settings',
-             `Max: $${oldSettings.phone_monthly_max || '100.00'}, Window: ${oldSettings.phone_claim_window || '2'} months`,
-             `Max: $${maxAmount.toFixed(2)}, Window: ${windowVal} months`,
+             `Plan: $${oldSettings.phone_plan_max || '50.00'}, Device: $${oldSettings.phone_device_max || '50.00'}, Window: ${oldSettings.phone_claim_window || '2'}`,
+             `Plan: $${plan_max || oldSettings.phone_plan_max || '50.00'}, Device: $${device_max || oldSettings.phone_device_max || '50.00'}, Window: ${claim_window || oldSettings.phone_claim_window || '2'}`,
              req.user.employeeId]);
         
         res.json({ success: true, message: 'Phone benefit settings updated' });
@@ -6876,9 +6880,12 @@ app.post('/api/phone-claims', requireAuth, upload.array('receipts', 30), (req, r
         if (!claims.length) return res.status(400).json({ error: 'No claims provided' });
         
         // Get settings
-        db.get(`SELECT value FROM app_settings WHERE key = 'phone_monthly_max'`, (err, maxSetting) => {
+        db.all(`SELECT key, value FROM app_settings WHERE key IN ('phone_plan_max', 'phone_device_max')`, [], (err, settingRows) => {
             if (err) return res.status(500).json({ error: 'Database error' });
-            const monthlyMax = parseFloat(maxSetting ? maxSetting.value : '100.00');
+            const settings = {};
+            settingRows.forEach(r => settings[r.key] = r.value);
+            const planMax = parseFloat(settings.phone_plan_max || '50.00');
+            const deviceMax = parseFloat(settings.phone_device_max || '50.00');
             
             const batchId = `PHB-${Date.now()}`;
             let completed = 0;
@@ -6905,18 +6912,8 @@ app.post('/api/phone-claims', requireAuth, upload.array('receipts', 30), (req, r
                 
                 const planReceipt = parseFloat(c.plan_receipt || 0);
                 const deviceReceipt = parseFloat(c.device_receipt || 0);
-                const receiptTotal = planReceipt + deviceReceipt;
-                // Cap combined total to monthly max, then proportionally split
-                let planClaim = planReceipt;
-                let deviceClaim = deviceReceipt;
-                if (receiptTotal > monthlyMax && receiptTotal > 0) {
-                    const ratio = monthlyMax / receiptTotal;
-                    planClaim = Math.round(planReceipt * ratio * 100) / 100;
-                    deviceClaim = Math.round(deviceReceipt * ratio * 100) / 100;
-                    // Ensure total exactly equals max (fix rounding)
-                    const diff = monthlyMax - (planClaim + deviceClaim);
-                    if (diff !== 0) planClaim = Math.round((planClaim + diff) * 100) / 100;
-                }
+                const planClaim = Math.min(planReceipt, planMax);
+                const deviceClaim = Math.min(deviceReceipt, deviceMax);
                 const totalClaim = planClaim + deviceClaim;
                 
                 if (planReceipt <= 0) {

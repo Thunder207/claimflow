@@ -1012,7 +1012,7 @@
                     </h4>
                 </div>
                 <p style="color: #666; font-size: 13px; margin: 0 0 15px 0;">
-                    Monthly reimbursement for phone plan and device. Maximum: <strong id="phone-max-display">$100.00</strong>/month (plan + device combined)
+                    Monthly reimbursement for phone plan and device. Maximum: <strong id="phone-max-display">$100.00</strong>/month (<span id="phone-plan-max-display">$50.00</span> plan + <span id="phone-device-max-display">$50.00</span> device)
                 </p>
                 
                 <div id="phone-claims-cards" style="display: flex; flex-direction: column; gap: 15px;">
@@ -3165,7 +3165,7 @@
         // 📱 PHONE BENEFIT FUNCTIONS
         // ═══════════════════════════════════════════════════════════════════════════════
 
-        let phoneSettings = { monthly_max: 100, claim_window: 2 };
+        let phoneSettings = { plan_max: 50, device_max: 50, claim_window: 2 };
         let phoneEligibleMonths = [];
         let phoneExistingClaims = [];
         let phoneClaimCardCounter = 0;
@@ -3176,7 +3176,9 @@
                 const settingsResp = await fetch('/api/settings/phone', { headers: { 'Authorization': `Bearer ${sessionId}` } });
                 if (settingsResp.ok) {
                     phoneSettings = await settingsResp.json();
-                    document.getElementById('phone-max-display').textContent = `$${phoneSettings.monthly_max.toFixed(2)}`;
+                    document.getElementById('phone-plan-max-display').textContent = `$${phoneSettings.plan_max.toFixed(2)}`;
+                    document.getElementById('phone-device-max-display').textContent = `$${phoneSettings.device_max.toFixed(2)}`;
+                    document.getElementById('phone-max-display').textContent = `$${(phoneSettings.plan_max + phoneSettings.device_max).toFixed(2)}`;
                 }
                 
                 const eligibleResp = await fetch('/api/phone-claims/eligible', { headers: { 'Authorization': `Bearer ${sessionId}` } });
@@ -3260,7 +3262,7 @@
                         <input type="number" id="phone-plan-${cardId}" step="0.01" min="0" placeholder="0.00" onchange="updatePhoneClaimAmounts(${cardId})" oninput="updatePhoneClaimAmounts(${cardId})" style="flex:1;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:14px;">
                     </div>
                     <div style="font-size:12px;color:#666;">
-                        Claim: <strong id="phone-plan-claim-${cardId}">$0.00</strong>
+                        Claim: <strong id="phone-plan-claim-${cardId}">$0.00</strong> · Max: $${phoneSettings.plan_max.toFixed(2)}
                     </div>
                 </div>
                 
@@ -3272,13 +3274,9 @@
                         <input type="number" id="phone-device-${cardId}" step="0.01" min="0" value="0" placeholder="0.00" onchange="updatePhoneClaimAmounts(${cardId})" oninput="updatePhoneClaimAmounts(${cardId})" style="flex:1;padding:8px;border-radius:6px;border:1px solid #ccc;font-size:14px;">
                     </div>
                     <div style="font-size:12px;color:#666;">
-                        Claim: <strong id="phone-device-claim-${cardId}">$0.00</strong>
+                        Claim: <strong id="phone-device-claim-${cardId}">$0.00</strong> · Max: $${phoneSettings.device_max.toFixed(2)}
                         <br><span style="color:#999;font-size:11px;">Leave at $0 if you don't have a device payment</span>
                     </div>
-                </div>
-                
-                <div id="phone-cap-warning-${cardId}" style="display:none;background:#fff3cd;padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#856404;">
-                    ⚠️ Combined total exceeds monthly max of $${phoneSettings.monthly_max.toFixed(2)} — claim will be capped.
                 </div>
                 
                 <div style="border-top:1px solid #e0e0e0;padding-top:12px;">
@@ -3310,29 +3308,13 @@
         function updatePhoneClaimAmounts(cardId) {
             const planInput = parseFloat(document.getElementById(`phone-plan-${cardId}`).value) || 0;
             const deviceInput = parseFloat(document.getElementById(`phone-device-${cardId}`).value) || 0;
-            const receiptTotal = planInput + deviceInput;
-            const monthlyMax = phoneSettings.monthly_max;
-            const capped = receiptTotal > monthlyMax && receiptTotal > 0;
-            
-            let planClaim = planInput;
-            let deviceClaim = deviceInput;
-            if (capped) {
-                const ratio = monthlyMax / receiptTotal;
-                planClaim = Math.round(planInput * ratio * 100) / 100;
-                deviceClaim = Math.round(deviceInput * ratio * 100) / 100;
-                const diff = monthlyMax - (planClaim + deviceClaim);
-                if (diff !== 0) planClaim = Math.round((planClaim + diff) * 100) / 100;
-            }
+            const planClaim = Math.min(planInput, phoneSettings.plan_max);
+            const deviceClaim = Math.min(deviceInput, phoneSettings.device_max);
             const total = planClaim + deviceClaim;
             
-            document.getElementById(`phone-plan-claim-${cardId}`).textContent = `$${planClaim.toFixed(2)}${capped ? ' (capped)' : ''}`;
-            document.getElementById(`phone-device-claim-${cardId}`).textContent = `$${deviceClaim.toFixed(2)}${capped ? ' (capped)' : ''}`;
-            document.getElementById(`phone-total-${cardId}`).textContent = `$${total.toFixed(2)}${capped ? ' (capped from $' + receiptTotal.toFixed(2) + ')' : ''}`;
-            
-            // Show/hide cap warning
-            const warning = document.getElementById(`phone-cap-warning-${cardId}`);
-            if (warning) warning.style.display = capped ? 'block' : 'none';
-            
+            document.getElementById(`phone-plan-claim-${cardId}`).textContent = `$${planClaim.toFixed(2)}${planInput > phoneSettings.plan_max ? ' (capped)' : ''}`;
+            document.getElementById(`phone-device-claim-${cardId}`).textContent = `$${deviceClaim.toFixed(2)}${deviceInput > phoneSettings.device_max ? ' (capped)' : ''}`;
+            document.getElementById(`phone-total-${cardId}`).textContent = `$${total.toFixed(2)}`;
             updatePhoneSummary();
         }
 
@@ -3357,8 +3339,7 @@
             phoneClaimCards.forEach(card => {
                 const plan = parseFloat(document.getElementById(`phone-plan-${card.id}`)?.value) || 0;
                 const device = parseFloat(document.getElementById(`phone-device-${card.id}`)?.value) || 0;
-                const receiptTotal = plan + device;
-                const total = Math.min(receiptTotal, phoneSettings.monthly_max);
+                const total = Math.min(plan, phoneSettings.plan_max) + Math.min(device, phoneSettings.device_max);
                 grandTotal += total;
                 if (total > 0) validCards++;
             });
