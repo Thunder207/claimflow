@@ -1689,7 +1689,7 @@ try {
                                         const label = kmMatch ? `${kmMatch[1]}km` : (exp.category || exp.expense_type);
                                         const isKm = exp.expense_type === 'kilometric';
                                         const receiptBtn = isKm ? '<span style="color:#999;font-size:11px;">N/A</span>' :
-                                            `<a href="/api/expense-claims/${exp.id}/receipt" target="_blank" style="color:#2196f3;font-size:12px;text-decoration:none;cursor:pointer;" onclick="event.stopPropagation()">📎 View Receipt</a>`;
+                                            `<span onclick="event.stopPropagation();viewExpenseReceipt(${exp.id})" style="color:#2196f3;font-size:12px;text-decoration:underline;cursor:pointer;">📎 View Receipt</span>`;
                                         return `<div style="padding: 6px 0; font-size: 14px; color: #555; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center;">
                                             <span>${icon} ${label}: <strong>$${parseFloat(exp.amount).toFixed(2)}</strong>${exp.vendor ? ' — ' + exp.vendor : ''}</span>
                                             <span>${receiptBtn}</span>
@@ -2005,7 +2005,7 @@ try {
                                     const label = kmMatch ? `${kmMatch[1]}km` : (exp.meal_name || exp.expense_type);
                                     const isKm = exp.expense_type === 'kilometric';
                                     const receiptBtn = isKm ? '<span style="color:#999;font-size:11px;">N/A</span>' :
-                                        `<a href="/api/expense-claims/${exp.id}/receipt" target="_blank" style="color:#2196f3;font-size:12px;text-decoration:none;cursor:pointer;">📎 View Receipt</a>`;
+                                        `<span onclick="viewExpenseReceipt(${exp.id})" style="color:#2196f3;font-size:12px;text-decoration:underline;cursor:pointer;">📎 View Receipt</span>`;
                                     return `<div style="padding: 6px 0; font-size: 14px; color: #555; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center;">
                                         <span>${icon} ${label}: <strong>$${parseFloat(exp.amount).toFixed(2)}</strong>${exp.vendor ? ' — ' + exp.vendor : ''}</span>
                                         <span>${receiptBtn}</span>
@@ -3640,6 +3640,38 @@ try {
             modal.appendChild(img);
             modal.onclick = () => modal.remove();
             document.body.appendChild(modal);
+        }
+
+        async function viewExpenseReceipt(expenseId) {
+            try {
+                const resp = await fetch(`/api/expense-claims/${expenseId}/receipt`, {
+                    headers: { 'Authorization': 'Bearer ' + sessionId }
+                });
+                if (!resp.ok) { showMessage('danger', 'Receipt not found'); return; }
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                const modal = document.createElement('div');
+                modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2000;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;padding:20px;cursor:pointer;';
+                modal.onclick = () => { modal.remove(); URL.revokeObjectURL(url); };
+                if (blob.type && blob.type.startsWith('image/')) {
+                    const img = document.createElement('img');
+                    img.src = url;
+                    img.style.cssText = 'max-width:90%;max-height:90%;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.5);';
+                    modal.appendChild(img);
+                } else {
+                    const iframe = document.createElement('iframe');
+                    iframe.src = url;
+                    iframe.style.cssText = 'width:90%;height:90%;border:none;border-radius:8px;background:white;';
+                    modal.appendChild(iframe);
+                    modal.onclick = null;
+                    const closeBtn = document.createElement('button');
+                    closeBtn.textContent = '✕ Close';
+                    closeBtn.style.cssText = 'position:absolute;top:15px;right:15px;background:#dc3545;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:16px;font-weight:bold;z-index:2001;';
+                    closeBtn.onclick = () => { modal.remove(); URL.revokeObjectURL(url); };
+                    modal.appendChild(closeBtn);
+                }
+                document.body.appendChild(modal);
+            } catch(e) { showMessage('danger', 'Error loading receipt: ' + e.message); }
         }
 
         function showMessage(type, message) {
