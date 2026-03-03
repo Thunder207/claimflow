@@ -948,7 +948,7 @@
                     <span id="claim-total" style="font-size: 22px; font-weight: bold; color: #28a745;">$0.00</span>
                 </div>
 
-                <button type="submit" class="btn" style="padding: 12px 30px; font-size: 16px; background: #6c757d; color: white; border: none; border-radius: 8px; cursor: pointer;" data-i18n="add_to_draft">➕ Add to Draft</button>
+                <button type="submit" class="btn" style="width: 100%; padding: 14px 30px; font-size: 17px; font-weight: 700; background: linear-gradient(135deg, #28a745 0%, #20963c 100%); color: white; border: none; border-radius: 10px; cursor: pointer; letter-spacing: 0.5px;" data-i18n="add_to_draft">✅ Add to Draft</button>
             </form>
 
             <!-- 🚍 Public Transit Benefit Form (shown when category selected) -->
@@ -1104,8 +1104,8 @@
                 </div>
                 <div id="sa-draft-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
                 <div style="margin-top: 20px; display: flex; gap: 15px;">
-                    <button onclick="submitAllStandaloneExpenses()" class="btn btn-primary" style="padding: 14px 40px; font-size: 16px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer;" data-i18n="submit_all_approval">📤 Submit All for Approval</button>
-                    <button onclick="clearStandaloneDrafts()" class="btn" style="padding: 14px 20px; font-size: 14px; background: #dc3545; color: white; border: none; border-radius: 8px; cursor: pointer;" data-i18n="clear_all">🗑️ Clear All</button>
+                    <button id="sa-submit-all-btn" onclick="submitAllStandaloneExpenses()" class="btn btn-primary" style="flex: 1; padding: 14px 20px; font-size: 16px; font-weight: 700; background: linear-gradient(135deg, #007bff 0%, #0056b3 100%); color: white; border: none; border-radius: 10px; cursor: pointer;" data-i18n="submit_all_approval">📤 Submit All for Approval</button>
+                    <button onclick="clearStandaloneDrafts()" class="btn" style="padding: 14px 16px; font-size: 13px; background: #dc3545; color: white; border: none; border-radius: 8px; cursor: pointer;" data-i18n="clear_all">🗑️ Clear</button>
                 </div>
             </div>
         </div>
@@ -7543,12 +7543,16 @@
             list.innerHTML = standaloneDrafts.map((d, i) => {
                 if (d.type === 'claim_group') {
                     const dateStr = new Date(d.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                    const itemsHtml = d.items.map(item => {
+                    const itemsHtml = d.items.map((item, j) => {
                         const icon = getCategoryIcon(item.category);
+                        const hasReceipt = item.receiptName;
+                        const receiptTag = hasReceipt 
+                            ? `<span style="color:#28a745;font-size:11px;">📎 ${item.receiptName}</span>` 
+                            : `<label style="color:#e67e22;font-size:11px;cursor:pointer;text-decoration:underline;">📷 Add receipt<input type="file" accept="image/*" style="display:none;" onchange="addReceiptToDraft(${i},${j},this)"></label>`;
                         if (item.category === 'Kilometric') {
-                            return `<div style="padding: 4px 0; font-size: 13px; color: #555;">&nbsp;&nbsp;${icon} Kilometric: ${item.km}km = $${item.amount.toFixed(2)}</div>`;
+                            return `<div style="padding: 4px 0; font-size: 13px; color: #555;">&nbsp;&nbsp;${icon} Kilometric: ${item.km}km = $${item.amount.toFixed(2)} ${receiptTag}</div>`;
                         }
-                        return `<div style="padding: 4px 0; font-size: 13px; color: #555;">&nbsp;&nbsp;${icon} ${item.category}: $${item.amount.toFixed(2)}${item.vendor ? ' — ' + item.vendor : ''}</div>`;
+                        return `<div style="padding: 4px 0; font-size: 13px; color: #555;">&nbsp;&nbsp;${icon} ${item.category}: $${item.amount.toFixed(2)}${item.vendor ? ' — ' + item.vendor : ''} ${receiptTag}</div>`;
                     }).join('');
 
                     return `
@@ -7578,6 +7582,15 @@
                     `;
                 }
             }).join('');
+        }
+
+        function addReceiptToDraft(draftIdx, itemIdx, input) {
+            if (!input.files || !input.files[0]) return;
+            const file = input.files[0];
+            standaloneDrafts[draftIdx].items[itemIdx].receiptName = file.name;
+            standaloneDrafts[draftIdx].items[itemIdx].receiptFile = file;
+            saveStandaloneDrafts();
+            renderStandaloneDrafts();
         }
 
         function removeStandaloneDraft(index) {
@@ -10267,4 +10280,3 @@
     </script>
 </body>
 </html>
-// Force deployment Mon Feb 23 12:16:32 EST 2026
