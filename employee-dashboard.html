@@ -923,7 +923,7 @@
             </div>
 
             <!-- Grouped Expense Claim Form -->
-            <form id="standalone-form" class="expense-form" onsubmit="addStandaloneDraft(event)">
+            <div id="standalone-form" class="expense-form">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 20px;">
                     <div class="form-group">
                         <label for="sa-purpose">Claim Purpose *</label>
@@ -948,8 +948,8 @@
                     <span id="claim-total" style="font-size: 22px; font-weight: bold; color: #28a745;">$0.00</span>
                 </div>
 
-                <button type="submit" class="btn" style="width: 100%; padding: 14px 30px; font-size: 17px; font-weight: 700; background: linear-gradient(135deg, #28a745 0%, #20963c 100%); color: white; border: none; border-radius: 10px; cursor: pointer; letter-spacing: 0.5px;" data-i18n="add_to_draft">✅ Add to Draft</button>
-            </form>
+                <button type="button" onclick="addStandaloneDraft()" class="btn" style="width: 100%; padding: 14px 30px; font-size: 17px; font-weight: 700; background: linear-gradient(135deg, #28a745 0%, #20963c 100%); color: white; border: none; border-radius: 10px; cursor: pointer; letter-spacing: 0.5px;" data-i18n="add_to_draft">✅ Add to Draft</button>
+            </div>
 
             <!-- 🚍 Public Transit Benefit Form (shown when category selected) -->
             <div id="transit-form-container" style="display: none; margin-top: 20px; border: 2px solid #17a2b8; border-radius: 12px; padding: 20px; background: linear-gradient(135deg, #e3f8fd 0%, #f0fbfc 100%);">
@@ -7456,7 +7456,10 @@
         // Load drafts from localStorage on init
         document.addEventListener('DOMContentLoaded', function() {
             const saDate = document.getElementById('sa-date');
-            if (saDate) saDate.valueAsDate = new Date();
+            if (saDate) {
+                const today = new Date();
+                saDate.value = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
+            }
 
             // Add first line item
             addClaimLineItem();
@@ -7473,8 +7476,9 @@
             localStorage.setItem('standalone_drafts_' + (currentUser?.id || ''), JSON.stringify(standaloneDrafts));
         }
 
-        function addStandaloneDraft(event) {
-            event.preventDefault();
+        function addStandaloneDraft() {
+            try {
+            console.log('[AddToDraft] called');
             const purpose = document.getElementById('sa-purpose').value.trim();
             const date = document.getElementById('sa-date').value;
             const items = getLineItemData();
@@ -7514,14 +7518,17 @@
 
             // Reset form
             document.getElementById('sa-purpose').value = '';
-            document.getElementById('sa-date').valueAsDate = new Date();
+            const _today = new Date();
+            document.getElementById('sa-date').value = _today.getFullYear() + '-' + String(_today.getMonth()+1).padStart(2,'0') + '-' + String(_today.getDate()).padStart(2,'0');
             document.getElementById('claim-line-items').innerHTML = '';
             addClaimLineItem();
             updateClaimTotal();
 
             document.getElementById('standalone-success-text').textContent = '➕ Claim "' + purpose + '" ($' + total.toFixed(2) + ') added to draft';
             document.getElementById('standalone-success').style.display = 'block';
+            document.getElementById('standalone-success').scrollIntoView({ behavior: 'smooth', block: 'center' });
             setTimeout(() => document.getElementById('standalone-success').style.display = 'none', 3000);
+            } catch(e) { console.error('[AddToDraft] Error:', e); alert('Error adding to draft: ' + e.message); }
         }
 
         function getCategoryIcon(cat) {
