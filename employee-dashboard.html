@@ -7432,6 +7432,10 @@
                         <label style="font-size:13px;">Vendor</label>
                         <input type="text" class="line-vendor" placeholder="e.g., Costco" style="padding:10px; border:2px solid #e1e8ed; border-radius:8px; font-size:14px; width:100%;">
                     </div>
+                    <div class="form-group" style="margin-bottom:0; grid-column: 1 / -1;">
+                        <label style="font-size:13px;">Details</label>
+                        <input type="text" class="line-details" placeholder="e.g., Office supplies for Q1 meeting" style="padding:10px; border:2px solid #e1e8ed; border-radius:8px; font-size:14px; width:100%;">
+                    </div>
                     <div class="form-group" style="margin-bottom:0;">
                         <label style="font-size:13px;">Receipt</label>
                         <input type="file" class="line-receipt" accept="image/*,.pdf,.doc,.docx" style="font-size:13px; width:100%;" onchange="onLineReceiptChange(this)">
@@ -7458,16 +7462,20 @@
             row.querySelector('.line-km-group').style.display = isKm ? '' : 'none';
             row.querySelector('.line-km-calc').style.display = isKm ? '' : 'none';
             const vendorGroup = row.querySelector('.line-vendor')?.closest('.form-group');
+            const detailsGroup = row.querySelector('.line-details')?.closest('.form-group');
             const receiptGroup = row.querySelector('.line-receipt')?.closest('.form-group');
             if (vendorGroup) vendorGroup.style.display = isKm ? 'none' : '';
+            if (detailsGroup) detailsGroup.style.display = isKm ? 'none' : '';
             if (receiptGroup) receiptGroup.style.display = isKm ? 'none' : '';
             if (!isKm) {
                 row.querySelector('.line-km').value = '';
                 row.querySelector('.line-km-amount').value = '';
             } else {
                 const vendor = row.querySelector('.line-vendor');
+                const details = row.querySelector('.line-details');
                 const receipt = row.querySelector('.line-receipt');
                 if (vendor) vendor.value = '';
+                if (details) details.value = '';
                 if (receipt) receipt.value = '';
             }
             updateClaimTotal();
@@ -7506,6 +7514,7 @@
                     amount,
                     km,
                     vendor: row.querySelector('.line-vendor').value,
+                    details: row.querySelector('.line-details')?.value || '',
                     receipt: row.querySelector('.line-receipt').files[0] || null
                 });
             });
@@ -7643,7 +7652,7 @@
                 purpose,
                 date,
                 amount: total,
-                items: validItems.map(i => ({ category: i.category, amount: i.amount, km: i.km, vendor: i.vendor, receiptFile: i.receipt || null, receiptName: i.receipt ? i.receipt.name : '' }))
+                items: validItems.map(i => ({ category: i.category, amount: i.amount, km: i.km, vendor: i.vendor, details: i.details || '', receiptFile: i.receipt || null, receiptName: i.receipt ? i.receipt.name : '' }))
             });
             saveStandaloneDrafts();
             renderStandaloneDrafts();
@@ -7803,7 +7812,7 @@
                             amount: item.amount,
                             km: item.km || 0,
                             vendor: item.vendor || '',
-                            description: '',
+                            description: item.details || '',
                             expense_type: CLAIM_CATEGORIES.find(c => c.value === item.category)?.type || 'other'
                         }))));
                         // Append receipt files per line item
