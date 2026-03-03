@@ -7593,8 +7593,15 @@
             renderStandaloneDrafts();
         }
 
+        let _standaloneSubmitting = false;
         async function submitAllStandaloneExpenses() {
             if (standaloneDrafts.length === 0) return;
+            if (_standaloneSubmitting) return; // Prevent double-tap
+            _standaloneSubmitting = true;
+            
+            // Disable submit button
+            const submitBtn = document.querySelector('[onclick="submitAllStandaloneExpenses()"]');
+            if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '⏳ Submitting...'; }
 
             document.getElementById('standalone-success-text').textContent = '📤 Submitting expenses...';
             document.getElementById('standalone-success').style.display = 'block';
@@ -7688,6 +7695,10 @@
                 document.getElementById('standalone-error').style.display = 'block';
                 setTimeout(() => document.getElementById('standalone-error').style.display = 'none', 8000);
             }
+
+            // Re-enable submit button
+            _standaloneSubmitting = false;
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '📤 Submit All for Approval'; }
         }
 
         // ═══════════════════════════════════════════════════════════════════════════════
