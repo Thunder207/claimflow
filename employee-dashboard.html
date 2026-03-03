@@ -5956,8 +5956,50 @@
 
             // === SECTION 3: OTHER STANDALONE EXPENSES ===
             if (standalone.length > 0) {
-                html += `<div style="margin:20px 0 8px;padding:8px 0;border-bottom:2px solid #6c757d;"><strong style="color:#6c757d;font-size:14px;text-transform:uppercase;letter-spacing:1px;">Other Standalone Expenses</strong></div>`;
+                html += `<div style="margin:20px 0 8px;padding:8px 0;border-bottom:2px solid #6c757d;"><strong style="color:#6c757d;font-size:14px;text-transform:uppercase;letter-spacing:1px;">Expense Claims</strong></div>`;
+                // Group by claim_group
+                const claimGroups = {};
+                const ungrouped = [];
                 standalone.forEach(exp => {
+                    if (exp.claim_group) {
+                        if (!claimGroups[exp.claim_group]) claimGroups[exp.claim_group] = [];
+                        claimGroups[exp.claim_group].push(exp);
+                    } else {
+                        ungrouped.push(exp);
+                    }
+                });
+                // Render claim groups
+                const catIcons = { 'purchase': '🛒', 'kilometric': '🚗', 'parking': '🅿️', 'other': '📋' };
+                Object.entries(claimGroups).forEach(([cgId, exps]) => {
+                    const total = exps.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+                    const descMatch = (exps[0].description || '').match(/^\[(.+?)\]/);
+                    const purpose = descMatch ? descMatch[1] : cgId;
+                    const statuses = [...new Set(exps.map(e => e.status))];
+                    const allApproved = statuses.length === 1 && statuses[0] === 'approved';
+                    const overallStatus = allApproved ? 'approved' : statuses.includes('pending') ? 'pending' : statuses[0];
+                    const pdfBtn = allApproved ? `<button onclick="event.stopPropagation();downloadClaimPDF('${cgId}')" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>` : '';
+                    html += `
+                    <div style="background:#fff;border-radius:10px;padding:14px 18px;margin-bottom:10px;border-left:4px solid #4a90e2;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                            <div>
+                                <strong style="color:#1e293b;font-size:14px;">📦 ${purpose}</strong>
+                                <div style="font-size:13px;color:#64748b;margin-top:3px;">
+                                    ${exps.length} item${exps.length > 1 ? 's' : ''} · <strong style="color:#059669;">$${total.toFixed(2)}</strong>
+                                    ${exps[0].date ? ` · ${fmtDate(exps[0].date)}` : ''}
+                                </div>
+                                <div style="font-size:12px;color:#888;margin-top:4px;">
+                                    ${exps.map(e => { const icon = catIcons[e.expense_type] || '📋'; return `${icon} ${e.category || e.expense_type}: $${parseFloat(e.amount).toFixed(2)}`; }).join(' · ')}
+                                </div>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                ${pdfBtn}
+                                ${statusBadge(overallStatus)}
+                            </div>
+                        </div>
+                    </div>`;
+                });
+                // Render ungrouped
+                ungrouped.forEach(exp => {
                     html += renderExpenseItem(exp);
                 });
             }
@@ -7379,7 +7421,8 @@
                     </div>
                     <div class="form-group" style="margin-bottom:0;">
                         <label style="font-size:13px;">Receipt</label>
-                        <input type="file" class="line-receipt" accept="image/*,.pdf" style="font-size:13px; width:100%;">
+                        <input type="file" class="line-receipt" accept="image/*,.pdf,.doc,.docx" style="font-size:13px; width:100%;" onchange="onLineReceiptChange(this)">
+                        <div class="line-receipt-info" style="display:none; margin-top:4px; font-size:12px; color:#28a745;"></div>
                     </div>
                     <div style="display:flex; align-items:end;">
                         <button type="button" onclick="removeClaimLineItem(this)" style="padding:10px 14px; background:#dc3545; color:white; border:none; border-radius:8px; cursor:pointer; font-size:16px; min-height:44px;">✕</button>
@@ -7447,6 +7490,41 @@
             return items;
         }
 
+        async function onLineReceiptChange(input) {
+            const row = input.closest('.claim-line-item');
+            const info = row ? row.querySelector('.line-receipt-info') : null;
+            if (!input.files || !input.files[0]) {
+                if (info) info.style.display = 'none';
+                return;
+            }
+            let file = input.files[0];
+            // Compress large images
+            if (file.type.startsWith('image/') && file.size > 500 * 1024) {
+                try { file = await compressImage(file); } catch(e) { /* use original */ }
+            }
+            // Store compressed file back via DataTransfer
+            if (file !== input.files[0]) {
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                input.files = dt.files;
+            }
+            if (info) {
+                info.innerHTML = '<span style="color:#28a745;">&#10003; ' + file.name + '</span> <button type="button" onclick="removeLineReceipt(this)" style="background:none;border:none;color:#dc3545;cursor:pointer;font-size:14px;margin-left:4px;">&#10005;</button>';
+                info.style.display = 'block';
+            }
+            // Clear any error highlight
+            if (row) row.style.border = '';
+        }
+
+        function removeLineReceipt(btn) {
+            const row = btn.closest('.claim-line-item');
+            if (!row) return;
+            const input = row.querySelector('.line-receipt');
+            if (input) input.value = '';
+            const info = row.querySelector('.line-receipt-info');
+            if (info) info.style.display = 'none';
+        }
+
         function updateClaimTotal() {
             const items = getLineItemData();
             const total = items.reduce((s, i) => s + i.amount, 0);
@@ -7509,6 +7587,32 @@
                 return;
             }
 
+            // Validate receipts: mandatory for non-Kilometric items
+            const lineRows = document.querySelectorAll('.claim-line-item');
+            let missingReceipt = false;
+            let validIdx = 0;
+            lineRows.forEach(row => {
+                const cat = row.querySelector('.line-category') ? row.querySelector('.line-category').value : '';
+                const amt = cat === 'Kilometric' 
+                    ? (parseFloat(row.querySelector('.line-km') ? row.querySelector('.line-km').value : 0) || 0)
+                    : (parseFloat(row.querySelector('.line-amount') ? row.querySelector('.line-amount').value : 0) || 0);
+                if (amt <= 0) return; // skip invalid items
+                if (cat !== 'Kilometric') {
+                    const fileInput = row.querySelector('.line-receipt');
+                    if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+                        missingReceipt = true;
+                        row.style.border = '2px solid #dc3545';
+                        row.style.borderRadius = '10px';
+                        setTimeout(() => { row.style.border = ''; }, 5000);
+                    }
+                }
+                validIdx++;
+            });
+            if (missingReceipt) {
+                showStandaloneError('Please attach a receipt for all non-Kilometric items.');
+                return;
+            }
+
             const total = validItems.reduce((s, i) => s + i.amount, 0);
 
             standaloneDrafts.push({
@@ -7517,7 +7621,7 @@
                 purpose,
                 date,
                 amount: total,
-                items: validItems.map(i => ({ category: i.category, amount: i.amount, km: i.km, vendor: i.vendor }))
+                items: validItems.map(i => ({ category: i.category, amount: i.amount, km: i.km, vendor: i.vendor, receiptFile: i.receipt || null, receiptName: i.receipt ? i.receipt.name : '' }))
             });
             saveStandaloneDrafts();
             renderStandaloneDrafts();
@@ -7567,7 +7671,7 @@
                         const hasReceipt = item.receiptName;
                         const receiptTag = hasReceipt 
                             ? `<span style="color:#28a745;font-size:11px;">📎 ${item.receiptName}</span>` 
-                            : `<label style="color:#e67e22;font-size:11px;cursor:pointer;text-decoration:underline;">📷 Add receipt<input type="file" accept="image/*" style="display:none;" onchange="addReceiptToDraft(${i},${j},this)"></label>`;
+                            : `<label style="color:#e67e22;font-size:11px;cursor:pointer;text-decoration:underline;">📷 Add receipt<input type="file" accept="image/*,.pdf,.doc,.docx" style="display:none;" onchange="addReceiptToDraft(${i},${j},this)"></label>`;
                         if (item.category === 'Kilometric') {
                             return `<div style="padding: 4px 0; font-size: 13px; color: #555;">&nbsp;&nbsp;${icon} Kilometric: ${item.km}km = $${item.amount.toFixed(2)} ${receiptTag}</div>`;
                         }
@@ -7603,9 +7707,12 @@
             }).join('');
         }
 
-        function addReceiptToDraft(draftIdx, itemIdx, input) {
+        async function addReceiptToDraft(draftIdx, itemIdx, input) {
             if (!input.files || !input.files[0]) return;
-            const file = input.files[0];
+            let file = input.files[0];
+            if (file.type.startsWith('image/') && file.size > 500 * 1024) {
+                try { file = await compressImage(file); } catch(e) { /* use original */ }
+            }
             standaloneDrafts[draftIdx].items[itemIdx].receiptName = file.name;
             standaloneDrafts[draftIdx].items[itemIdx].receiptFile = file;
             saveStandaloneDrafts();
@@ -7677,6 +7784,12 @@
                             description: '',
                             expense_type: CLAIM_CATEGORIES.find(c => c.value === item.category)?.type || 'other'
                         }))));
+                        // Append receipt files per line item
+                        draft.items.forEach((item, idx) => {
+                            if (item.receiptFile) {
+                                formData.append(`receipt_${idx}`, item.receiptFile, item.receiptFile.name);
+                            }
+                        });
                         const resp = await fetch('/api/expense-claims', {
                             method: 'POST',
                             headers: { 'Authorization': 'Bearer ' + sessionId },

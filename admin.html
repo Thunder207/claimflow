@@ -1687,14 +1687,18 @@ try {
                                         const icon = catIcons[exp.expense_type] || '📋';
                                         const kmMatch = exp.description && exp.description.match(/(\d+(?:\.\d+)?)km/);
                                         const label = kmMatch ? `${kmMatch[1]}km` : (exp.category || exp.expense_type);
-                                        return `<div style="padding: 6px 0; font-size: 14px; color: #555; border-bottom: 1px solid #f0f0f0;">
-                                            ${icon} ${label}: <strong>$${parseFloat(exp.amount).toFixed(2)}</strong>${exp.vendor ? ' — ' + exp.vendor : ''}
+                                        const isKm = exp.expense_type === 'kilometric';
+                                        const receiptBtn = isKm ? '<span style="color:#999;font-size:11px;">N/A</span>' :
+                                            `<a href="/api/expense-claims/${exp.id}/receipt" target="_blank" style="color:#2196f3;font-size:12px;text-decoration:none;cursor:pointer;" onclick="event.stopPropagation()">📎 View Receipt</a>`;
+                                        return `<div style="padding: 6px 0; font-size: 14px; color: #555; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center;">
+                                            <span>${icon} ${label}: <strong>$${parseFloat(exp.amount).toFixed(2)}</strong>${exp.vendor ? ' — ' + exp.vendor : ''}</span>
+                                            <span>${receiptBtn}</span>
                                         </div>`;
                                     }).join('')}
                                 </div>
                                 ${pendingInClaim.length > 0 && currentUserRole === 'supervisor' ? `
                                 <div style="padding: 12px 20px; background: #fff8e1; border-top: 1px solid #eee; display: flex; gap: 10px; flex-wrap: wrap;">
-                                    <button class="btn btn-success" onclick="bulkApproveTrip([${pendingIds.join(',')}])" style="font-size: 14px; padding: 8px 20px;">✅ Approve All</button>
+                                    <button class="btn btn-success" onclick="bulkApproveTrip([${pendingIds.join(',')}], null, '${claimId}')" style="font-size: 14px; padding: 8px 20px;">✅ Approve All</button>
                                     <button class="btn btn-danger" onclick="bulkRejectTrip([${pendingIds.join(',')}])" style="font-size: 13px; padding: 6px 14px;">❌ Reject All</button>
                                 </div>` : ''}
                             </div>`;
@@ -1999,14 +2003,18 @@ try {
                                     const icon = catIcons[exp.expense_type] || '📋';
                                     const kmMatch = exp.description && exp.description.match(/(\d+(?:\.\d+)?)km/);
                                     const label = kmMatch ? `${kmMatch[1]}km` : (exp.meal_name || exp.expense_type);
-                                    return `<div style="padding: 6px 0; font-size: 14px; color: #555; border-bottom: 1px solid #f0f0f0;">
-                                        ${icon} ${label}: <strong>$${parseFloat(exp.amount).toFixed(2)}</strong>${exp.vendor ? ' — ' + exp.vendor : ''}
+                                    const isKm = exp.expense_type === 'kilometric';
+                                    const receiptBtn = isKm ? '<span style="color:#999;font-size:11px;">N/A</span>' :
+                                        `<a href="/api/expense-claims/${exp.id}/receipt" target="_blank" style="color:#2196f3;font-size:12px;text-decoration:none;cursor:pointer;">📎 View Receipt</a>`;
+                                    return `<div style="padding: 6px 0; font-size: 14px; color: #555; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center;">
+                                        <span>${icon} ${label}: <strong>$${parseFloat(exp.amount).toFixed(2)}</strong>${exp.vendor ? ' — ' + exp.vendor : ''}</span>
+                                        <span>${receiptBtn}</span>
                                     </div>`;
                                 }).join('')}
                             </div>
                             ${pendingInClaim.length > 0 && currentUserRole === 'supervisor' ? `
                             <div style="padding: 12px 20px; background: #fff8e1; border-top: 1px solid #eee; display: flex; gap: 10px; flex-wrap: wrap;">
-                                <button class="btn btn-success" onclick="bulkApproveTrip([${pendingIds.join(',')}])" style="font-size: 14px; padding: 8px 20px;">✅ Approve All</button>
+                                <button class="btn btn-success" onclick="bulkApproveTrip([${pendingIds.join(',')}], null, '${claimId}')" style="font-size: 14px; padding: 8px 20px;">✅ Approve All</button>
                                 <button class="btn btn-danger" onclick="bulkRejectTrip([${pendingIds.join(',')}])" style="font-size: 13px; padding: 6px 14px;">❌ Reject All</button>
                             </div>` : ''}
                         </div>`;
@@ -3439,7 +3447,7 @@ try {
             }
         }
 
-        async function bulkApproveTrip(expenseIds, tripId) {
+        async function bulkApproveTrip(expenseIds, tripId, claimGroupId) {
             let success = 0, fail = 0;
             for (const id of expenseIds) {
                 try {
@@ -3460,6 +3468,15 @@ try {
                         body: JSON.stringify({ comment: 'All expenses approved' })
                     });
                 } catch(e) { console.error('Trip approval error:', e); }
+            }
+            // Generate PDF for claim groups (non-trip)
+            if (claimGroupId && !tripId) {
+                try {
+                    await fetch(`/api/expense-claims/group/${encodeURIComponent(claimGroupId)}/generate-pdf`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` }
+                    });
+                } catch(e) { console.error('Claim PDF generation error:', e); }
             }
             showMessage('success', `✅ ${success} expenses approved${fail > 0 ? `, ❌ ${fail} failed` : ''}. PDF report is being generated...`);
             loadExpensesWithSearch();

@@ -603,6 +603,19 @@ function initializeDatabase() {
             upload_order INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (claim_id) REFERENCES hwa_claims(id)
+        )`,
+
+        // 📦 Expense claim receipts (one per line item)
+        `CREATE TABLE IF NOT EXISTS expense_claim_receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            expense_id INTEGER NOT NULL,
+            file_data BLOB NOT NULL,
+            file_name TEXT NOT NULL,
+            file_type TEXT NOT NULL,
+            file_size INTEGER DEFAULT 0,
+            upload_order INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE CASCADE
         )`
     ];
     
@@ -742,6 +755,11 @@ function insertDefaultData() {
             if (err && !err.message.includes('duplicate column')) {
                 console.error('❌ Error adding claim_group column:', err.message);
             }
+        });
+
+        // Add claim_group_pdf for expense claim group PDFs
+        db.run(`ALTER TABLE expenses ADD COLUMN claim_group_pdf BLOB DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {}
         });
 
         // Transit claims PDF columns
@@ -1431,7 +1449,7 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
 
 // === EXPENSE CLAIM GROUPS ===
 // Submit a group of expenses as a single claim
-app.post('/api/expense-claims', requireAuth, upload.array('receipts', 20), async (req, res) => {
+app.post('/api/expense-claims', requireAuth, upload.any(), async (req, res) => {
     try {
         const { purpose, date, items } = req.body;
         let parsedItems;
@@ -1494,10 +1512,10 @@ app.post('/api/expense-claims', requireAuth, upload.array('receipts', 20), async
 
             const prefixedDesc = `[${sanitizeString(purpose, 200)}] ${description || category}`;
 
-            // Match receipt file by index
-            const receiptFile = files.find(f => f.fieldname === 'receipts' && f.originalname.startsWith(`item_${i}_`)) || files[i] || null;
-            const receiptPath = receiptFile ? `/uploads/${receiptFile.filename}` : null;
+            // Match receipt file by index (field name: receipt_0, receipt_1, etc.)
+            const receiptFile = files.find(f => f.fieldname === `receipt_${i}`) || null;
             let receiptData = null;
+            const receiptPath = receiptFile ? `/uploads/${receiptFile.filename}` : null;
             const receiptType = receiptFile ? receiptFile.mimetype : null;
             if (receiptFile) {
                 try { receiptData = fs.readFileSync(receiptFile.path); } catch (e) {}
@@ -1515,6 +1533,17 @@ app.post('/api/expense-claims', requireAuth, upload.array('receipts', 20), async
                 );
             });
 
+            // Store receipt in expense_claim_receipts table
+            if (receiptFile && receiptData) {
+                await new Promise((resolve, reject) => {
+                    db.run(
+                        `INSERT INTO expense_claim_receipts (expense_id, file_data, file_name, file_type, file_size, upload_order) VALUES (?, ?, ?, ?, ?, ?)`,
+                        [insertResult.id, receiptData, receiptFile.originalname, receiptFile.mimetype, receiptFile.size, i],
+                        (err) => { if (err) { console.error('Receipt store error:', err); } resolve(); }
+                    );
+                });
+            }
+
             // Log audit
             logExpenseAudit(insertResult.id, 'submitted', req.user.employeeId, employee.name,
                 `Claim group ${claimGroup}: ${expenseType} $${amount.toFixed(2)}`, null, 'pending');
@@ -1531,6 +1560,223 @@ app.post('/api/expense-claims', requireAuth, upload.array('receipts', 20), async
     } catch (error) {
         console.error('❌ Error processing expense claim:', error);
         res.status(500).json({ success: false, error: 'Failed to process expense claim.' });
+    }
+});
+
+// Get receipt for an expense claim line item
+app.get('/api/expense-claims/:expenseId/receipt', requireAuth, (req, res) => {
+    const { expenseId } = req.params;
+    db.get(`SELECT file_data, file_name, file_type FROM expense_claim_receipts WHERE expense_id = ?`, [expenseId], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row || !row.file_data) {
+            // Fall back to receipt_data on expenses table
+            db.get(`SELECT receipt_data, receipt_type FROM expenses WHERE id = ?`, [expenseId], (err2, exp) => {
+                if (err2 || !exp || !exp.receipt_data) return res.status(404).json({ error: 'No receipt found' });
+                res.set('Content-Type', exp.receipt_type || 'application/octet-stream');
+                res.send(exp.receipt_data);
+            });
+            return;
+        }
+        res.set('Content-Type', row.file_type || 'application/octet-stream');
+        res.set('Content-Disposition', `inline; filename="${row.file_name}"`);
+        res.send(row.file_data);
+    });
+});
+
+// Check if expense has a receipt
+app.get('/api/expense-claims/:expenseId/receipt-info', requireAuth, (req, res) => {
+    const { expenseId } = req.params;
+    db.get(`SELECT id, file_name, file_type, file_size FROM expense_claim_receipts WHERE expense_id = ?`, [expenseId], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (row) return res.json({ hasReceipt: true, fileName: row.file_name, fileType: row.file_type });
+        // Check expenses table fallback
+        db.get(`SELECT receipt_data, receipt_type FROM expenses WHERE id = ? AND receipt_data IS NOT NULL`, [expenseId], (err2, exp) => {
+            if (err2) return res.status(500).json({ error: 'Database error' });
+            res.json({ hasReceipt: !!(exp && exp.receipt_data), fileType: exp?.receipt_type });
+        });
+    });
+});
+
+// Download claim group PDF report
+app.get('/api/expense-claims/group/:claimGroup/pdf', requireAuth, (req, res) => {
+    const { claimGroup } = req.params;
+    db.get(`SELECT claim_group_pdf FROM expenses WHERE claim_group = ? AND claim_group_pdf IS NOT NULL LIMIT 1`, [claimGroup], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row || !row.claim_group_pdf) return res.status(404).json({ error: 'No PDF report found' });
+        res.set('Content-Type', 'application/pdf');
+        res.set('Content-Disposition', `inline; filename="claim-${claimGroup}.pdf"`);
+        res.send(row.claim_group_pdf);
+    });
+});
+
+// Generate PDF for a claim group (called after approval)
+app.post('/api/expense-claims/group/:claimGroup/generate-pdf', requireAuth, async (req, res) => {
+    if (req.user.role !== 'supervisor') {
+        return res.status(403).json({ error: 'Only supervisors can generate claim PDFs' });
+    }
+    const { claimGroup } = req.params;
+    try {
+        // Get all expenses in this claim group
+        const expenses = await new Promise((resolve, reject) => {
+            db.all(`SELECT e.*, emp.name as emp_name, emp.department, emp.employee_number
+                    FROM expenses e JOIN employees emp ON e.employee_id = emp.id
+                    WHERE e.claim_group = ? ORDER BY e.id`, [claimGroup], (err, rows) => {
+                if (err) reject(err); else resolve(rows || []);
+            });
+        });
+        if (expenses.length === 0) return res.status(404).json({ error: 'No expenses found for this claim group' });
+
+        // Get receipts for each expense
+        const receipts = await new Promise((resolve, reject) => {
+            const expIds = expenses.map(e => e.id);
+            db.all(`SELECT * FROM expense_claim_receipts WHERE expense_id IN (${expIds.map(() => '?').join(',')}) ORDER BY expense_id`, expIds, (err, rows) => {
+                if (err) reject(err); else resolve(rows || []);
+            });
+        });
+        const receiptMap = {};
+        receipts.forEach(r => { receiptMap[r.expense_id] = r; });
+
+        // Extract purpose from description
+        const descMatch = (expenses[0].description || '').match(/^\[(.+?)\]/);
+        const purpose = descMatch ? descMatch[1] : claimGroup;
+        const empName = expenses[0].emp_name || expenses[0].employee_name || 'Unknown';
+        const dept = expenses[0].department || '';
+        const empNum = expenses[0].employee_number || '';
+        const claimDate = expenses[0].date || '';
+        const total = expenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+        const approverName = req.user.name || 'Supervisor';
+
+        // Generate PDF with PDFKit
+        const PDFDocument = require('pdfkit');
+        const { PDFDocument: PDFLib, rgb, StandardFonts } = require('pdf-lib');
+        const MARGIN = 50;
+
+        const pdfBuffers = [];
+        const doc = new PDFDocument({ size: 'LETTER', margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN } });
+        doc.on('data', chunk => pdfBuffers.push(chunk));
+
+        const pdfReady = new Promise((resolve) => {
+            doc.on('end', () => resolve(Buffer.concat(pdfBuffers)));
+        });
+
+        // Header
+        doc.fontSize(20).font('Helvetica-Bold').text('EXPENSE CLAIM REPORT', { align: 'center' });
+        doc.moveDown(0.5);
+        doc.fontSize(10).font('Helvetica').fillColor('#666').text('ClaimFlow - Expense Management System', { align: 'center' });
+        doc.moveDown(1);
+
+        // Claim details
+        doc.fillColor('#000');
+        doc.fontSize(12).font('Helvetica-Bold').text('Claim Details');
+        doc.moveDown(0.3);
+        doc.fontSize(10).font('Helvetica');
+        const detailY = doc.y;
+        doc.text(`Claim Reference: ${claimGroup}`, MARGIN, detailY);
+        doc.text(`Purpose: ${purpose}`, MARGIN, detailY + 15);
+        doc.text(`Employee: ${empName}${empNum ? ' (' + empNum + ')' : ''}`, MARGIN, detailY + 30);
+        doc.text(`Department: ${dept}`, MARGIN, detailY + 45);
+        doc.text(`Date: ${claimDate}`, MARGIN, detailY + 60);
+        doc.text(`Approved by: ${approverName}`, MARGIN, detailY + 75);
+        doc.text(`Approved: ${new Date().toISOString().split('T')[0]}`, MARGIN, detailY + 90);
+        doc.y = detailY + 115;
+
+        // Line items table
+        doc.fontSize(12).font('Helvetica-Bold').text('Line Items');
+        doc.moveDown(0.3);
+
+        // Table header
+        const tableTop = doc.y;
+        const colX = [MARGIN, MARGIN + 30, MARGIN + 180, MARGIN + 300, MARGIN + 400];
+        doc.fontSize(9).font('Helvetica-Bold');
+        doc.text('#', colX[0], tableTop);
+        doc.text('Category', colX[1], tableTop);
+        doc.text('Vendor', colX[2], tableTop);
+        doc.text('Receipt', colX[3], tableTop);
+        doc.text('Amount', colX[4], tableTop);
+        doc.moveTo(MARGIN, tableTop + 14).lineTo(562, tableTop + 14).stroke('#ccc');
+
+        let rowY = tableTop + 20;
+        doc.font('Helvetica').fontSize(9);
+        expenses.forEach((exp, idx) => {
+            if (rowY > 700) { doc.addPage(); rowY = MARGIN; }
+            const hasRcpt = receiptMap[exp.id] || exp.receipt_data;
+            const kmMatch = exp.description && exp.description.match(/(\d+(?:\.\d+)?)km/);
+            const label = exp.category || exp.expense_type || 'Other';
+            doc.text(String(idx + 1), colX[0], rowY);
+            doc.text(label + (kmMatch ? ` (${kmMatch[1]}km)` : ''), colX[1], rowY, { width: 140 });
+            doc.text(exp.vendor || '-', colX[2], rowY, { width: 110 });
+            doc.text(hasRcpt ? 'Yes' : 'N/A', colX[3], rowY);
+            doc.text('$' + parseFloat(exp.amount).toFixed(2), colX[4], rowY);
+            rowY += 18;
+        });
+
+        // Total
+        doc.moveTo(MARGIN, rowY).lineTo(562, rowY).stroke('#ccc');
+        rowY += 6;
+        doc.font('Helvetica-Bold').fontSize(11);
+        doc.text('Total:', colX[3], rowY);
+        doc.text('$' + total.toFixed(2), colX[4], rowY);
+
+        doc.end();
+        let mainPdf = await pdfReady;
+
+        // Append receipt images as pages using pdf-lib
+        const pdfDoc = await PDFLib.load(mainPdf);
+        for (const exp of expenses) {
+            const receipt = receiptMap[exp.id];
+            const fileData = receipt ? receipt.file_data : exp.receipt_data;
+            const fileType = receipt ? receipt.file_type : exp.receipt_type;
+            if (!fileData) continue;
+
+            try {
+                if (fileType && fileType.includes('pdf')) {
+                    const receiptPdf = await PDFLib.load(fileData);
+                    const pages = await pdfDoc.copyPages(receiptPdf, receiptPdf.getPageIndices());
+                    pages.forEach(p => pdfDoc.addPage(p));
+                } else if (fileType && (fileType.includes('jpeg') || fileType.includes('jpg'))) {
+                    const img = await pdfDoc.embedJpg(fileData);
+                    const page = pdfDoc.addPage([612, 792]);
+                    const scale = Math.min((612 - 100) / img.width, (792 - 100) / img.height, 1);
+                    const w = img.width * scale;
+                    const h = img.height * scale;
+                    page.drawImage(img, { x: (612 - w) / 2, y: (792 - h) / 2, width: w, height: h });
+                } else if (fileType && fileType.includes('png')) {
+                    const img = await pdfDoc.embedPng(fileData);
+                    const page = pdfDoc.addPage([612, 792]);
+                    const scale = Math.min((612 - 100) / img.width, (792 - 100) / img.height, 1);
+                    const w = img.width * scale;
+                    const h = img.height * scale;
+                    page.drawImage(img, { x: (612 - w) / 2, y: (792 - h) / 2, width: w, height: h });
+                }
+            } catch (imgErr) {
+                console.error('Error embedding receipt in PDF:', imgErr.message);
+            }
+        }
+
+        // Add footers
+        const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        const pageCount = pdfDoc.getPageCount();
+        for (let i = 0; i < pageCount; i++) {
+            const page = pdfDoc.getPage(i);
+            const { height } = page.getSize();
+            page.drawText(`Page ${i + 1} of ${pageCount} | ${claimGroup} | Generated ${new Date().toISOString().split('T')[0]}`, {
+                x: 50, y: 20, size: 8, font: helvetica, color: rgb(0.5, 0.5, 0.5)
+            });
+        }
+
+        const finalPdf = Buffer.from(await pdfDoc.save());
+
+        // Store PDF on all expenses in the claim group
+        await new Promise((resolve, reject) => {
+            db.run(`UPDATE expenses SET claim_group_pdf = ? WHERE claim_group = ?`, [finalPdf, claimGroup], (err) => {
+                if (err) reject(err); else resolve();
+            });
+        });
+
+        res.json({ success: true, message: 'PDF report generated', size: finalPdf.length });
+    } catch (error) {
+        console.error('Error generating claim group PDF:', error);
+        res.status(500).json({ error: 'Failed to generate PDF report' });
     }
 });
 
