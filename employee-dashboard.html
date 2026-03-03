@@ -845,7 +845,7 @@
     <div class="container">
         <div class="header">
             <div class="header-info">
-                <h1 id="welcome-text" data-i18n="dashboard_title">👤 Employee Dashboard</h1>
+                <h1 id="welcome-text">👤 Employee Dashboard</h1>
                 <p id="user-info" data-i18n="loading">Loading...</p>
             </div>
             <div class="header-actions">
@@ -1105,7 +1105,7 @@
                 <div id="sa-draft-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
                 <div style="margin-top: 20px; display: flex; gap: 12px;">
                     <button id="sa-submit-all-btn" onclick="submitAllStandaloneExpenses()" class="btn btn-primary" style="flex: 3; padding: 14px 20px; font-size: 16px; font-weight: 700; background: linear-gradient(135deg, #007bff 0%, #0056b3 100%); color: white; border: none; border-radius: 10px; cursor: pointer;">📤 Submit All for Approval</button>
-                    <button onclick="clearStandaloneDrafts()" class="btn" style="flex: 1; padding: 14px 16px; font-size: 14px; font-weight: 600; background: #dc3545; color: white; border: none; border-radius: 10px; cursor: pointer;">🗑️ Clear All</button>
+                    <button onclick="clearStandaloneDrafts(this)" class="btn" style="flex: 1; padding: 14px 16px; font-size: 14px; font-weight: 600; background: #dc3545; color: white; border: none; border-radius: 10px; cursor: pointer;">🗑️ Clear All</button>
                 </div>
             </div>
         </div>
@@ -7756,8 +7756,22 @@
             renderStandaloneDrafts();
         }
 
-        function clearStandaloneDrafts() {
-            if (!confirm('Clear all draft expenses?')) return;
+        function clearStandaloneDrafts(btn) {
+            if (!btn) return;
+            // Two-click confirmation: first click shows confirm, second clears
+            if (!btn.dataset.confirmed) {
+                btn.dataset.confirmed = 'pending';
+                btn.textContent = '⚠️ Confirm Clear All';
+                btn.style.background = '#c82333';
+                // Add cancel button next to it
+                const cancelBtn = document.createElement('button');
+                cancelBtn.className = 'btn';
+                cancelBtn.textContent = '✖ Cancel';
+                cancelBtn.style.cssText = 'flex:1;padding:14px 16px;font-size:14px;font-weight:600;background:#6c757d;color:white;border:none;border-radius:10px;cursor:pointer;';
+                cancelBtn.onclick = function(e) { e.stopPropagation(); renderStandaloneDrafts(); };
+                btn.parentElement.appendChild(cancelBtn);
+                return;
+            }
             standaloneDrafts = [];
             saveStandaloneDrafts();
             renderStandaloneDrafts();

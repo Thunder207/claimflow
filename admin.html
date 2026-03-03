@@ -1716,9 +1716,9 @@ try {
                             if (expense.status === 'pending') {
                                 if (currentUserRole === 'supervisor') {
                                     actionButtons = `
-                                        <button class="btn btn-success" onclick="approveExpense(${expense.id})">✅ Approve</button>
+                                        <button class="btn btn-success" onclick="approveExpense(${expense.id}, this)">✅ Approve</button>
                                         <button class="btn btn-warning" onclick="returnExpense(${expense.id})" style="background: #fd7e14; color: white;">↩️ Return</button>
-                                        <button class="btn btn-danger" onclick="rejectExpense(${expense.id})">❌ Reject</button>
+                                        <button class="btn btn-danger" onclick="rejectExpense(${expense.id}, this)">❌ Reject</button>
                                     `;
                                 } else if (currentUserRole === 'admin') {
                                     actionButtons = `<button class="btn btn-warning" onclick="deleteExpense(${expense.id})">🗑️ Delete</button>`;
@@ -2030,8 +2030,8 @@ try {
                         if (expense.status === 'pending') {
                             if (currentUserRole === 'supervisor') {
                                 actionButtons = `
-                                    <button class="btn btn-success" onclick="approveExpense(${expense.id})">✅ Approve</button>
-                                    <button class="btn btn-danger" onclick="rejectExpense(${expense.id})">❌ Reject</button>
+                                    <button class="btn btn-success" onclick="approveExpense(${expense.id}, this)">✅ Approve</button>
+                                    <button class="btn btn-danger" onclick="rejectExpense(${expense.id}, this)">❌ Reject</button>
                                 `;
                             } else if (currentUserRole === 'admin') {
                                 actionButtons = `<button class="btn btn-warning" onclick="deleteExpense(${expense.id})">🗑️ Delete</button>`;
@@ -3500,7 +3500,34 @@ try {
             loadExpensesWithSearch();
         }
 
-        async function approveExpense(expenseId) {
+        let _expenseActionInProgress = false;
+        async function approveExpense(expenseId, btn) {
+            if (_expenseActionInProgress) return;
+            
+            // Two-click confirmation: first click shows confirm UI, second click approves
+            if (!btn || !btn.dataset.confirmed) {
+                if (btn) {
+                    const parent = btn.parentElement;
+                    // Hide sibling buttons
+                    Array.from(parent.children).forEach(child => {
+                        if (child !== btn) child.style.display = 'none';
+                    });
+                    btn.dataset.confirmed = 'pending';
+                    btn.textContent = '✅ Confirm Approve';
+                    btn.style.background = '#1e7e34';
+                    // Add cancel button
+                    const cancelBtn = document.createElement('button');
+                    cancelBtn.className = 'btn';
+                    cancelBtn.innerHTML = '✖ Cancel';
+                    cancelBtn.style.cssText = 'background:#6c757d;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;';
+                    cancelBtn.onclick = function(e) { e.stopPropagation(); loadExpensesWithSearch(); };
+                    parent.appendChild(cancelBtn);
+                }
+                return;
+            }
+            
+            _expenseActionInProgress = true;
+            if (btn) { btn.textContent = '⏳ Approving...'; btn.disabled = true; }
             try {
                 const response = await fetch(`/api/expenses/${expenseId}/approve`, {
                     method: 'POST',
@@ -3526,9 +3553,10 @@ try {
                 console.error('❌ Error approving expense:', error);
                 showMessage('danger', '❌ Network error: Could not approve expense. Please check your connection.');
             }
+            _expenseActionInProgress = false;
         }
 
-        async function rejectExpense(expenseId) {
+        async function rejectExpense(expenseId, btn) {
             const reason = await showRejectModal();
             if (!reason) return;
 
