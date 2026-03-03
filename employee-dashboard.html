@@ -7457,9 +7457,18 @@
             row.querySelector('.line-amount-group').style.display = isKm ? 'none' : '';
             row.querySelector('.line-km-group').style.display = isKm ? '' : 'none';
             row.querySelector('.line-km-calc').style.display = isKm ? '' : 'none';
+            const vendorGroup = row.querySelector('.line-vendor')?.closest('.form-group');
+            const receiptGroup = row.querySelector('.line-receipt')?.closest('.form-group');
+            if (vendorGroup) vendorGroup.style.display = isKm ? 'none' : '';
+            if (receiptGroup) receiptGroup.style.display = isKm ? 'none' : '';
             if (!isKm) {
                 row.querySelector('.line-km').value = '';
                 row.querySelector('.line-km-amount').value = '';
+            } else {
+                const vendor = row.querySelector('.line-vendor');
+                const receipt = row.querySelector('.line-receipt');
+                if (vendor) vendor.value = '';
+                if (receipt) receipt.value = '';
             }
             updateClaimTotal();
         }
