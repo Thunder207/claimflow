@@ -3049,6 +3049,10 @@
             window.open(`/api/transit-claims/${claimId}/pdf?auth=${sessionId}`, '_blank');
         }
 
+        function downloadClaimPDF(claimGroup) {
+            window.open(`/api/expense-claims/group/${encodeURIComponent(claimGroup)}/pdf`, '_blank');
+        }
+
         function downloadTripPDF(tripId) {
             window.open(`/api/trips/${tripId}/report?token=${sessionId}`, '_blank');
         }
