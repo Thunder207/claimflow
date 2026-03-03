@@ -3049,8 +3049,17 @@
             window.open(`/api/transit-claims/${claimId}/pdf?auth=${sessionId}`, '_blank');
         }
 
-        function downloadClaimPDF(claimGroup) {
-            window.open(`/api/expense-claims/group/${encodeURIComponent(claimGroup)}/pdf`, '_blank');
+        async function downloadClaimPDF(claimGroup) {
+            try {
+                const resp = await fetch(`/api/expense-claims/group/${encodeURIComponent(claimGroup)}/pdf`, {
+                    headers: { 'Authorization': 'Bearer ' + sessionId }
+                });
+                if (!resp.ok) { const err = await resp.json().catch(() => ({})); alert(err.error || 'PDF not available'); return; }
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+                setTimeout(() => URL.revokeObjectURL(url), 30000);
+            } catch(e) { alert('Error downloading PDF: ' + e.message); }
         }
 
         function downloadTripPDF(tripId) {
