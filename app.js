@@ -569,6 +569,40 @@ function initializeDatabase() {
         `CREATE TABLE IF NOT EXISTS phb_report_sequence (
             year INTEGER PRIMARY KEY,
             last_number INTEGER DEFAULT 0
+        )`,
+
+        // 💪 Health & Wellness Account (HWA) claims table
+        `CREATE TABLE IF NOT EXISTS hwa_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            claim_year INTEGER NOT NULL,
+            receipt_amount DECIMAL(10,2) NOT NULL,
+            claim_amount DECIMAL(10,2) NOT NULL,
+            vendor TEXT,
+            description TEXT,
+            status TEXT DEFAULT 'pending',
+            submitted_date DATETIME,
+            approved_date DATETIME,
+            approved_by TEXT,
+            rejection_reason TEXT,
+            report_ref TEXT,
+            report_generated_at DATETIME,
+            pdf_report BLOB,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees(id)
+        )`,
+
+        // 💪 HWA claim receipts (multi-file support)
+        `CREATE TABLE IF NOT EXISTS hwa_claim_receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            claim_id INTEGER NOT NULL,
+            file_data BLOB,
+            file_name TEXT,
+            file_type TEXT,
+            file_size INTEGER,
+            upload_order INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (claim_id) REFERENCES hwa_claims(id)
         )`
     ];
     
@@ -875,7 +909,14 @@ function insertDefaultData() {
         }
     });
     
-    console.log('✅ Default variance threshold, transit, and phone benefit settings initialized');
+    // 💪 Seed default HWA settings
+    db.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('hwa_annual_max', '500.00')`, (err) => {
+        if (err && !err.message.includes('UNIQUE constraint failed')) {
+            console.error('❌ Error inserting hwa_annual_max:', err.message);
+        }
+    });
+    
+    console.log('✅ Default variance threshold, transit, phone, and HWA benefit settings initialized');
 }
 
 // 🌐 Routes
@@ -7483,6 +7524,240 @@ async function generatePhonePDF(claimId) {
         doc.end();
     });
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 💪 HEALTH & WELLNESS ACCOUNT (HWA) ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/settings/hwa — get HWA settings
+app.get('/api/settings/hwa', requireAuth, (req, res) => {
+    db.get(`SELECT value FROM app_settings WHERE key = 'hwa_annual_max'`, (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ annual_max: parseFloat(row ? row.value : '500.00') });
+    });
+});
+
+// PUT /api/settings/hwa — update HWA settings (admin only)
+app.put('/api/settings/hwa', requireAuth, requireRole('admin'), (req, res) => {
+    const { annual_max } = req.body;
+    const maxAmount = parseFloat(annual_max);
+    if (isNaN(maxAmount) || maxAmount <= 0 || maxAmount > 10000) {
+        return res.status(400).json({ error: 'Annual maximum must be between $0.01 and $10,000.00' });
+    }
+    
+    db.get(`SELECT value FROM app_settings WHERE key = 'hwa_annual_max'`, (err, oldRow) => {
+        const oldValue = oldRow ? oldRow.value : '500.00';
+        
+        db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('hwa_annual_max', ?, ?, CURRENT_TIMESTAMP)`,
+            [String(maxAmount.toFixed(2)), req.user.employeeId]);
+        
+        db.run(`INSERT INTO settings_audit_log (setting_key, old_value, new_value, changed_by) VALUES (?, ?, ?, ?)`,
+            ['hwa_settings', `Annual Max: $${oldValue}`, `Annual Max: $${maxAmount.toFixed(2)}`, req.user.employeeId]);
+        
+        res.json({ success: true, message: 'HWA settings updated' });
+    });
+});
+
+// GET /api/hwa-claims/balance — get employee's remaining balance
+app.get('/api/hwa-claims/balance', requireAuth, (req, res) => {
+    const year = new Date().getFullYear();
+    db.get(`SELECT value FROM app_settings WHERE key = 'hwa_annual_max'`, (err, maxRow) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        const annualMax = parseFloat(maxRow ? maxRow.value : '500.00');
+        
+        db.get(`SELECT COALESCE(SUM(claim_amount), 0) as used FROM hwa_claims WHERE employee_id = ? AND claim_year = ? AND status IN ('pending', 'approved')`,
+            [req.user.employeeId, year], (err2, usedRow) => {
+                if (err2) return res.status(500).json({ error: 'Database error' });
+                const used = usedRow ? usedRow.used : 0;
+                res.json({ annual_max: annualMax, used: used, remaining: annualMax - used, year: year });
+            });
+    });
+});
+
+// GET /api/hwa-claims/history — employee's claims for current year
+app.get('/api/hwa-claims/history', requireAuth, (req, res) => {
+    const year = new Date().getFullYear();
+    db.all(`SELECT * FROM hwa_claims WHERE employee_id = ? AND claim_year = ? ORDER BY created_at DESC`,
+        [req.user.employeeId, year], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            res.json(rows || []);
+        });
+});
+
+// POST /api/hwa-claims — submit HWA claim
+app.post('/api/hwa-claims', requireAuth, upload.array('receipts', 10), (req, res) => {
+    try {
+        const { amount, vendor, description } = req.body;
+        const claimAmount = parseFloat(amount);
+        
+        if (isNaN(claimAmount) || claimAmount <= 0) {
+            return res.status(400).json({ error: 'Amount must be greater than $0' });
+        }
+        
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({ error: 'At least one receipt is required' });
+        }
+        
+        const year = new Date().getFullYear();
+        
+        // Check remaining balance
+        db.get(`SELECT value FROM app_settings WHERE key = 'hwa_annual_max'`, (err, maxRow) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            const annualMax = parseFloat(maxRow ? maxRow.value : '500.00');
+            
+            db.get(`SELECT COALESCE(SUM(claim_amount), 0) as used FROM hwa_claims WHERE employee_id = ? AND claim_year = ? AND status IN ('pending', 'approved')`,
+                [req.user.employeeId, year], (err2, usedRow) => {
+                    if (err2) return res.status(500).json({ error: 'Database error' });
+                    const used = usedRow ? usedRow.used : 0;
+                    const remaining = annualMax - used;
+                    
+                    if (claimAmount > remaining) {
+                        return res.status(400).json({ error: `Amount exceeds remaining balance of $${remaining.toFixed(2)}` });
+                    }
+                    
+                    // Insert claim
+                    db.run(`INSERT INTO hwa_claims (employee_id, claim_year, receipt_amount, claim_amount, vendor, description, status, submitted_date)
+                            VALUES (?, ?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)`,
+                        [req.user.employeeId, year, claimAmount, claimAmount, sanitizeString(vendor, 255), sanitizeString(description, 1000)],
+                        function(err3) {
+                            if (err3) return res.status(500).json({ error: 'Failed to submit claim' });
+                            const claimId = this.lastID;
+                            
+                            // Save receipts
+                            const files = req.files;
+                            let saved = 0;
+                            files.forEach((file, order) => {
+                                let fileData = null;
+                                try { fileData = fs.readFileSync(file.path); } catch (e) { console.warn('Could not read HWA receipt:', e.message); }
+                                db.run(`INSERT INTO hwa_claim_receipts (claim_id, file_data, file_name, file_type, file_size, upload_order)
+                                        VALUES (?, ?, ?, ?, ?, ?)`,
+                                    [claimId, fileData, file.originalname, file.mimetype, file.size, order],
+                                    (err4) => {
+                                        if (err4) console.error('❌ Error saving HWA receipt:', err4);
+                                        saved++;
+                                        if (saved === files.length) {
+                                            // Notify supervisor
+                                            db.get(`SELECT supervisor_id FROM employees WHERE id = ?`, [req.user.employeeId], (err5, emp) => {
+                                                if (emp && emp.supervisor_id) {
+                                                    createNotification(emp.supervisor_id, 'hwa_claim_submitted',
+                                                        `💪 New Health & Wellness claim ($${claimAmount.toFixed(2)}) submitted for your approval.`);
+                                                }
+                                            });
+                                            res.json({ success: true, id: claimId, message: `✅ HWA claim of $${claimAmount.toFixed(2)} submitted for approval` });
+                                        }
+                                    });
+                            });
+                        });
+                });
+        });
+    } catch (e) {
+        console.error('❌ HWA claim submit error:', e);
+        res.status(500).json({ error: 'Failed to submit HWA claim' });
+    }
+});
+
+// GET /api/hwa-claims/pending — supervisor pending claims
+app.get('/api/hwa-claims/pending', requireAuth, requireRole('supervisor'), (req, res) => {
+    db.all(`SELECT hc.*, e.name as employee_name, e.employee_number, e.department,
+                   (SELECT COUNT(*) FROM hwa_claim_receipts WHERE claim_id = hc.id) as receipt_count
+            FROM hwa_claims hc
+            JOIN employees e ON hc.employee_id = e.id
+            WHERE hc.status = 'pending' AND hc.employee_id IN (
+                SELECT id FROM employees WHERE supervisor_id = ?
+            )
+            ORDER BY hc.submitted_date ASC`,
+        [req.user.employeeId], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            res.json(rows || []);
+        });
+});
+
+// POST /api/hwa-claims/:id/approve — supervisor approve
+app.post('/api/hwa-claims/:id/approve', requireAuth, requireRole('supervisor'), (req, res) => {
+    const claimId = req.params.id;
+    db.get(`SELECT hc.*, e.name as employee_name FROM hwa_claims hc JOIN employees e ON hc.employee_id = e.id WHERE hc.id = ?`, [claimId], (err, claim) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!claim) return res.status(404).json({ error: 'Claim not found' });
+        if (claim.status !== 'pending') return res.status(400).json({ error: 'Claim is not pending' });
+        
+        db.get(`SELECT name FROM employees WHERE id = ?`, [req.user.employeeId], (err2, sup) => {
+            const supervisorName = sup?.name || 'Supervisor';
+            
+            db.run(`UPDATE hwa_claims SET status = 'approved', approved_by = ?, approved_date = CURRENT_TIMESTAMP WHERE id = ?`,
+                [req.user.employeeId, claimId], (err3) => {
+                    if (err3) return res.status(500).json({ error: 'Database error' });
+                    
+                    createNotification(claim.employee_id, 'hwa_approved',
+                        `✅ Your Health & Wellness claim ($${claim.claim_amount}) has been approved by ${supervisorName}.`);
+                    
+                    res.json({ success: true, message: 'HWA claim approved' });
+                });
+        });
+    });
+});
+
+// POST /api/hwa-claims/:id/reject — supervisor reject (DELETE to allow resubmission)
+app.post('/api/hwa-claims/:id/reject', requireAuth, requireRole('supervisor'), (req, res) => {
+    const claimId = req.params.id;
+    const { reason } = req.body;
+    
+    db.get(`SELECT hc.*, e.name as employee_name FROM hwa_claims hc JOIN employees e ON hc.employee_id = e.id WHERE hc.id = ?`, [claimId], (err, claim) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!claim) return res.status(404).json({ error: 'Claim not found' });
+        if (claim.status !== 'pending') return res.status(400).json({ error: 'Claim is not pending' });
+        
+        db.get(`SELECT name FROM employees WHERE id = ?`, [req.user.employeeId], (err2, sup) => {
+            const supervisorName = sup?.name || 'Supervisor';
+            
+            db.run(`DELETE FROM hwa_claims WHERE id = ?`, [claimId], (err3) => {
+                if (err3) return res.status(500).json({ error: 'Database error' });
+                
+                createNotification(claim.employee_id, 'hwa_rejected',
+                    `❌ Your Health & Wellness claim ($${claim.claim_amount}) was rejected by ${supervisorName}. Reason: ${reason || 'Not specified'}`);
+                
+                res.json({ success: true, message: 'HWA claim rejected' });
+            });
+        });
+    });
+});
+
+// GET /api/hwa-claims/supervisor-history — supervisor audit trail
+app.get('/api/hwa-claims/supervisor-history', requireAuth, requireRole('supervisor'), (req, res) => {
+    db.all(`SELECT hc.*, e.name as employee_name, e.employee_number, e.department
+            FROM hwa_claims hc
+            JOIN employees e ON hc.employee_id = e.id
+            WHERE hc.status IN ('approved', 'rejected') AND hc.approved_by = ?
+            ORDER BY hc.approved_date DESC LIMIT 50`,
+        [req.user.employeeId], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            res.json(rows || []);
+        });
+});
+
+// GET /api/hwa-claims/:id/receipts — list receipts for a claim
+app.get('/api/hwa-claims/:id/receipts', requireAuth, (req, res) => {
+    db.all(`SELECT id, file_name, file_type, file_size, upload_order FROM hwa_claim_receipts WHERE claim_id = ? ORDER BY upload_order`,
+        [req.params.id], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            res.json(rows || []);
+        });
+});
+
+// GET /api/hwa-claims/receipt/:receiptId — download single receipt
+app.get('/api/hwa-claims/receipt/:receiptId', (req, res, next) => {
+    if (req.query.auth && !req.headers.authorization) {
+        req.headers.authorization = `Bearer ${req.query.auth}`;
+    }
+    requireAuth(req, res, next);
+}, (req, res) => {
+    db.get(`SELECT file_data, file_name, file_type FROM hwa_claim_receipts WHERE id = ?`, [req.params.receiptId], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row || !row.file_data) return res.status(404).json({ error: 'Receipt not found' });
+        res.setHeader('Content-Type', row.file_type || 'application/octet-stream');
+        res.setHeader('Content-Disposition', `inline; filename="${row.file_name}"`);
+        res.send(row.file_data);
+    });
+});
 
 // 🚀 Start server
 app.listen(port, () => {

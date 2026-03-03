@@ -917,6 +917,7 @@
                         <option value="">Choose a benefit form...</option>
                         <option value="Public Transit Benefit">🚍 Public Transit Benefit</option>
                         <option value="Phone Benefit">📱 Phone Benefit</option>
+                        <option value="Health & Wellness">💪 Health & Wellness</option>
                     </select>
                 </div>
             </div>
@@ -1036,6 +1037,62 @@
                     </div>
                     <div id="phone-history-list" style="display: flex; flex-direction: column; gap: 8px;">
                     </div>
+                </div>
+            </div>
+
+            <!-- 💪 Health & Wellness Account Form (shown when category selected) -->
+            <div id="hwa-form-container" style="display: none; margin-top: 20px; border: 2px solid #28a745; border-radius: 12px; padding: 20px; background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%);">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 15px;">
+                    <h4 style="color: #28a745; margin: 0; display: flex; align-items: center; gap: 8px;">
+                        💪 <span>Health & Wellness Account</span>
+                    </h4>
+                </div>
+                <div id="hwa-balance-display" style="color: #28a745; font-weight: 600; margin-bottom: 20px; font-size: 14px; padding: 10px; background: rgba(40,167,69,0.1); border-radius: 8px;">
+                    Loading balance...
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div>
+                        <label style="display: block; font-weight: 600; color: #495057; margin-bottom: 8px;">Amount ($) *</label>
+                        <input type="number" id="hwa-amount" step="0.01" min="0.01" placeholder="0.00"
+                               style="width: 100%; padding: 10px; border: 2px solid #28a745; border-radius: 8px; font-size: 15px;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-weight: 600; color: #495057; margin-bottom: 8px;">Vendor</label>
+                        <input type="text" id="hwa-vendor" placeholder="e.g., GoodLife Fitness"
+                               style="width: 100%; padding: 10px; border: 2px solid #28a745; border-radius: 8px; font-size: 15px;">
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; font-weight: 600; color: #495057; margin-bottom: 8px;">Description</label>
+                    <input type="text" id="hwa-description" placeholder="e.g., Gym membership - March 2026"
+                           style="width: 100%; padding: 10px; border: 2px solid #28a745; border-radius: 8px; font-size: 15px;">
+                </div>
+                
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; font-weight: 600; color: #495057; margin-bottom: 8px;">Receipt(s) *</label>
+                    <input type="file" id="hwa-receipt-input" accept="image/*,.pdf" onchange="hwaReceiptChanged()" style="display: none;">
+                    <div id="hwa-receipt-list" style="margin-bottom: 8px;"></div>
+                    <button type="button" onclick="document.getElementById('hwa-receipt-input').click()" 
+                            style="padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;">
+                        📷 Add Receipt Page
+                    </button>
+                    <div style="font-size: 11px; color: #999; margin-top: 4px;">Accepted: JPG, PNG, PDF (max 10 files)</div>
+                </div>
+                
+                <button type="button" onclick="submitHwaClaim()" id="hwa-submit-btn"
+                        style="width: 100%; padding: 14px; background: linear-gradient(135deg, #28a745 0%, #218838 100%); color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer;">
+                    💪 Submit for Approval
+                </button>
+                
+                <!-- HWA Claim History -->
+                <div id="hwa-history-section" style="margin-top: 30px; display: none;">
+                    <hr style="border: none; border-top: 1px solid #dee2e6; margin-bottom: 15px;">
+                    <div style="color: #495057; font-size: 14px; font-weight: 600; margin-bottom: 10px;">
+                        Health & Wellness Claim History
+                    </div>
+                    <div id="hwa-history-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
                 </div>
             </div>
 
@@ -2575,21 +2632,31 @@
             const standaloneForm = document.getElementById('standalone-form');
             const transitContainer = document.getElementById('transit-form-container');
             const phoneContainer = document.getElementById('phone-form-container');
+            const hwaContainer = document.getElementById('hwa-form-container');
 
             if (category === 'Public Transit Benefit') {
                 standaloneForm.style.display = 'none';
                 transitContainer.style.display = 'block';
                 phoneContainer.style.display = 'none';
+                hwaContainer.style.display = 'none';
                 loadTransitForm();
             } else if (category === 'Phone Benefit') {
                 standaloneForm.style.display = 'none';
                 transitContainer.style.display = 'none';
                 phoneContainer.style.display = 'block';
+                hwaContainer.style.display = 'none';
                 loadPhoneForm();
+            } else if (category === 'Health & Wellness') {
+                standaloneForm.style.display = 'none';
+                transitContainer.style.display = 'none';
+                phoneContainer.style.display = 'none';
+                hwaContainer.style.display = 'block';
+                loadHwaForm();
             } else {
                 standaloneForm.style.display = '';
                 transitContainer.style.display = 'none';
                 phoneContainer.style.display = 'none';
+                hwaContainer.style.display = 'none';
             }
         }
 
@@ -3152,6 +3219,140 @@
             const months = ['January', 'February', 'March', 'April', 'May', 'June',
                            'July', 'August', 'September', 'October', 'November', 'December'];
             return months[monthNum - 1] || 'Unknown';
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════════════
+        // 💪 HEALTH & WELLNESS ACCOUNT (HWA) FUNCTIONS
+        // ═══════════════════════════════════════════════════════════════════════════════
+
+        let hwaBalance = { annual_max: 500, used: 0, remaining: 500, year: new Date().getFullYear() };
+        let hwaReceiptFiles = [];
+
+        async function loadHwaForm() {
+            await loadHwaBalance();
+            await loadHwaHistory();
+            hwaReceiptFiles = [];
+            hwaRenderReceiptList();
+            document.getElementById('hwa-amount').value = '';
+            document.getElementById('hwa-vendor').value = '';
+            document.getElementById('hwa-description').value = '';
+        }
+
+        async function loadHwaBalance() {
+            try {
+                const resp = await fetch('/api/hwa-claims/balance', { headers: { 'Authorization': `Bearer ${sessionId}` } });
+                if (resp.ok) {
+                    hwaBalance = await resp.json();
+                    document.getElementById('hwa-balance-display').innerHTML = 
+                        `Balance: <strong>$${hwaBalance.remaining.toFixed(2)}</strong> remaining of $${hwaBalance.annual_max.toFixed(2)} (${hwaBalance.year})` +
+                        (hwaBalance.used > 0 ? ` · Used: $${hwaBalance.used.toFixed(2)}` : '');
+                }
+            } catch (e) { console.error('HWA balance load error:', e); }
+        }
+
+        async function loadHwaHistory() {
+            try {
+                const resp = await fetch('/api/hwa-claims/history', { headers: { 'Authorization': `Bearer ${sessionId}` } });
+                if (!resp.ok) return;
+                const claims = await resp.json();
+                const section = document.getElementById('hwa-history-section');
+                const list = document.getElementById('hwa-history-list');
+                if (!claims || claims.length === 0) { section.style.display = 'none'; return; }
+                section.style.display = 'block';
+                const statusColors = { approved: '#28a745', pending: '#ffc107', rejected: '#dc3545' };
+                const statusIcons = { approved: '✅', pending: '⏳', rejected: '❌' };
+                list.innerHTML = claims.map(c => `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:white;border-radius:8px;border-left:3px solid ${statusColors[c.status] || '#ccc'};">
+                        <div>
+                            <div style="font-weight:600;color:#333;font-size:13px;">${statusIcons[c.status] || ''} $${parseFloat(c.claim_amount).toFixed(2)} ${c.vendor ? '— ' + c.vendor : ''}</div>
+                            <div style="font-size:12px;color:#666;">${c.description || ''}</div>
+                            <div style="font-size:11px;color:#999;">Submitted: ${new Date(c.submitted_date).toLocaleDateString()}</div>
+                        </div>
+                        <span style="background:${statusColors[c.status]};color:white;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;text-transform:capitalize;">${c.status}</span>
+                    </div>`).join('');
+            } catch (e) { console.error('HWA history load error:', e); }
+        }
+
+        function hwaReceiptChanged() {
+            const input = document.getElementById('hwa-receipt-input');
+            if (input.files.length > 0) {
+                for (let i = 0; i < input.files.length; i++) {
+                    if (hwaReceiptFiles.length < 10) {
+                        hwaReceiptFiles.push(input.files[i]);
+                    }
+                }
+                input.value = '';
+                hwaRenderReceiptList();
+            }
+        }
+
+        function hwaRenderReceiptList() {
+            const listDiv = document.getElementById('hwa-receipt-list');
+            if (hwaReceiptFiles.length === 0) { listDiv.innerHTML = ''; return; }
+            listDiv.innerHTML = hwaReceiptFiles.map((f, i) => `
+                <div style="display:flex;align-items:center;gap:8px;padding:4px 0;">
+                    <span style="font-size:12px;">📄 ${f.name}</span>
+                    <button type="button" onclick="hwaRemoveReceipt(${i})" style="background:#dc3545;color:white;border:none;padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer;">✕</button>
+                </div>`).join('') + 
+                `<div style="color:#28a745;font-weight:600;font-size:12px;">${hwaReceiptFiles.length} file${hwaReceiptFiles.length > 1 ? 's' : ''} ready</div>`;
+        }
+
+        function hwaRemoveReceipt(index) {
+            hwaReceiptFiles.splice(index, 1);
+            hwaRenderReceiptList();
+        }
+
+        async function submitHwaClaim() {
+            const amount = parseFloat(document.getElementById('hwa-amount').value);
+            const vendor = document.getElementById('hwa-vendor').value.trim();
+            const description = document.getElementById('hwa-description').value.trim();
+            
+            if (isNaN(amount) || amount <= 0) {
+                showMessage('error', '❌ Please enter a valid amount.');
+                return;
+            }
+            if (amount > hwaBalance.remaining) {
+                showMessage('error', `❌ Amount exceeds remaining balance of $${hwaBalance.remaining.toFixed(2)}`);
+                return;
+            }
+            if (hwaReceiptFiles.length === 0) {
+                showMessage('error', '❌ Please upload at least one receipt.');
+                return;
+            }
+            
+            const btn = document.getElementById('hwa-submit-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Submitting...';
+            
+            try {
+                const formData = new FormData();
+                formData.append('amount', amount);
+                formData.append('vendor', vendor);
+                formData.append('description', description);
+                
+                for (const file of hwaReceiptFiles) {
+                    const compressed = await compressImage(file);
+                    formData.append('receipts', compressed);
+                }
+                
+                const resp = await fetch('/api/hwa-claims', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${sessionId}` },
+                    body: formData
+                });
+                const result = await resp.json();
+                if (resp.ok && result.success) {
+                    showMessage('success', result.message);
+                    loadHwaForm();
+                } else {
+                    showMessage('error', '❌ ' + (result.error || 'Submission failed'));
+                }
+            } catch (e) {
+                showMessage('error', '❌ Network error: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '💪 Submit for Approval';
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════════════════════

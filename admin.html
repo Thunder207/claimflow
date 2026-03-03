@@ -682,6 +682,23 @@ try {
                 </div>
             </div>
 
+            <!-- 💪 HWA Claims Pending Approval (supervisors only) -->
+            <div id="hwa-claims-section" style="display: none; margin-bottom: 25px;">
+                <div style="background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%); border: 2px solid #28a745; border-radius: 12px; padding: 20px;">
+                    <h4 style="color: #28a745; margin: 0 0 15px 0;">💪 Health & Wellness Claims — Pending Approval</h4>
+                    <div id="hwa-claims-list"></div>
+                </div>
+            </div>
+
+            <div id="hwa-history-section-admin" style="display: none; margin-bottom: 25px;">
+                <div style="background: linear-gradient(135deg, #f0f8f0 0%, #f8faf8 100%); border: 2px solid #6c9d6c; border-radius: 12px; padding: 20px;">
+                    <h4 style="color: #28a745; margin: 0 0 15px 0; cursor: pointer;" onclick="toggleHwaHistory()">
+                        📋 Health & Wellness Claims — History <span id="hwa-history-toggle" style="font-size: 12px;">▼</span>
+                    </h4>
+                    <div id="hwa-history-list-admin"></div>
+                </div>
+            </div>
+
             <div id="expenses-container" aria-live="polite" aria-label="Expenses list">
                 <div class="loading">
                     <div class="spinner" role="status" aria-label="Loading expenses"></div>
@@ -1187,6 +1204,43 @@ try {
                 </div>
             </div>
 
+            <!-- 💪 Health & Wellness Account Settings -->
+            <div style="margin-top: 40px; border-top: 2px solid #eee; padding-top: 30px;">
+                <div class="section-header" style="background: linear-gradient(135deg, #28a745 0%, #218838 100%);">💪 Health & Wellness Account Settings</div>
+                <div style="max-width: 600px; margin: 0 auto;">
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #28a745;">
+                        <p style="color: #495057; font-size: 14px; line-height: 1.6; margin-bottom: 10px;">
+                            Configure the annual maximum for Health & Wellness Account claims.
+                        </p>
+                        <p style="color: #6c757d; font-size: 13px; margin: 0;">
+                            Employees can submit multiple claims throughout the year up to this annual maximum.
+                        </p>
+                    </div>
+                    
+                    <div style="margin-bottom: 20px;">
+                        <label style="font-weight: 600; color: #2c3e50; margin-bottom: 8px; display: block;">Annual Maximum ($):</label>
+                        <input type="number" id="hwa-annual-max" min="0.01" max="10000" step="0.01" 
+                               style="width: 200px; padding: 10px; border: 2px solid #28a745; border-radius: 8px; font-size: 15px;"
+                               placeholder="500.00">
+                        <small style="color: #6c757d; font-size: 12px; display: block; margin-top: 4px;">Maximum annual amount per employee</small>
+                    </div>
+                    
+                    <div id="hwa-current" style="background: #e8f5e9; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; color: #1b5e20;"></div>
+                    
+                    <button onclick="saveHwaSettings()" style="background: linear-gradient(135deg, #28a745 0%, #218838 100%); color: white; border: none; padding: 12px 30px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">
+                        💾 Save HWA Settings
+                    </button>
+                    
+                    <div id="hwa-save-msg" style="margin-top: 12px; display: none;"></div>
+                    
+                    <!-- Audit Trail -->
+                    <div style="margin-top: 30px;">
+                        <h4 style="color: #2c3e50; margin-bottom: 12px;">📋 HWA Settings Change History</h4>
+                        <div id="hwa-audit-log" style="font-size: 13px; color: #495057;">Loading...</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Email Log -->
             <div style="margin-top: 40px; border-top: 2px solid #eee; padding-top: 30px;">
                 <div class="section-header">📬 Email Log</div>
@@ -1431,6 +1485,7 @@ try {
                 loadExpensesWithSearch();
                 loadPendingTransitClaims();
                 loadPendingPhoneClaims();
+                loadPendingHwaClaims();
             } else if (tabName === 'employees') {
                 loadEmployees();
             } else if (tabName === 'chart') {
@@ -1446,6 +1501,7 @@ try {
                 loadAuditEmailSettings();
                 loadPhoneSettings();
                 loadTransitSettings();
+                loadHwaSettings();
                 loadEmailLog();
             }
         }
@@ -2426,6 +2482,280 @@ try {
                 showMessage('danger', 'Network error');
             }
             _phoneActionInProgress = false;
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════════════
+        // 💪 HWA CLAIMS — SUPERVISOR/ADMIN FUNCTIONS
+        // ═══════════════════════════════════════════════════════════════════════════════
+        let _hwaActionInProgress = false;
+
+        async function loadPendingHwaClaims() {
+            const section = document.getElementById('hwa-claims-section');
+            const historySection = document.getElementById('hwa-history-section-admin');
+            if (_hwaActionInProgress) return;
+            
+            try {
+                const resp = await fetch('/api/hwa-claims/pending', {
+                    headers: { 'Authorization': 'Bearer ' + sessionId }
+                });
+                if (!resp.ok) { section.style.display = 'none'; return; }
+                const claims = await resp.json();
+                
+                section.style.display = 'block';
+                const list = document.getElementById('hwa-claims-list');
+                
+                if (claims.length === 0) {
+                    list.innerHTML = '<div style="text-align:center;color:#6c757d;padding:20px;">No pending Health & Wellness claims</div>';
+                } else {
+                    list.innerHTML = claims.map(c => `
+                        <div id="hwa-claim-${c.id}" style="background:white;border-radius:10px;padding:16px;margin-bottom:12px;border-left:4px solid #28a745;">
+                            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+                                <div>
+                                    <strong style="color:#2c3e50;font-size:15px;">💪 ${c.employee_name}</strong>
+                                    <span style="color:#666;font-size:12px;margin-left:8px;">${c.employee_number || ''} · ${c.department || ''}</span>
+                                    <div style="font-size:13px;color:#555;margin-top:6px;">
+                                        <strong style="color:#059669;">Amount: $${parseFloat(c.claim_amount).toFixed(2)}</strong>
+                                        ${c.vendor ? `<br>Vendor: ${c.vendor}` : ''}
+                                        ${c.description ? `<br>Description: ${c.description}` : ''}
+                                        ${c.receipt_count ? ` · 📎 ${c.receipt_count} file${c.receipt_count > 1 ? 's' : ''}` : ''}
+                                    </div>
+                                    <div style="font-size:11px;color:#999;margin-top:4px;">Submitted: ${new Date(c.submitted_date).toLocaleDateString()}</div>
+                                </div>
+                            </div>
+                            <div id="hwa-actions-${c.id}" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+                                ${c.receipt_count > 0 ? `<button onclick="viewHwaReceipts(${c.id})" style="background:#17a2b8;color:white;border:none;padding:8px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">📎 View Receipt</button>` : ''}
+                                <button onclick="approveHwaClaim(${c.id}, this)" style="background:#28a745;color:white;border:none;padding:8px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">✅ Approve</button>
+                                <button onclick="rejectHwaClaim(${c.id}, '${c.employee_name.replace(/'/g, "\\'")}', this)" style="background:#dc3545;color:white;border:none;padding:8px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">❌ Reject</button>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+                
+                loadHwaClaimsHistory();
+                
+            } catch (err) {
+                console.error('HWA claims load error:', err);
+                section.style.display = 'none';
+            }
+        }
+
+        async function loadHwaClaimsHistory() {
+            try {
+                const resp = await fetch('/api/hwa-claims/supervisor-history', {
+                    headers: { 'Authorization': 'Bearer ' + sessionId }
+                });
+                if (!resp.ok) return;
+                const claims = await resp.json();
+                const section = document.getElementById('hwa-history-section-admin');
+                const list = document.getElementById('hwa-history-list-admin');
+                if (claims.length === 0) { section.style.display = 'none'; return; }
+                section.style.display = 'block';
+                list.innerHTML = claims.map(c => {
+                    const color = c.status === 'approved' ? '#28a745' : '#dc3545';
+                    const icon = c.status === 'approved' ? '✅' : '❌';
+                    return `<div style="background:white;border-radius:8px;padding:10px 14px;margin-bottom:6px;border-left:3px solid ${color};display:flex;justify-content:space-between;align-items:center;">
+                        <div><strong>${icon} ${c.employee_name}</strong> — $${parseFloat(c.claim_amount).toFixed(2)} ${c.vendor ? '(' + c.vendor + ')' : ''}</div>
+                        <span style="font-size:11px;color:#999;">${c.approved_date ? new Date(c.approved_date).toLocaleDateString() : ''}</span>
+                    </div>`;
+                }).join('');
+            } catch (e) {}
+        }
+
+        function toggleHwaHistory() {
+            const list = document.getElementById('hwa-history-list-admin');
+            const toggle = document.getElementById('hwa-history-toggle');
+            if (list.style.display === 'none') {
+                list.style.display = 'block';
+                toggle.textContent = '▼';
+            } else {
+                list.style.display = 'none';
+                toggle.textContent = '▶';
+            }
+        }
+
+        async function viewHwaReceipts(claimId) {
+            try {
+                const resp = await fetch(`/api/hwa-claims/${claimId}/receipts`, {
+                    headers: { 'Authorization': 'Bearer ' + sessionId }
+                });
+                if (!resp.ok) return;
+                const receipts = await resp.json();
+                if (receipts.length === 0) { alert('No receipts found'); return; }
+                receipts.forEach(r => {
+                    window.open(`/api/hwa-claims/receipt/${r.id}?auth=${sessionId}`, '_blank');
+                });
+            } catch (e) {
+                showMessage('danger', 'Failed to load receipts');
+            }
+        }
+
+        async function approveHwaClaim(claimId, btn) {
+            if (_hwaActionInProgress) return;
+            
+            if (!btn || !btn.dataset.confirmed) {
+                if (btn) {
+                    const parent = btn.parentElement;
+                    const rejectBtn = parent.querySelector('button:nth-child(3)');
+                    if (rejectBtn) rejectBtn.style.display = 'none';
+                    const receiptBtn = parent.querySelector('button:nth-child(1)');
+                    if (receiptBtn && receiptBtn !== btn) receiptBtn.style.display = 'none';
+                    btn.dataset.confirmed = 'pending';
+                    btn.innerHTML = '✅ Confirm Approve';
+                    btn.style.background = '#1e7e34';
+                    const cancelBtn = document.createElement('button');
+                    cancelBtn.innerHTML = '✖ Cancel';
+                    cancelBtn.style.cssText = 'background:#6c757d;color:white;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;';
+                    cancelBtn.onclick = function(e) { e.stopPropagation(); loadPendingHwaClaims(); };
+                    parent.appendChild(cancelBtn);
+                }
+                return;
+            }
+            
+            _hwaActionInProgress = true;
+            if (btn) { btn.innerHTML = '⏳ Approving...'; btn.disabled = true; }
+            try {
+                const resp = await fetch(`/api/hwa-claims/${claimId}/approve`, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + sessionId, 'Content-Type': 'application/json' }
+                });
+                const result = await resp.json();
+                if (resp.ok && result.success) {
+                    showMessage('success', '✅ HWA claim approved');
+                    loadPendingHwaClaims();
+                } else {
+                    showMessage('danger', result.error || 'Failed to approve');
+                }
+            } catch (err) {
+                showMessage('danger', 'Network error');
+            }
+            _hwaActionInProgress = false;
+        }
+
+        async function rejectHwaClaim(claimId, employeeName, btn) {
+            if (_hwaActionInProgress) return;
+            
+            if (btn) {
+                const parent = btn.closest('div[id^="hwa-actions"]');
+                if (!parent) return;
+                parent.innerHTML = `
+                    <div style="display:flex;flex-direction:column;gap:8px;width:100%;">
+                        <label style="font-size:13px;font-weight:600;color:#dc3545;">Rejection reason for ${employeeName}:</label>
+                        <input type="text" id="hwa-reject-reason-${claimId}" placeholder="Enter reason..." 
+                               style="padding:8px 12px;border:2px solid #dc3545;border-radius:6px;font-size:13px;width:100%;">
+                        <div style="display:flex;gap:8px;">
+                            <button onclick="submitHwaReject(${claimId})" 
+                                    style="background:#dc3545;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">
+                                ❌ Confirm Reject
+                            </button>
+                            <button onclick="loadPendingHwaClaims()" 
+                                    style="background:#6c757d;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">
+                                ✖ Cancel
+                            </button>
+                        </div>
+                    </div>`;
+                const input = document.getElementById('hwa-reject-reason-' + claimId);
+                if (input) input.focus();
+            }
+        }
+
+        async function submitHwaReject(claimId) {
+            if (_hwaActionInProgress) return;
+            _hwaActionInProgress = true;
+            const input = document.getElementById('hwa-reject-reason-' + claimId);
+            const reason = input ? input.value.trim() : '';
+            try {
+                const resp = await fetch(`/api/hwa-claims/${claimId}/reject`, {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + sessionId, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reason: reason || 'No reason provided' })
+                });
+                const result = await resp.json();
+                if (resp.ok && result.success) {
+                    showMessage('success', '❌ HWA claim rejected');
+                    loadPendingHwaClaims();
+                } else {
+                    showMessage('danger', result.error || 'Failed to reject');
+                }
+            } catch (err) {
+                showMessage('danger', 'Network error');
+            }
+            _hwaActionInProgress = false;
+        }
+
+        async function loadHwaSettings() {
+            if (currentUserRole !== 'admin') return;
+            try {
+                const resp = await fetch('/api/settings/hwa', { headers: { 'Authorization': `Bearer ${sessionId}` } });
+                const data = await resp.json();
+                document.getElementById('hwa-annual-max').value = data.annual_max;
+                document.getElementById('hwa-current').innerHTML = `📊 Current settings: Annual Maximum <strong>$${data.annual_max.toFixed(2)}</strong> per employee`;
+                loadHwaAudit();
+            } catch(e) { console.error('Failed to load HWA settings:', e); }
+        }
+
+        async function saveHwaSettings() {
+            const annualMax = parseFloat(document.getElementById('hwa-annual-max').value);
+            
+            if (isNaN(annualMax) || annualMax <= 0 || annualMax > 10000) {
+                alert('Annual maximum must be between $0.01 and $10,000.00');
+                return;
+            }
+            
+            try {
+                const resp = await fetch('/api/settings/hwa', {
+                    method: 'PUT',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionId}` 
+                    },
+                    body: JSON.stringify({ annual_max: annualMax })
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    const msgDiv = document.getElementById('hwa-save-msg');
+                    msgDiv.style.display = 'block';
+                    msgDiv.innerHTML = '<span style="color: #28a745; font-weight: 600;">✅ HWA settings saved successfully!</span>';
+                    setTimeout(() => { msgDiv.style.display = 'none'; }, 3000);
+                    loadHwaSettings();
+                } else {
+                    alert('Error: ' + (data.error || 'Failed to save'));
+                }
+            } catch(e) { alert('Failed to save HWA settings: ' + e.message); }
+        }
+
+        async function loadHwaAudit() {
+            try {
+                const resp = await fetch('/api/settings/variance/audit', { headers: { 'Authorization': `Bearer ${sessionId}` } });
+                const logs = await resp.json();
+                const container = document.getElementById('hwa-audit-log');
+                
+                const hwaLogs = (logs || []).filter(log => log.setting_key === 'hwa_settings');
+                if (!hwaLogs.length) {
+                    container.innerHTML = '<p style="color:#999; text-align:center; padding:10px;">No changes yet</p>';
+                    return;
+                }
+                
+                const table = `
+                    <table style="width:100%; border-collapse: collapse; font-size:12px;">
+                        <thead><tr style="background:#f1f3f4; font-weight:600;">
+                            <th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Date</th>
+                            <th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Changed By</th>
+                            <th style="border:1px solid #dee2e6; padding:8px; text-align:left;">From</th>
+                            <th style="border:1px solid #dee2e6; padding:8px; text-align:left;">To</th>
+                        </tr></thead>
+                        <tbody>
+                        ${hwaLogs.map(log => `
+                            <tr>
+                                <td style="border:1px solid #dee2e6; padding:6px;">${new Date(log.changed_at).toLocaleString()}</td>
+                                <td style="border:1px solid #dee2e6; padding:6px;">${log.changed_by_name || log.changed_by}</td>
+                                <td style="border:1px solid #dee2e6; padding:6px;">${log.old_value}</td>
+                                <td style="border:1px solid #dee2e6; padding:6px;">${log.new_value}</td>
+                            </tr>
+                        `).join('')}
+                        </tbody>
+                    </table>`;
+                container.innerHTML = table;
+            } catch(e) { console.error('Failed to load HWA audit:', e); }
         }
 
         async function loadExpensesWithSearch() {
