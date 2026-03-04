@@ -1396,7 +1396,7 @@ try {
                 
                 supervisors.forEach(emp => {
                     const directReports = employees.filter(e => e.supervisor_id == emp.id).length;
-                    supervisorSelect.innerHTML += `<option value="${emp.id}" data-name="${emp.name}">${emp.name} (${directReports} direct reports)</option>`;
+                    supervisorSelect.innerHTML += `<option value="${emp.id}" data-name="${sanitizeForDisplay(emp.name)}">${sanitizeForDisplay(emp.name)} (${directReports} direct reports)</option>`;
                 });
                 
             } catch (error) {
@@ -1691,7 +1691,7 @@ try {
                                         const receiptBtn = isKm ? '<span style="color:#999;font-size:11px;">N/A</span>' :
                                             `<span onclick="event.stopPropagation();viewExpenseReceipt(${exp.id})" style="color:#2196f3;font-size:12px;text-decoration:underline;cursor:pointer;">📎 View Receipt</span>`;
                                         return `<div style="padding: 6px 0; font-size: 14px; color: #555; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center;">
-                                            <span>${icon} ${label}: <strong>$${parseFloat(exp.amount).toFixed(2)}</strong>${exp.vendor ? ' — ' + exp.vendor : ''}</span>
+                                            <span>${icon} ${label}: <strong>$${parseFloat(exp.amount).toFixed(2)}</strong>${exp.vendor ? ' — ' + sanitizeForDisplay(exp.vendor) : ''}</span>
                                             <span>${receiptBtn}</span>
                                         </div>`;
                                     }).join('')}
@@ -2007,7 +2007,7 @@ try {
                                     const receiptBtn = isKm ? '<span style="color:#999;font-size:11px;">N/A</span>' :
                                         `<span onclick="viewExpenseReceipt(${exp.id})" style="color:#2196f3;font-size:12px;text-decoration:underline;cursor:pointer;">📎 View Receipt</span>`;
                                     return `<div style="padding: 6px 0; font-size: 14px; color: #555; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center;">
-                                        <span>${icon} ${label}: <strong>$${parseFloat(exp.amount).toFixed(2)}</strong>${exp.vendor ? ' — ' + exp.vendor : ''}</span>
+                                        <span>${icon} ${label}: <strong>$${parseFloat(exp.amount).toFixed(2)}</strong>${exp.vendor ? ' — ' + sanitizeForDisplay(exp.vendor) : ''}</span>
                                         <span>${receiptBtn}</span>
                                     </div>`;
                                 }).join('')}
@@ -2096,7 +2096,7 @@ try {
                     <div style="background: white; border-radius: 8px; padding: 15px; margin-bottom: 10px; border-left: 4px solid #17a2b8;">
                         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                             <div>
-                                <strong style="color: #2c3e50;">${claim.employee_name}</strong>
+                                <strong style="color: #2c3e50;">${sanitizeForDisplay(claim.employee_name)}</strong>
                                 <span style="color: #6c757d; font-size: 13px;"> — ${claim.department || ''} (${claim.employee_number || ''})</span>
                                 <div style="margin-top: 4px; font-size: 14px; color: #495057;">
                                     🚍 ${mn[claim.claim_month - 1]} ${claim.claim_year} — 
@@ -2112,7 +2112,7 @@ try {
                                 <button onclick="approveTransitClaim(${claim.id}, this)" style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
                                     ✅ Approve
                                 </button>
-                                <button onclick="rejectTransitClaim(${claim.id}, '${claim.employee_name}', this)" style="background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
+                                <button onclick="rejectTransitClaim(${claim.id}, '${sanitizeForDisplay(claim.employee_name)}', this)" style="background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
                                     ❌ Reject
                                 </button>
                             </div>
@@ -2158,7 +2158,7 @@ try {
                     return `<div style="background: white; border-radius: 8px; padding: 12px 15px; margin-bottom: 8px; border-left: 4px solid ${borderColor};">
                         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
                             <div>
-                                <strong style="color: #2c3e50;">${claim.employee_name}</strong>
+                                <strong style="color: #2c3e50;">${sanitizeForDisplay(claim.employee_name)}</strong>
                                 <span style="color: #6c757d; font-size: 12px;"> — ${claim.department || ''} (${claim.employee_number || ''})</span>
                                 <div style="margin-top: 3px; font-size: 13px; color: #495057;">
                                     🚍 ${mn[claim.claim_month - 1]} ${claim.claim_year} — 
@@ -2168,7 +2168,7 @@ try {
                             <div style="text-align: right; font-size: 12px;">
                                 <div><span style="color: ${borderColor}; font-weight: 600;">${icon} ${statusText}</span></div>
                                 <div style="color: #6c757d;">by ${approverStr} — ${dateStr}</div>
-                                ${!isApproved && claim.rejection_reason ? `<div style="color: #dc3545; font-style: italic; margin-top: 2px;">"${claim.rejection_reason}"</div>` : ''}
+                                ${!isApproved && claim.rejection_reason ? `<div style="color: #dc3545; font-style: italic; margin-top: 2px;">"${sanitizeForDisplay(claim.rejection_reason)}"</div>` : ''}
                                 ${isApproved && claim.report_ref ? `<div style="color: #6c757d; margin-top: 2px;">📄 ${claim.report_ref}</div>` : ''}
                             </div>
                         </div>
@@ -2315,7 +2315,7 @@ try {
                         <div id="phone-claim-${c.id}" style="background:white;border-radius:10px;padding:16px;margin-bottom:12px;border-left:4px solid #7c4dff;">
                             <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
                                 <div>
-                                    <strong style="color:#2c3e50;font-size:15px;">📱 ${c.employee_name}</strong>
+                                    <strong style="color:#2c3e50;font-size:15px;">📱 ${sanitizeForDisplay(c.employee_name)}</strong>
                                     <span style="color:#666;font-size:12px;margin-left:8px;">${c.employee_number || ''} · ${c.department || ''}</span>
                                     <div style="font-size:13px;color:#555;margin-top:6px;">
                                         <strong>${mn[c.claim_month - 1]} ${c.claim_year}</strong><br>
@@ -2361,7 +2361,7 @@ try {
                     const color = c.status === 'approved' ? '#28a745' : '#dc3545';
                     const icon = c.status === 'approved' ? '✅' : '❌';
                     return `<div style="background:white;border-radius:8px;padding:10px 14px;margin-bottom:6px;border-left:3px solid ${color};display:flex;justify-content:space-between;align-items:center;">
-                        <div><strong>${icon} ${c.employee_name}</strong> — ${mn[c.claim_month - 1]} ${c.claim_year} · $${parseFloat(c.total_claim_amount).toFixed(2)}</div>
+                        <div><strong>${icon} ${sanitizeForDisplay(c.employee_name)}</strong> — ${mn[c.claim_month - 1]} ${c.claim_year} · $${parseFloat(c.total_claim_amount).toFixed(2)}</div>
                         <span style="font-size:11px;color:#999;">${new Date(c.approved_date).toLocaleDateString()}</span>
                     </div>`;
                 }).join('');
@@ -2519,12 +2519,12 @@ try {
                         <div id="hwa-claim-${c.id}" style="background:white;border-radius:10px;padding:16px;margin-bottom:12px;border-left:4px solid #28a745;">
                             <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
                                 <div>
-                                    <strong style="color:#2c3e50;font-size:15px;">💪 ${c.employee_name}</strong>
+                                    <strong style="color:#2c3e50;font-size:15px;">💪 ${sanitizeForDisplay(c.employee_name)}</strong>
                                     <span style="color:#666;font-size:12px;margin-left:8px;">${c.employee_number || ''} · ${c.department || ''}</span>
                                     <div style="font-size:13px;color:#555;margin-top:6px;">
                                         <strong style="color:#059669;">Amount: $${parseFloat(c.claim_amount).toFixed(2)}</strong>
-                                        ${c.vendor ? `<br>Vendor: ${c.vendor}` : ''}
-                                        ${c.description ? `<br>Description: ${c.description}` : ''}
+                                        ${c.vendor ? `<br>Vendor: ${sanitizeForDisplay(c.vendor)}` : ''}
+                                        ${c.description ? `<br>Description: ${sanitizeForDisplay(c.description)}` : ''}
                                         ${c.receipt_count ? ` · 📎 ${c.receipt_count} file${c.receipt_count > 1 ? 's' : ''}` : ''}
                                     </div>
                                     <div style="font-size:11px;color:#999;margin-top:4px;">Submitted: ${new Date(c.submitted_date).toLocaleDateString()}</div>
@@ -2562,7 +2562,7 @@ try {
                     const color = c.status === 'approved' ? '#28a745' : '#dc3545';
                     const icon = c.status === 'approved' ? '✅' : '❌';
                     return `<div style="background:white;border-radius:8px;padding:10px 14px;margin-bottom:6px;border-left:3px solid ${color};display:flex;justify-content:space-between;align-items:center;">
-                        <div><strong>${icon} ${c.employee_name}</strong> — $${parseFloat(c.claim_amount).toFixed(2)} ${c.vendor ? '(' + c.vendor + ')' : ''}</div>
+                        <div><strong>${icon} ${sanitizeForDisplay(c.employee_name)}</strong> — $${parseFloat(c.claim_amount).toFixed(2)} ${c.vendor ? '(' + c.vendor + ')' : ''}</div>
                         <span style="font-size:11px;color:#999;">${c.approved_date ? new Date(c.approved_date).toLocaleDateString() : ''}</span>
                     </div>`;
                 }).join('');
@@ -3109,14 +3109,14 @@ try {
                     if (currentUserRole === 'admin') {
                         let resendButton = '';
                         if (!emp.password_hash || emp.is_active === 0) {
-                            resendButton = `<button class="btn btn-info" onclick="resendInvite(${emp.id}, '${emp.name}')" style="margin-right: 5px;">🔗 Resend Invite</button>`;
+                            resendButton = `<button class="btn btn-info" onclick="resendInvite(${emp.id}, '${sanitizeForDisplay(emp.name)}')" style="margin-right: 5px;">🔗 Resend Invite</button>`;
                         }
                         
                         actionButtons = `
                             <div style="margin-top: 8px;">
                                 ${resendButton}
                                 <button class="btn btn-warning" onclick="editEmployee(${emp.id})" style="margin-right: 5px;">✏️ Edit</button>
-                                <button class="btn btn-danger" onclick="deleteEmployee(${emp.id}, '${emp.name}')">🗑️ Delete</button>
+                                <button class="btn btn-danger" onclick="deleteEmployee(${emp.id}, '${sanitizeForDisplay(emp.name)}')">🗑️ Delete</button>
                             </div>
                         `;
                     }
@@ -3124,10 +3124,10 @@ try {
                     return `
                         <div class="employee-item">
                             <div style="flex-grow: 1;">
-                                <div style="font-weight: bold; color: #2c3e50; font-size: 16px;">${emp.name}</div>
+                                <div style="font-weight: bold; color: #2c3e50; font-size: 16px;">${sanitizeForDisplay(emp.name)}</div>
                                 <div style="color: #666; font-size: 14px; margin-top: 4px;">
                                     ${emp.position || 'No position'} • ${emp.department || 'No department'}
-                                    ${emp.supervisor_name ? ` • Reports to: ${emp.supervisor_name}` : ' • Top Level Manager'}
+                                    ${emp.supervisor_name ? ` • Reports to: ${sanitizeForDisplay(emp.supervisor_name)}` : ' • Top Level Manager'}
                                 </div>
                                 ${actionButtons}
                             </div>
@@ -3224,7 +3224,7 @@ try {
                 window.allEmployees
                     .filter(emp => emp.id != excludeEmployeeId) // Don't let someone report to themselves
                     .forEach(emp => {
-                        select.innerHTML += `<option value="${emp.id}">${emp.name} - ${emp.position || 'No Position'}</option>`;
+                        select.innerHTML += `<option value="${emp.id}">${sanitizeForDisplay(emp.name)} - ${emp.position || 'No Position'}</option>`;
                     });
             }
         }
@@ -3927,7 +3927,7 @@ try {
                                 </button>
                                 <div id="auth-detail-${auth.id}" style="display: none; margin-top: 12px;"></div>
                             </div>
-                            ${auth.rejection_reason ? `<div style="margin: 12px 20px; padding: 8px 12px; background: #f8d7da; border-radius: 6px; font-size: 13px; color: #721c24;">❌ Rejected: ${auth.rejection_reason}</div>` : ''}
+                            ${auth.rejection_reason ? `<div style="margin: 12px 20px; padding: 8px 12px; background: #f8d7da; border-radius: 6px; font-size: 13px; color: #721c24;">❌ Rejected: ${sanitizeForDisplay(auth.rejection_reason)}</div>` : ''}
                             ${auth.status === 'pending' ? `
                             <div style="padding: 16px 20px; background: #f8f9fa; display: flex; gap: 10px; flex-wrap: wrap;">
                                 <button onclick="approveTravelAuth(${auth.id})" class="btn btn-success" style="min-height: 44px; padding: 10px 24px; font-size: 15px;">✅ Approve</button>
@@ -4957,7 +4957,7 @@ try {
             select.innerHTML = '<option value="">All Employees</option>';
             
             employees.forEach(emp => {
-                select.innerHTML += `<option value="${emp.id}">${emp.name} (${emp.employee_number || 'No ID'})</option>`;
+                select.innerHTML += `<option value="${emp.id}">${sanitizeForDisplay(emp.name)} (${emp.employee_number || 'No ID'})</option>`;
             });
         }
 

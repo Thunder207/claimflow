@@ -35,6 +35,8 @@ function verifyPassword(password, hash) {
 // Input sanitization utilities for security
 function sanitizeString(input, maxLength = 255) {
     if (typeof input !== 'string') return '';
+    // Strip HTML tags to prevent XSS
+    input = input.replace(/<[^>]*>/g, '');
     return input.trim().slice(0, maxLength);
 }
 
@@ -64,7 +66,22 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 // 🛠️ Middleware
-app.use(cors());
+app.use(cors({
+    origin: ['https://claimflow-e0za.onrender.com'],
+    credentials: true
+}));
+
+// Security headers
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-src blob:");
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    next();
+});
+
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -1223,6 +1240,7 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
         location = sanitizeString(location, 255);
         vendor = sanitizeString(vendor, 255);
         description = sanitizeString(description, 1000);
+        category = sanitizeString(category, 100);
         
         // Validate required fields
         if (!expense_type || !date || !amount) {
@@ -1451,7 +1469,9 @@ app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res
 // Submit a group of expenses as a single claim
 app.post('/api/expense-claims', requireAuth, upload.any(), async (req, res) => {
     try {
-        const { purpose, date, items } = req.body;
+        const purpose = sanitizeString(req.body.purpose, 200);
+        const date = req.body.date;
+        const items = req.body.items;
         let parsedItems;
         try {
             parsedItems = typeof items === 'string' ? JSON.parse(items) : items;
@@ -1461,6 +1481,12 @@ app.post('/api/expense-claims', requireAuth, upload.any(), async (req, res) => {
 
         if (!purpose || !date || !Array.isArray(parsedItems) || parsedItems.length === 0) {
             return res.status(400).json({ success: false, error: 'Purpose, date, and at least one line item are required.' });
+        }
+
+        // Validate date format
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!dateRegex.test(date)) {
+            return res.status(400).json({ success: false, error: 'Invalid date format' });
         }
 
         const claimGroup = 'CLM-' + Date.now();
@@ -1508,7 +1534,7 @@ app.post('/api/expense-claims', requireAuth, upload.any(), async (req, res) => {
                 expenseType = 'other';
             }
 
-            if (isNaN(amount) || amount <= 0) continue;
+            if (isNaN(amount) || amount <= 0 || amount > 999999.99) continue;
 
             const prefixedDesc = `[${sanitizeString(purpose, 200)}] ${description || category}`;
 
@@ -2544,7 +2570,8 @@ app.post('/api/expenses/:id/reject', requireAuth, (req, res) => {
     }
     
     const { id } = req.params;
-    const { reason, approver } = req.body;
+    const reason = sanitizeString(req.body.reason, 1000);
+    const approver = sanitizeString(req.body.approver, 255);
     
     if (!reason) {
         return res.status(400).json({ 
@@ -4324,7 +4351,7 @@ app.put('/api/notifications/:id/read', requireAuth, (req, res) => {
 
 // 1. Create Travel Authorization
 app.post('/api/travel-auth', requireAuth, async (req, res) => {
-    const {
+    let {
         name,
         destination = '',
         start_date,
@@ -4336,6 +4363,29 @@ app.post('/api/travel-auth', requireAuth, async (req, res) => {
         est_other = 0,
         details = null
     } = req.body;
+    
+    // Sanitize text inputs
+    name = sanitizeString(name, 255);
+    destination = sanitizeString(destination, 255);
+    purpose = sanitizeString(purpose, 1000);
+    
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (start_date && !dateRegex.test(start_date)) {
+        return res.status(400).json({ success: false, error: 'Invalid start date format' });
+    }
+    if (end_date && !dateRegex.test(end_date)) {
+        return res.status(400).json({ success: false, error: 'Invalid end date format' });
+    }
+    
+    // Validate amounts
+    est_transport = parseFloat(est_transport) || 0;
+    est_lodging = parseFloat(est_lodging) || 0;
+    est_meals = parseFloat(est_meals) || 0;
+    est_other = parseFloat(est_other) || 0;
+    if ([est_transport, est_lodging, est_meals, est_other].some(a => a < 0 || a > 999999.99)) {
+        return res.status(400).json({ success: false, error: 'Invalid estimated amount' });
+    }
     
     // Validation
     if (!name || !start_date || !end_date || !destination) {
@@ -4579,7 +4629,7 @@ app.put('/api/travel-auth/:id/approve', requireAuth, requireRole('supervisor'), 
 app.put('/api/travel-auth/:id/reject', requireAuth, requireRole('supervisor'), (req, res) => {
     const atId = req.params.id;
     // CRITICAL FIX: Accept rejection reason from multiple possible body formats
-    const rejection_reason = req.body.rejection_reason || req.body.reason || req.body.rejectionReason;
+    const rejection_reason = sanitizeString(req.body.rejection_reason || req.body.reason || req.body.rejectionReason || '', 1000);
     
     if (!rejection_reason || rejection_reason.trim() === '') {
         return res.status(400).json({ 
@@ -4638,7 +4688,7 @@ app.put('/api/travel-auth/:id/reject', requireAuth, requireRole('supervisor'), (
 // 6. Update Travel Authorization (for draft/rejected ATs)
 app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
     const atId = req.params.id;
-    const {
+    let {
         name,
         destination = '',
         start_date,
@@ -4650,6 +4700,11 @@ app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
         est_other = 0,
         details = null
     } = req.body;
+    
+    // Sanitize text inputs
+    name = sanitizeString(name, 255);
+    destination = sanitizeString(destination, 255);
+    purpose = sanitizeString(purpose, 1000);
     
     // Check ownership and status
     db.get('SELECT * FROM travel_authorizations WHERE id = ? AND employee_id = ?', 
@@ -6571,8 +6626,9 @@ app.post('/api/transit-claims', requireAuth, upload.fields([
         if (!claim.month || !claim.year || !claim.amount) {
             errors.push(`Claim ${index + 1}: Missing required fields`);
         }
-        if (parseFloat(claim.amount) <= 0) {
-            errors.push(`Claim ${index + 1}: Amount must be greater than 0`);
+        const claimAmt = parseFloat(claim.amount);
+        if (isNaN(claimAmt) || claimAmt <= 0 || claimAmt > 999999.99) {
+            errors.push(`Claim ${index + 1}: Invalid amount`);
         }
         if (!receipts[index]) {
             errors.push(`Claim ${index + 1}: Receipt required`);
@@ -7156,7 +7212,7 @@ app.get('/api/transit-claims/:id/pdf', (req, res, next) => {
 // Reject transit claim
 app.post('/api/transit-claims/:id/reject', requireAuth, requireRole('supervisor'), (req, res) => {
     const claimId = req.params.id;
-    const { reason } = req.body;
+    const reason = sanitizeString(req.body.reason, 1000);
     
     db.get(`SELECT tc.*, e.name as employee_name, e.supervisor_id, tc.employee_id
             FROM transit_claims tc
@@ -7483,7 +7539,7 @@ app.post('/api/phone-claims/:id/approve', requireAuth, requireRole('supervisor')
 // POST /api/phone-claims/:id/reject — supervisor reject
 app.post('/api/phone-claims/:id/reject', requireAuth, requireRole('supervisor'), (req, res) => {
     const claimId = req.params.id;
-    const { reason } = req.body;
+    const reason = sanitizeString(req.body.reason, 1000);
     
     db.get(`SELECT pc.*, e.name as employee_name FROM phone_claims pc JOIN employees e ON pc.employee_id = e.id WHERE pc.id = ?`, [claimId], (err, claim) => {
         if (err) return res.status(500).json({ error: 'Database error' });
@@ -7945,7 +8001,7 @@ app.post('/api/hwa-claims/:id/approve', requireAuth, requireRole('supervisor'), 
 // POST /api/hwa-claims/:id/reject — supervisor reject (DELETE to allow resubmission)
 app.post('/api/hwa-claims/:id/reject', requireAuth, requireRole('supervisor'), (req, res) => {
     const claimId = req.params.id;
-    const { reason } = req.body;
+    const reason = sanitizeString(req.body.reason, 1000);
     
     db.get(`SELECT hc.*, e.name as employee_name FROM hwa_claims hc JOIN employees e ON hc.employee_id = e.id WHERE hc.id = ?`, [claimId], (err, claim) => {
         if (err) return res.status(500).json({ error: 'Database error' });
