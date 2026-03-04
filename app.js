@@ -7200,6 +7200,39 @@ app.post('/api/transit-claims/:id/generate-pdf', requireAuth, async (req, res) =
     }
 });
 
+// GET /api/transit-claims/:id/receipt — serve transit receipt file with auth
+app.get('/api/transit-claims/:id/receipt', (req, res, next) => {
+    if (!req.headers.authorization && req.query.auth) {
+        req.headers.authorization = 'Bearer ' + req.query.auth;
+    }
+    next();
+}, requireAuth, (req, res) => {
+    const claimId = parseInt(req.params.id);
+    if (isNaN(claimId) || claimId <= 0) return res.status(400).json({ error: 'Invalid claim ID' });
+    db.get(`SELECT receipt_file FROM transit_claims WHERE id = ?`, [claimId], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row || !row.receipt_file) return res.status(404).json({ error: 'No receipt found' });
+        
+        const filePath = path.join(__dirname, 'uploads', row.receipt_file);
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ error: 'Receipt file not found on disk' });
+        }
+        
+        // Determine content type from extension
+        const ext = path.extname(row.receipt_file).toLowerCase();
+        const mimeTypes = {
+            '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+            '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf',
+            '.heic': 'image/heic', '.heif': 'image/heif'
+        };
+        const contentType = mimeTypes[ext] || 'application/octet-stream';
+        
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', `inline; filename="${row.receipt_file}"`);
+        res.sendFile(filePath);
+    });
+});
+
 app.get('/api/transit-claims/:id/pdf', (req, res, next) => {
     // Support auth via query param for direct browser downloads
     if (!req.headers.authorization && req.query.auth) {

@@ -2108,7 +2108,8 @@ try {
                                     Submitted: ${new Date(claim.submitted_date).toLocaleDateString()}
                                 </div>
                             </div>
-                            <div style="display: flex; gap: 8px;">
+                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                ${claim.receipt_file ? `<button onclick="viewTransitReceipt(${claim.id})" style="background:#17a2b8;color:white;border:none;padding:8px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">📎 View Receipt</button>` : ''}
                                 <button onclick="approveTransitClaim(${claim.id}, this)" style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
                                     ✅ Approve
                                 </button>
@@ -2193,6 +2194,40 @@ try {
         }
         
         let _transitActionInProgress = false;
+        async function viewTransitReceipt(claimId) {
+            try {
+                const resp = await fetch(`/api/transit-claims/${claimId}/receipt`, {
+                    headers: { 'Authorization': 'Bearer ' + sessionId }
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    showMessage('danger', err.error || 'Failed to load receipt');
+                    return;
+                }
+                const contentType = resp.headers.get('Content-Type') || '';
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                
+                if (contentType.startsWith('image/')) {
+                    // Show image in modal overlay
+                    const overlay = document.createElement('div');
+                    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:10000;display:flex;align-items:center;justify-content:center;cursor:pointer;';
+                    overlay.onclick = function() { document.body.removeChild(overlay); URL.revokeObjectURL(url); };
+                    const img = document.createElement('img');
+                    img.src = url;
+                    img.style.cssText = 'max-width:95vw;max-height:95vh;border-radius:8px;';
+                    overlay.appendChild(img);
+                    document.body.appendChild(overlay);
+                } else {
+                    // PDF or other — open in new tab
+                    window.open(url, '_blank');
+                    setTimeout(() => URL.revokeObjectURL(url), 60000);
+                }
+            } catch (e) {
+                showMessage('danger', 'Failed to load receipt');
+            }
+        }
+
         async function approveTransitClaim(claimId, btn) {
             if (_transitActionInProgress) return;
             
@@ -2200,8 +2235,8 @@ try {
             if (!btn || !btn.dataset.confirmed) {
                 if (btn) {
                     const parent = btn.parentElement;
-                    const rejectBtn = parent.querySelector('button:last-child');
-                    if (rejectBtn) rejectBtn.style.display = 'none';
+                    // Hide all sibling buttons except this one
+                    parent.querySelectorAll('button').forEach(b => { if (b !== btn) b.style.display = 'none'; });
                     btn.dataset.confirmed = 'pending';
                     btn.innerHTML = '✅ Confirm Approve';
                     btn.style.background = '#1e7e34';
