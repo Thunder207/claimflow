@@ -7539,9 +7539,16 @@ app.get('/api/phone-claims/receipt/:receiptId', (req, res, next) => {
     db.get(`SELECT file_data, file_name, file_type FROM phone_claim_receipts WHERE id = ?`, [req.params.receiptId], (err, row) => {
         if (err) return res.status(500).json({ error: 'Database error' });
         if (!row || !row.file_data) return res.status(404).json({ error: 'Receipt not found' });
-        res.setHeader('Content-Type', row.file_type || 'application/octet-stream');
-        res.setHeader('Content-Disposition', `inline; filename="${row.file_name}"`);
-        res.send(row.file_data);
+        try {
+            const buf = Buffer.isBuffer(row.file_data) ? row.file_data : Buffer.from(row.file_data);
+            res.setHeader('Content-Type', row.file_type || 'application/octet-stream');
+            res.setHeader('Content-Disposition', `inline; filename="${row.file_name}"`);
+            res.setHeader('Content-Length', buf.length);
+            res.end(buf);
+        } catch (e) {
+            console.error('❌ Error sending phone receipt:', e);
+            if (!res.headersSent) res.status(500).json({ error: 'Failed to send receipt' });
+        }
     });
 });
 
@@ -8109,9 +8116,16 @@ app.get('/api/hwa-claims/receipt/:receiptId', (req, res, next) => {
     db.get(`SELECT file_data, file_name, file_type FROM hwa_claim_receipts WHERE id = ?`, [req.params.receiptId], (err, row) => {
         if (err) return res.status(500).json({ error: 'Database error' });
         if (!row || !row.file_data) return res.status(404).json({ error: 'Receipt not found' });
-        res.setHeader('Content-Type', row.file_type || 'application/octet-stream');
-        res.setHeader('Content-Disposition', `inline; filename="${row.file_name}"`);
-        res.send(row.file_data);
+        try {
+            const buf = Buffer.isBuffer(row.file_data) ? row.file_data : Buffer.from(row.file_data);
+            res.setHeader('Content-Type', row.file_type || 'application/octet-stream');
+            res.setHeader('Content-Disposition', `inline; filename="${row.file_name}"`);
+            res.setHeader('Content-Length', buf.length);
+            res.end(buf);
+        } catch (e) {
+            console.error('❌ Error sending HWA receipt:', e);
+            if (!res.headersSent) res.status(500).json({ error: 'Failed to send receipt' });
+        }
     });
 });
 

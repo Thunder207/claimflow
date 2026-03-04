@@ -2424,10 +2424,29 @@ try {
                 const receipts = await resp.json();
                 if (receipts.length === 0) { alert('No receipts found'); return; }
                 
-                // Open each receipt in a new tab
-                receipts.forEach(r => {
-                    window.open(`/api/phone-claims/receipt/${r.id}?auth=${sessionId}`, '_blank');
-                });
+                // Fetch each receipt with auth and display
+                for (const r of receipts) {
+                    const rResp = await fetch(`/api/phone-claims/receipt/${r.id}`, {
+                        headers: { 'Authorization': 'Bearer ' + sessionId }
+                    });
+                    if (!rResp.ok) { showMessage('danger', 'Failed to load receipt'); continue; }
+                    const contentType = rResp.headers.get('Content-Type') || '';
+                    const blob = await rResp.blob();
+                    const url = URL.createObjectURL(blob);
+                    if (contentType.startsWith('image/')) {
+                        const overlay = document.createElement('div');
+                        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:10000;display:flex;align-items:center;justify-content:center;cursor:pointer;';
+                        overlay.onclick = function() { document.body.removeChild(overlay); URL.revokeObjectURL(url); };
+                        const img = document.createElement('img');
+                        img.src = url;
+                        img.style.cssText = 'max-width:95vw;max-height:95vh;border-radius:8px;';
+                        overlay.appendChild(img);
+                        document.body.appendChild(overlay);
+                    } else {
+                        window.open(url, '_blank');
+                        setTimeout(() => URL.revokeObjectURL(url), 60000);
+                    }
+                }
             } catch (e) {
                 showMessage('danger', 'Failed to load receipts');
             }
@@ -2630,9 +2649,28 @@ try {
                 if (!resp.ok) return;
                 const receipts = await resp.json();
                 if (receipts.length === 0) { alert('No receipts found'); return; }
-                receipts.forEach(r => {
-                    window.open(`/api/hwa-claims/receipt/${r.id}?auth=${sessionId}`, '_blank');
-                });
+                for (const r of receipts) {
+                    const rResp = await fetch(`/api/hwa-claims/receipt/${r.id}`, {
+                        headers: { 'Authorization': 'Bearer ' + sessionId }
+                    });
+                    if (!rResp.ok) { showMessage('danger', 'Failed to load receipt'); continue; }
+                    const contentType = rResp.headers.get('Content-Type') || '';
+                    const blob = await rResp.blob();
+                    const url = URL.createObjectURL(blob);
+                    if (contentType.startsWith('image/')) {
+                        const overlay = document.createElement('div');
+                        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:10000;display:flex;align-items:center;justify-content:center;cursor:pointer;';
+                        overlay.onclick = function() { document.body.removeChild(overlay); URL.revokeObjectURL(url); };
+                        const img = document.createElement('img');
+                        img.src = url;
+                        img.style.cssText = 'max-width:95vw;max-height:95vh;border-radius:8px;';
+                        overlay.appendChild(img);
+                        document.body.appendChild(overlay);
+                    } else {
+                        window.open(url, '_blank');
+                        setTimeout(() => URL.revokeObjectURL(url), 60000);
+                    }
+                }
             } catch (e) {
                 showMessage('danger', 'Failed to load receipts');
             }
