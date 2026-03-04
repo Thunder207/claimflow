@@ -1605,14 +1605,22 @@ app.get('/api/expense-claims/:expenseId/receipt', requireAuth, (req, res) => {
             // Fall back to receipt_data on expenses table
             db.get(`SELECT receipt_data, receipt_type FROM expenses WHERE id = ?`, [expenseId], (err2, exp) => {
                 if (err2 || !exp || !exp.receipt_data) return res.status(404).json({ error: 'No receipt found' });
-                res.set('Content-Type', exp.receipt_type || 'application/octet-stream');
-                res.send(exp.receipt_data);
+                try {
+                    const buf = Buffer.isBuffer(exp.receipt_data) ? exp.receipt_data : Buffer.from(exp.receipt_data);
+                    res.set('Content-Type', exp.receipt_type || 'application/octet-stream');
+                    res.set('Content-Length', buf.length);
+                    res.end(buf);
+                } catch (e) { console.error('❌ Error sending expense receipt:', e); if (!res.headersSent) res.status(500).json({ error: 'Failed to send receipt' }); }
             });
             return;
         }
-        res.set('Content-Type', row.file_type || 'application/octet-stream');
-        res.set('Content-Disposition', `inline; filename="${row.file_name}"`);
-        res.send(row.file_data);
+        try {
+            const buf = Buffer.isBuffer(row.file_data) ? row.file_data : Buffer.from(row.file_data);
+            res.set('Content-Type', row.file_type || 'application/octet-stream');
+            res.set('Content-Disposition', `inline; filename="${row.file_name}"`);
+            res.set('Content-Length', buf.length);
+            res.end(buf);
+        } catch (e) { console.error('❌ Error sending expense receipt:', e); if (!res.headersSent) res.status(500).json({ error: 'Failed to send receipt' }); }
     });
 });
 
@@ -3938,10 +3946,14 @@ app.get('/api/trips/:id/transport-receipts', requireAuth, (req, res) => {
 app.get('/api/transport-receipts/:receiptId', requireAuth, (req, res) => {
     db.get(`SELECT file_data, file_name, file_type FROM transport_receipts WHERE id = ?`, [req.params.receiptId], (err, row) => {
         if (err) return res.status(500).json({ error: 'Database error' });
-        if (!row) return res.status(404).json({ error: 'Receipt not found' });
-        res.setHeader('Content-Type', row.file_type);
-        res.setHeader('Content-Disposition', `inline; filename="${row.file_name}"`);
-        res.send(row.file_data);
+        if (!row || !row.file_data) return res.status(404).json({ error: 'Receipt not found' });
+        try {
+            const buf = Buffer.isBuffer(row.file_data) ? row.file_data : Buffer.from(row.file_data);
+            res.setHeader('Content-Type', row.file_type || 'application/octet-stream');
+            res.setHeader('Content-Disposition', `inline; filename="${row.file_name}"`);
+            res.setHeader('Content-Length', buf.length);
+            res.end(buf);
+        } catch (e) { console.error('❌ Error sending transport receipt:', e); if (!res.headersSent) res.status(500).json({ error: 'Failed to send receipt' }); }
     });
 });
 
