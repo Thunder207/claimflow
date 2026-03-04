@@ -1,0 +1,160 @@
+=== AUTHENTICATION ===
+Endpoint /api/auth/login: {"success":true,"sessionId":"39e9c12b8f8a821ea88485779e0a72e1e0d5b02d7fa17497619bde5ed321451d","user":{"id":6,"name":"Anna Lee","email":"anna.lee@company.com","employee_number":"EMP006","position":"Project Coordinator","department":"Operations","role":"employee","supervisor_id":4}}
+Using endpoint: /api/auth/login
+ANNA=e089a07b08f013208630a23a6e4b63cc56e467d3876f0947c80fe7fcb6294432
+MIKE=8e4b36795a34f342370e8ab9a223b83de35b3b35ed98569a27ca0007c7a57477
+LISA=05d68dec33c5381735aad8ad5dce7d9383f25c2c4e26d0ecce12c3029ac86df8
+JOHN=669c7d3dfbdf522cce256938729a47c03d26f3337889fb7be86dd7f24275cb9a
+
+=== ENDPOINT DISCOVERY ===
+GET /api/my-expenses -> 200
+GET /api/expense-claims -> 404
+GET /api/pending-expenses -> 404
+GET /api/expenses -> 403
+GET /api/settings/transit -> 200
+GET /api/transit-claims -> 404
+GET /api/travel-authorizations -> 404
+GET /api/hwa-claims -> 404
+GET /api/receipts -> 404
+GET /api/dashboard -> 404
+GET /api/users -> 404
+GET /api/employees -> 403
+
+=== PHASE 1: LOAD & THROUGHPUT ===
+--- S1.1: 50 rapid expense claims ---
+S1.1: 50 success, 0
+0 failed out of 50
+1:200
+2:200
+3:200
+4:200
+5:200
+{"success":true,"claim_group":"CLM-1772582844933","count":1,"message":"✅ 1 expense(s) submitted as claim \"Stress Test 1\""}
+--- S1.2: 100 rapid logins ---
+S1.2: 100 success, 0 failed out of 100
+--- S1.3: 20 concurrent from 4 users ---
+S1.3: 20 success out of 20
+--- S1.4: 50 concurrent GETs ---
+S1.4: 50 success out of 50
+--- S1.7: 50 line items in one claim ---
+S1.7: HTTP 200
+{"success":true,"claim_group":"CLM-1772582869705","count":50,"message":"✅ 50 expense(s) submitted as claim \"50 Items Test\""}
+--- S1.8: 10KB description ---
+S1.8: HTTP 200
+--- S1.11: Unicode bomb ---
+S1.11: HTTP 200
+{"success":true,"claim_group":"CLM-1772582871126","count":1,"message":"✅ 1 expense(s) submitted as claim \"Unicode Test\""}
+--- S1.12: 50 concurrent sessions ---
+S1.12:       50 sessions,       50 unique tokens
+
+=== PHASE 2: SECURITY ===
+--- S2.1: No auth header ---
+No auth /api/my-expenses -> 401
+No auth /api/pending-expenses -> 404
+No auth /api/expense-claims -> 404
+No auth /api/settings/transit -> 401
+--- S2.2: Invalid token ---
+S2.2: HTTP 401
+--- S2.3: Employee writes admin settings ---
+S2.3: HTTP 403
+{"error":"Insufficient permissions"}
+--- S2.4: Self-approve ---
+Anna expense ID: 221
+S2.4 self-approve: HTTP 403
+{"error":"Access denied. Only supervisors can approve expenses. Admin role is for system management only."}
+--- S2.5: Cross-user access ---
+S2.5 Anna accessing Mike's expense 168: <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot GET /api/expenses/168</pre>
+</body>
+</html>
+--- S2.8: SQL injection ---
+SQLi '' OR 1=1 --' -> 400
+SQLi ''; DROP TABLE users;--' -> 403
+SQLi '" OR ""="' -> 500
+SQLi 'admin'--' -> 400
+--- S2.9-S2.10: XSS attacks ---
+S2.9-10 XSS: HTTP 200
+{"success":true,"claim_group":"CLM-1772582875765","count":1,"message":"✅ 1 expense(s) submitted as claim \"<script>alert(\"xss\")</script>\""}
+--- S2.12: SQL in expense fields ---
+S2.12: HTTP 403
+--- S2.13: SQL in query params ---
+S2.13: HTTP 000
+--- S2.14: Path traversal ---
+Path traversal '../../../etc/passwd' -> 404
+Path traversal '..%2F..%2F..%2Fetc%2Fpasswd' -> 400
+Path traversal '....//....//etc/passwd' -> 404
+--- S2.16: JSON injection ---
+S2.16 JSON injection: HTTP 200
+
+=== PHASE 3: DATA INTEGRITY ===
+--- S3.1: Double approve ---
+Pending expenses sample: <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot GET /api/pending-expenses</pre>
+</body>
+</html>
+--- S3.7: Expense totals verification ---
+My expenses sample: [{"id":223,"employee_name":"Anna Lee","employee_id":6,"trip_id":null,"expense_type":"other","meal_name":null,"date":"2026-03-03","location":null,"amount":10,"vendor":"test","description":"[JSON inj] test","receipt_photo":null,"receipt_data":null,"receipt_type":null,"status":"pending","approved_by":null,"approved_at":null,"approval_comment":null,"rejection_reason":null,"return_reason":null,"returned_by":null,"returned_at":null,"created_at":"2026-03-04 00:07:56","updated_at":"2026-03-04 00:07:56",
+
+=== PHASE 4: ERROR RECOVERY ===
+--- S4.1: Empty POST body ---
+S4.1: HTTP 400 - {"success":false,"error":"Purpose, date, and at least one line item are required."}
+--- S4.2: Missing required fields ---
+S4.2: HTTP 400 - {"success":false,"error":"Purpose, date, and at least one line item are required."}
+--- S4.3: Invalid JSON ---
+S4.3: HTTP 500 - {"success":false,"error":"Internal server error"}
+--- S4.4: Wrong content type ---
+S4.4: HTTP 400
+--- S4.5: Negative amount ---
+S4.5: HTTP 200 - {"success":true,"claim_group":"CLM-1772582878039","count":0,"message":"✅ 0 expense(s) submitted as claim \"Neg test\""}
+--- S4.6: Non-existent ID ---
+S4.6: HTTP 403
+--- S4.7: Invalid date ---
+S4.7: HTTP 200 - {"success":true,"claim_group":"CLM-1772582878441","count":1,"message":"✅ 1 expense(s) submitted as claim \"Bad date\""}
+--- S4.8: 100K char field ---
+S4.8: HTTP 200
+--- S4.9: Recovery test ---
+S4.9: After all bad requests, normal GET -> HTTP 200
+
+=== PHASE 5: API COMPLETENESS ===
+--- S5.1: Auth required on all endpoints ---
+No auth /api/my-expenses -> 401
+No auth /api/pending-expenses -> 404
+No auth /api/expense-claims -> 404
+No auth /api/settings/transit -> 401
+No auth /api/transit-claims -> 404
+No auth /api/travel-authorizations -> 404
+No auth /api/hwa-claims -> 404
+No auth /api/dashboard -> 404
+--- S5.4: Error format consistency ---
+Error format 1 (no auth): {"error":"Authentication required"}
+Error format 2 (bad login): {"success":false,"error":"Invalid email format"}
+--- S5.5: No sensitive data in errors ---
+Error response: {"success":false,"error":"Internal server error"}
+No sensitive data leaked
+--- S5.6: CORS headers ---
+CORS headers: access-control-allow-methods: GET,HEAD,PUT,PATCH,POST,DELETE
+access-control-allow-origin: *
+vary: Access-Control-Request-Headers
+--- S5.7: Content-Type headers ---
+Content-Type for JSON endpoint: content-type: application/json; charset=utf-8
+--- S5.10: Settings admin-only ---
+S5.10 Employee PUT settings: HTTP 403
+S5.10 Employee GET settings: HTTP 200
+
+=== PHASE 2 EXTRA: MIME spoofing, path traversal receipt ===
+S2.15 MIME spoofing: HTTP 200
+
+=== DONE ===
+Server health check: 200
