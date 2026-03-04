@@ -588,6 +588,11 @@ function initializeDatabase() {
             last_number INTEGER DEFAULT 0
         )`,
 
+        `CREATE TABLE IF NOT EXISTS hwa_report_sequence (
+            year INTEGER PRIMARY KEY,
+            last_number INTEGER DEFAULT 0
+        )`,
+
         // 💪 Health & Wellness Account (HWA) claims table
         `CREATE TABLE IF NOT EXISTS hwa_claims (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1620,7 +1625,7 @@ app.get('/api/expense-claims/:expenseId/receipt-info', requireAuth, (req, res) =
         // Check expenses table fallback
         db.get(`SELECT receipt_data, receipt_type FROM expenses WHERE id = ? AND receipt_data IS NOT NULL`, [expenseId], (err2, exp) => {
             if (err2) return res.status(500).json({ error: 'Database error' });
-            res.json({ hasReceipt: !!(exp && exp.receipt_data), fileType: exp?.receipt_type });
+            res.json({ hasReceipt: !!(exp && exp.receipt_data), fileType: exp ? exp.receipt_type : null });
         });
     });
 });
@@ -7332,6 +7337,10 @@ app.post('/api/phone-claims', requireAuth, upload.array('receipts', 30), (req, r
         const claims = JSON.parse(req.body.claims || '[]');
         if (!claims.length) return res.status(400).json({ error: 'No claims provided' });
         
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({ error: 'At least one receipt is required' });
+        }
+        
         // Get settings
         db.get(`SELECT value FROM app_settings WHERE key = 'phone_monthly_max'`, (err, maxSetting) => {
             if (err) return res.status(500).json({ error: 'Database error' });
@@ -7881,7 +7890,7 @@ app.get('/api/hwa-claims/balance', requireAuth, (req, res) => {
 // GET /api/hwa-claims/history — employee's claims for current year
 app.get('/api/hwa-claims/history', requireAuth, (req, res) => {
     const year = new Date().getFullYear();
-    db.all(`SELECT * FROM hwa_claims WHERE employee_id = ? AND claim_year = ? ORDER BY created_at DESC`,
+    db.all(`SELECT id, employee_id, claim_year, receipt_amount, claim_amount, vendor, description, status, submitted_date, approved_date, approved_by, rejection_reason, report_ref, report_generated_at, created_at FROM hwa_claims WHERE employee_id = ? AND claim_year = ? ORDER BY created_at DESC`,
         [req.user.employeeId, year], (err, rows) => {
             if (err) return res.status(500).json({ error: 'Database error' });
             res.json(rows || []);
@@ -7992,7 +8001,17 @@ app.post('/api/hwa-claims/:id/approve', requireAuth, requireRole('supervisor'), 
                     if (err3) return res.status(500).json({ error: 'Database error' });
                     
                     createNotification(claim.employee_id, 'hwa_approved',
-                        `✅ Your Health & Wellness claim ($${claim.claim_amount}) has been approved by ${supervisorName}.`);
+                        `Your Health & Wellness claim ($${claim.claim_amount}) has been approved by ${supervisorName}.`);
+                    
+                    // Generate PDF async
+                    (async () => {
+                        try {
+                            await generateHwaPDF(claimId);
+                            console.log(`HWA PDF generated for claim ${claimId}`);
+                        } catch (pdfErr) {
+                            console.error('HWA PDF generation error:', pdfErr);
+                        }
+                    })();
                     
                     res.json({ success: true, message: 'HWA claim approved' });
                 });
@@ -8027,7 +8046,7 @@ app.post('/api/hwa-claims/:id/reject', requireAuth, requireRole('supervisor'), (
 
 // GET /api/hwa-claims/supervisor-history — supervisor audit trail
 app.get('/api/hwa-claims/supervisor-history', requireAuth, requireRole('supervisor'), (req, res) => {
-    db.all(`SELECT hc.*, e.name as employee_name, e.employee_number, e.department
+    db.all(`SELECT hc.id, hc.employee_id, hc.claim_year, hc.receipt_amount, hc.claim_amount, hc.vendor, hc.description, hc.status, hc.submitted_date, hc.approved_date, hc.approved_by, hc.rejection_reason, hc.report_ref, hc.report_generated_at, hc.created_at, e.name as employee_name, e.employee_number, e.department
             FROM hwa_claims hc
             JOIN employees e ON hc.employee_id = e.id
             WHERE hc.status IN ('approved', 'rejected') AND hc.approved_by = ?
@@ -8062,6 +8081,285 @@ app.get('/api/hwa-claims/receipt/:receiptId', (req, res, next) => {
         res.send(row.file_data);
     });
 });
+
+// GET /api/hwa-claims/:id/pdf — download HWA PDF
+app.get('/api/hwa-claims/:id/pdf', (req, res, next) => {
+    if (req.query.auth && !req.headers.authorization) {
+        req.headers.authorization = `Bearer ${req.query.auth}`;
+    }
+    requireAuth(req, res, next);
+}, (req, res) => {
+    db.get(`SELECT pdf_report, report_ref FROM hwa_claims WHERE id = ?`, [req.params.id], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row || !row.pdf_report) return res.status(404).json({ error: 'No PDF report found' });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${row.report_ref || 'hwa-claim'}.pdf"`);
+        res.send(row.pdf_report);
+    });
+});
+
+// POST /api/hwa-claims/:id/generate-pdf — retroactive PDF generation
+app.post('/api/hwa-claims/:id/generate-pdf', requireAuth, async (req, res) => {
+    try {
+        const claim = await new Promise((resolve, reject) => {
+            db.get(`SELECT * FROM hwa_claims WHERE id = ? AND status = 'approved'`, [req.params.id], (err, row) => {
+                if (err) return reject(err);
+                resolve(row);
+            });
+        });
+        if (!claim) return res.status(404).json({ error: 'Approved claim not found' });
+        await generateHwaPDF(claim.id);
+        res.json({ success: true, message: 'PDF generated' });
+    } catch (e) {
+        console.error('HWA PDF retroactive generation error:', e);
+        res.status(500).json({ error: 'PDF generation failed' });
+    }
+});
+
+// Health & Wellness Account PDF Generation
+async function generateHwaPDF(claimId) {
+    const PDFDocument = require('pdfkit');
+    const { PDFDocument: PDFLib, rgb, StandardFonts } = require('pdf-lib');
+    
+    const claim = await new Promise((resolve, reject) => {
+        db.get(`SELECT hc.*, e.name as employee_name, e.employee_number, e.department, e.position
+                FROM hwa_claims hc JOIN employees e ON hc.employee_id = e.id WHERE hc.id = ?`, [claimId], (err, row) => {
+            if (err) return reject(err);
+            resolve(row);
+        });
+    });
+    if (!claim) throw new Error('Claim not found');
+    
+    const supervisor = await new Promise((resolve, reject) => {
+        db.get(`SELECT name FROM employees WHERE id = ?`, [claim.approved_by], (err, row) => {
+            if (err) return reject(err);
+            resolve(row);
+        });
+    });
+    
+    const receipts = await new Promise((resolve, reject) => {
+        db.all(`SELECT * FROM hwa_claim_receipts WHERE claim_id = ? ORDER BY upload_order`, [claimId], (err, rows) => {
+            if (err) return reject(err);
+            resolve(rows || []);
+        });
+    });
+    
+    // Generate ref number
+    let refNumber = claim.report_ref;
+    if (!refNumber) {
+        refNumber = await new Promise((resolve, reject) => {
+            db.run(`INSERT OR IGNORE INTO hwa_report_sequence (year, last_number) VALUES (?, 0)`, [claim.claim_year]);
+            db.run(`UPDATE hwa_report_sequence SET last_number = last_number + 1 WHERE year = ?`, [claim.claim_year], function(err) {
+                if (err) return reject(err);
+                db.get(`SELECT last_number FROM hwa_report_sequence WHERE year = ?`, [claim.claim_year], (err2, row) => {
+                    if (err2) return reject(err2);
+                    resolve(`HWA-${claim.claim_year}-${String(row.last_number).padStart(5, '0')}`);
+                });
+            });
+        });
+        await new Promise((resolve, reject) => {
+            db.run(`UPDATE hwa_claims SET report_ref = ? WHERE id = ?`, [refNumber, claimId], e => e ? reject(e) : resolve());
+        });
+    }
+    
+    // Get annual balance info
+    const balanceInfo = await new Promise((resolve, reject) => {
+        db.get(`SELECT value FROM app_settings WHERE key = 'hwa_annual_max'`, (err, maxRow) => {
+            if (err) return reject(err);
+            const annualMax = parseFloat(maxRow ? maxRow.value : '500.00');
+            db.get(`SELECT COALESCE(SUM(claim_amount), 0) as used FROM hwa_claims WHERE employee_id = ? AND claim_year = ? AND status = 'approved'`,
+                [claim.employee_id, claim.claim_year], (err2, usedRow) => {
+                    if (err2) return reject(err2);
+                    resolve({ annualMax, used: usedRow ? usedRow.used : 0 });
+                });
+        });
+    });
+    
+    // Generate PDF with PDFKit (no bufferPages)
+    const pdfBuffer = await new Promise((resolve, reject) => {
+        const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
+        const chunks = [];
+        doc.on('data', c => chunks.push(c));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+        doc.on('error', reject);
+        
+        // Header
+        doc.rect(0, 0, doc.page.width, 80).fill('#1b5e20');
+        doc.fontSize(22).fillColor('#ffffff').text('HEALTH & WELLNESS ACCOUNT', 50, 20);
+        doc.fontSize(12).text('Claim Report', 50, 47);
+        doc.fontSize(10).text('ClaimFlow -- Expense Management', 50, 62);
+        
+        // Reference bar
+        doc.rect(0, 80, doc.page.width, 30).fill('#e8f5e9');
+        doc.fontSize(10).fillColor('#1b5e20').text(`Reference: ${refNumber}`, 50, 88);
+        doc.text(`Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`, 350, 88);
+        
+        let y = 130;
+        
+        // Employee Info
+        doc.fontSize(12).fillColor('#1b5e20').text('EMPLOYEE INFORMATION', 50, y);
+        y += 5;
+        doc.moveTo(50, y + 15).lineTo(562, y + 15).strokeColor('#1b5e20').lineWidth(1).stroke();
+        y += 25;
+        doc.fontSize(10).fillColor('#333');
+        const empInfo = [
+            ['Name', claim.employee_name],
+            ['Employee #', claim.employee_number || 'N/A'],
+            ['Department', claim.department || 'N/A'],
+            ['Position', claim.position || 'N/A']
+        ];
+        empInfo.forEach(([label, value]) => {
+            doc.font('Helvetica-Bold').text(`${label}:`, 50, y, { continued: true }).font('Helvetica').text(`  ${value}`);
+            y += 18;
+        });
+        
+        y += 15;
+        
+        // Claim Details
+        doc.fontSize(12).fillColor('#1b5e20').text('CLAIM DETAILS', 50, y);
+        y += 5;
+        doc.moveTo(50, y + 15).lineTo(562, y + 15).strokeColor('#1b5e20').lineWidth(1).stroke();
+        y += 25;
+        doc.fontSize(10).fillColor('#333');
+        
+        const details = [
+            ['Vendor', claim.vendor || 'N/A'],
+            ['Description', claim.description || 'N/A'],
+            ['Amount', `$${parseFloat(claim.claim_amount).toFixed(2)}`],
+            ['Year', String(claim.claim_year)]
+        ];
+        details.forEach(([label, value]) => {
+            doc.font('Helvetica-Bold').text(`${label}:`, 50, y, { continued: true }).font('Helvetica').text(`  ${value}`);
+            y += 18;
+        });
+        
+        y += 15;
+        
+        // Annual Balance
+        doc.fontSize(12).fillColor('#1b5e20').text('ANNUAL BALANCE', 50, y);
+        y += 5;
+        doc.moveTo(50, y + 15).lineTo(562, y + 15).strokeColor('#1b5e20').lineWidth(1).stroke();
+        y += 25;
+        doc.fontSize(10).fillColor('#333');
+        
+        const remaining = balanceInfo.annualMax - balanceInfo.used;
+        const balanceDetails = [
+            ['Annual Maximum', `$${balanceInfo.annualMax.toFixed(2)}`],
+            ['Total Used', `$${balanceInfo.used.toFixed(2)}`],
+            ['Remaining', `$${remaining.toFixed(2)}`]
+        ];
+        balanceDetails.forEach(([label, value]) => {
+            doc.font('Helvetica-Bold').text(`${label}:`, 50, y, { continued: true }).font('Helvetica').text(`  ${value}`);
+            y += 18;
+        });
+        
+        y += 15;
+        
+        // Approval section
+        doc.fontSize(12).fillColor('#1b5e20').text('APPROVAL', 50, y);
+        y += 5;
+        doc.moveTo(50, y + 15).lineTo(562, y + 15).strokeColor('#1b5e20').lineWidth(1).stroke();
+        y += 25;
+        doc.fontSize(10).fillColor('#333');
+        
+        if (claim.submitted_date) {
+            const sd = new Date(claim.submitted_date);
+            doc.text(`Submitted: ${sd.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} -- by ${claim.employee_name}`, 50, y);
+            y += 18;
+        }
+        if (claim.approved_date && supervisor) {
+            const ad = new Date(claim.approved_date);
+            doc.text(`Approved: ${ad.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} -- by ${supervisor.name}`, 50, y);
+            y += 18;
+        }
+        
+        y += 20;
+        // Signature lines
+        doc.fontSize(9).fillColor('#333');
+        doc.moveTo(50, y + 15).lineTo(250, y + 15).strokeColor('#999').lineWidth(0.5).stroke();
+        doc.text(`Employee: ${claim.employee_name}`, 50, y + 20);
+        doc.text('Date: _______________', 50, y + 35);
+        
+        doc.moveTo(312, y + 15).lineTo(512, y + 15).strokeColor('#999').lineWidth(0.5).stroke();
+        doc.text(`Supervisor: ${supervisor?.name || 'N/A'}`, 312, y + 20);
+        doc.text('Date: _______________', 312, y + 35);
+        
+        // Receipt pages (embedded via PDFKit for images)
+        if (receipts.length > 0) {
+            doc.addPage();
+            doc.fontSize(12).fillColor('#1b5e20').text(`ATTACHED RECEIPTS (${receipts.length} file${receipts.length > 1 ? 's' : ''})`, 50, 50);
+            doc.moveTo(50, 70).lineTo(562, 70).strokeColor('#1b5e20').lineWidth(1).stroke();
+            
+            let ry = 85;
+            for (const receipt of receipts) {
+                if (receipt.file_data && receipt.file_type && receipt.file_type.startsWith('image/')) {
+                    try {
+                        const buf = Buffer.from(receipt.file_data);
+                        if (buf.length > 100) {
+                            const header = buf.slice(0, 4);
+                            const isPNG = header[0] === 0x89 && header[1] === 0x50;
+                            const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
+                            if (isPNG || isJPEG) {
+                                if (ry > 500) { doc.addPage(); ry = 50; }
+                                doc.fontSize(9).fillColor('#666').text(`Receipt ${receipt.upload_order + 1}: ${receipt.file_name}`, 50, ry);
+                                ry += 15;
+                                doc.image(buf, 50, ry, { fit: [500, 400] });
+                                ry += 420;
+                            }
+                        }
+                    } catch (imgErr) {
+                        console.error('Error embedding HWA receipt image:', imgErr);
+                    }
+                } else {
+                    if (ry > 650) { doc.addPage(); ry = 50; }
+                    doc.fontSize(9).fillColor('#666').text(`Receipt ${receipt.upload_order + 1}: ${receipt.file_name} (${receipt.file_type})`, 50, ry);
+                    ry += 20;
+                }
+            }
+        }
+        
+        doc.end();
+    });
+    
+    // Post-process with pdf-lib for footers
+    const pdfDoc = await PDFLib.load(pdfBuffer);
+    
+    // Append PDF receipts via pdf-lib
+    for (const receipt of receipts) {
+        if (receipt.file_data && receipt.file_type && receipt.file_type.includes('pdf')) {
+            try {
+                const receiptPdf = await PDFLib.load(receipt.file_data);
+                const pages = await pdfDoc.copyPages(receiptPdf, receiptPdf.getPageIndices());
+                pages.forEach(p => pdfDoc.addPage(p));
+            } catch (e) {
+                console.error('Error appending PDF receipt:', e.message);
+            }
+        }
+    }
+    
+    // Add footers to all pages
+    const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const pageCount = pdfDoc.getPageCount();
+    for (let i = 0; i < pageCount; i++) {
+        const page = pdfDoc.getPage(i);
+        page.drawText(`Page ${i + 1} of ${pageCount} | ${refNumber} | Generated ${new Date().toISOString().split('T')[0]}`, {
+            x: 50, y: 20, size: 8, font: helvetica, color: rgb(0.5, 0.5, 0.5)
+        });
+    }
+    
+    const finalPdf = Buffer.from(await pdfDoc.save());
+    
+    // Store PDF
+    await new Promise((resolve, reject) => {
+        db.run(`UPDATE hwa_claims SET pdf_report = ?, report_generated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [finalPdf, claimId], (err) => {
+                if (err) return reject(err);
+                resolve();
+            });
+    });
+    
+    return finalPdf;
+}
 
 // 🚀 Start server
 app.listen(port, () => {

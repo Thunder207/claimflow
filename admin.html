@@ -2561,9 +2561,15 @@ try {
                 list.innerHTML = claims.map(c => {
                     const color = c.status === 'approved' ? '#28a745' : '#dc3545';
                     const icon = c.status === 'approved' ? '✅' : '❌';
+                    const pdfBtn = c.status === 'approved' && c.report_ref
+                        ? `<button onclick="window.open('/api/hwa-claims/${c.id}/pdf?auth=${sessionId}','_blank')" style="background:#28a745;color:white;border:none;padding:3px 8px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600;margin-left:8px;">PDF</button>`
+                        : '';
                     return `<div style="background:white;border-radius:8px;padding:10px 14px;margin-bottom:6px;border-left:3px solid ${color};display:flex;justify-content:space-between;align-items:center;">
                         <div><strong>${icon} ${sanitizeForDisplay(c.employee_name)}</strong> — $${parseFloat(c.claim_amount).toFixed(2)} ${c.vendor ? '(' + c.vendor + ')' : ''}</div>
-                        <span style="font-size:11px;color:#999;">${c.approved_date ? new Date(c.approved_date).toLocaleDateString() : ''}</span>
+                        <div style="display:flex;align-items:center;">
+                            <span style="font-size:11px;color:#999;">${c.approved_date ? new Date(c.approved_date).toLocaleDateString() : ''}</span>
+                            ${pdfBtn}
+                        </div>
                     </div>`;
                 }).join('');
             } catch (e) {}

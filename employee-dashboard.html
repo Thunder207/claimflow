@@ -3263,6 +3263,34 @@
             } catch (e) { console.error('HWA balance load error:', e); }
         }
 
+        function downloadHwaPDF(claimId) {
+            window.open(`/api/hwa-claims/${claimId}/pdf?auth=${sessionId}`, '_blank');
+        }
+
+        async function generateHwaPDF(claimId, btn) {
+            btn.disabled = true;
+            btn.textContent = 'Generating...';
+            try {
+                const resp = await fetch(`/api/hwa-claims/${claimId}/generate-pdf`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${sessionId}` }
+                });
+                if (resp.ok) {
+                    btn.textContent = 'PDF';
+                    btn.style.background = '#28a745';
+                    btn.disabled = false;
+                    btn.onclick = () => downloadHwaPDF(claimId);
+                    showMessage('success', 'PDF generated');
+                } else {
+                    btn.textContent = 'Failed';
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                btn.textContent = 'Error';
+                btn.disabled = false;
+            }
+        }
+
         async function loadHwaHistory() {
             try {
                 const resp = await fetch('/api/hwa-claims/history', { headers: { 'Authorization': `Bearer ${sessionId}` } });
@@ -3274,15 +3302,27 @@
                 section.style.display = 'block';
                 const statusColors = { approved: '#28a745', pending: '#ffc107', rejected: '#dc3545' };
                 const statusIcons = { approved: '✅', pending: '⏳', rejected: '❌' };
-                list.innerHTML = claims.map(c => `
-                    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:white;border-radius:8px;border-left:3px solid ${statusColors[c.status] || '#ccc'};">
+                list.innerHTML = claims.map(c => {
+                    let pdfBtn = '';
+                    if (c.status === 'approved' && c.pdf_report !== undefined) {
+                        if (c.report_ref) {
+                            pdfBtn = `<button onclick="downloadHwaPDF(${c.id})" style="background:#28a745;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;margin-left:8px;">PDF</button>`;
+                        } else {
+                            pdfBtn = `<button onclick="generateHwaPDF(${c.id}, this)" style="background:#6c757d;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;margin-left:8px;">Generate PDF</button>`;
+                        }
+                    }
+                    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:white;border-radius:8px;border-left:3px solid ${statusColors[c.status] || '#ccc'};">
                         <div>
                             <div style="font-weight:600;color:#333;font-size:13px;">${statusIcons[c.status] || ''} $${parseFloat(c.claim_amount).toFixed(2)} ${c.vendor ? '— ' + c.vendor : ''}</div>
                             <div style="font-size:12px;color:#666;">${sanitizeForDisplay(c.description || '')}</div>
                             <div style="font-size:11px;color:#999;">Submitted: ${new Date(c.submitted_date).toLocaleDateString()}</div>
                         </div>
-                        <span style="background:${statusColors[c.status]};color:white;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;text-transform:capitalize;">${c.status}</span>
-                    </div>`).join('');
+                        <div style="display:flex;align-items:center;">
+                            <span style="background:${statusColors[c.status]};color:white;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;text-transform:capitalize;">${c.status}</span>
+                            ${pdfBtn}
+                        </div>
+                    </div>`;
+                }).join('');
             } catch (e) { console.error('HWA history load error:', e); }
         }
 
