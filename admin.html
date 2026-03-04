@@ -3678,27 +3678,21 @@ try {
                 if (!resp.ok) { showMessage('danger', 'Receipt not found'); return; }
                 const blob = await resp.blob();
                 const url = URL.createObjectURL(blob);
-                const modal = document.createElement('div');
-                modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2000;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;padding:20px;cursor:pointer;';
-                modal.onclick = () => { modal.remove(); URL.revokeObjectURL(url); };
                 if (blob.type && blob.type.startsWith('image/')) {
+                    // Images: show in modal overlay
+                    const modal = document.createElement('div');
+                    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2000;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;padding:20px;cursor:pointer;';
+                    modal.onclick = () => { modal.remove(); URL.revokeObjectURL(url); };
                     const img = document.createElement('img');
                     img.src = url;
                     img.style.cssText = 'max-width:90%;max-height:90%;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.5);';
                     modal.appendChild(img);
+                    document.body.appendChild(modal);
                 } else {
-                    const iframe = document.createElement('iframe');
-                    iframe.src = url;
-                    iframe.style.cssText = 'width:90%;height:90%;border:none;border-radius:8px;background:white;';
-                    modal.appendChild(iframe);
-                    modal.onclick = null;
-                    const closeBtn = document.createElement('button');
-                    closeBtn.textContent = '✕ Close';
-                    closeBtn.style.cssText = 'position:absolute;top:15px;right:15px;background:#dc3545;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:16px;font-weight:bold;z-index:2001;';
-                    closeBtn.onclick = () => { modal.remove(); URL.revokeObjectURL(url); };
-                    modal.appendChild(closeBtn);
+                    // PDFs/docs: open in new tab (works on all devices)
+                    window.open(url, '_blank');
+                    setTimeout(() => URL.revokeObjectURL(url), 60000);
                 }
-                document.body.appendChild(modal);
             } catch(e) { showMessage('danger', 'Error loading receipt: ' + e.message); }
         }
 
