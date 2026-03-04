@@ -1689,7 +1689,7 @@ try {
                                         const label = kmMatch ? `${kmMatch[1]}km` : (exp.category || exp.expense_type);
                                         const isKm = exp.expense_type === 'kilometric';
                                         const receiptBtn = isKm ? '<span style="color:#999;font-size:11px;">N/A</span>' :
-                                            `<span onclick="event.stopPropagation();viewExpenseReceipt(${exp.id})" style="color:#2196f3;font-size:12px;text-decoration:underline;cursor:pointer;">📎 View Receipt</span>`;
+                                            (exp.has_receipt || exp.receipt_photo) ? `<span onclick="event.stopPropagation();viewExpenseReceipt(${exp.id})" style="color:#2196f3;font-size:12px;text-decoration:underline;cursor:pointer;">📎 View Receipt</span>` : '<span style="color:#999;font-size:11px;">No receipt</span>';
                                         return `<div style="padding: 6px 0; font-size: 14px; color: #555; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center;">
                                             <span>${icon} ${label}: <strong>$${parseFloat(exp.amount).toFixed(2)}</strong>${exp.vendor ? ' — ' + sanitizeForDisplay(exp.vendor) : ''}</span>
                                             <span>${receiptBtn}</span>
@@ -2005,7 +2005,7 @@ try {
                                     const label = kmMatch ? `${kmMatch[1]}km` : (exp.meal_name || exp.expense_type);
                                     const isKm = exp.expense_type === 'kilometric';
                                     const receiptBtn = isKm ? '<span style="color:#999;font-size:11px;">N/A</span>' :
-                                        `<span onclick="viewExpenseReceipt(${exp.id})" style="color:#2196f3;font-size:12px;text-decoration:underline;cursor:pointer;">📎 View Receipt</span>`;
+                                        (exp.has_receipt || exp.receipt_photo) ? `<span onclick="viewExpenseReceipt(${exp.id})" style="color:#2196f3;font-size:12px;text-decoration:underline;cursor:pointer;">📎 View Receipt</span>` : '<span style="color:#999;font-size:11px;">No receipt</span>';
                                     return `<div style="padding: 6px 0; font-size: 14px; color: #555; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center;">
                                         <span>${icon} ${label}: <strong>$${parseFloat(exp.amount).toFixed(2)}</strong>${exp.vendor ? ' — ' + sanitizeForDisplay(exp.vendor) : ''}</span>
                                         <span>${receiptBtn}</span>

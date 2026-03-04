@@ -1176,7 +1176,8 @@ app.get('/api/expenses', requireAuth, (req, res) => {
     if (req.user.role === 'admin') {
         // Admin sees all expenses
         query = `
-            SELECT e.*, 
+            SELECT e.id, e.employee_name, e.employee_id, e.expense_type, e.date, e.amount, e.vendor, e.description, e.receipt_photo, e.receipt_type, e.category, e.claim_group, e.status, e.trip_id, e.created_at, e.rejection_reason,
+                   (CASE WHEN e.receipt_data IS NOT NULL THEN 1 ELSE 0 END) as has_receipt,
                    emp.name as employee_name_from_db,
                    emp.supervisor_id,
                    sup.name as supervisor_name
@@ -1188,7 +1189,8 @@ app.get('/api/expenses', requireAuth, (req, res) => {
     } else if (req.user.role === 'supervisor') {
         // 🚨 GOVERNANCE FIX: Supervisor sees ONLY direct reports' expenses (not indirect)
         query = `
-            SELECT e.*, 
+            SELECT e.id, e.employee_name, e.employee_id, e.expense_type, e.date, e.amount, e.vendor, e.description, e.receipt_photo, e.receipt_type, e.category, e.claim_group, e.status, e.trip_id, e.created_at, e.rejection_reason,
+                   (CASE WHEN e.receipt_data IS NOT NULL THEN 1 ELSE 0 END) as has_receipt,
                    emp.name as employee_name_from_db,
                    emp.supervisor_id,
                    sup.name as supervisor_name,
