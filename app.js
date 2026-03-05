@@ -7620,13 +7620,15 @@ app.get('/api/phone-claims/receipt/:receiptId', (req, res, next) => {
         if (err) return res.status(500).json({ error: 'Database error' });
         if (!row || !row.file_data) return res.status(404).json({ error: 'Receipt not found' });
         try {
+            console.log(`[PHONE RECEIPT] id=${req.params.receiptId} type=${typeof row.file_data} isBuffer=${Buffer.isBuffer(row.file_data)} len=${row.file_data.length || 'N/A'} fileType=${row.file_type}`);
             const buf = Buffer.isBuffer(row.file_data) ? row.file_data : Buffer.from(row.file_data);
+            console.log(`[PHONE RECEIPT] buf.length=${buf.length}`);
             res.setHeader('Content-Type', row.file_type || 'application/octet-stream');
-            res.setHeader('Content-Disposition', `inline; filename="${row.file_name}"`);
+            res.setHeader('Content-Disposition', `inline; filename="${row.file_name || 'receipt'}"`);
             res.setHeader('Content-Length', buf.length);
             res.end(buf);
         } catch (e) {
-            console.error('❌ Error sending phone receipt:', e);
+            console.error('❌ Error sending phone receipt:', e.message, e.stack);
             if (!res.headersSent) res.status(500).json({ error: 'Failed to send receipt' });
         }
     });
