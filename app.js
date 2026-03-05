@@ -1629,7 +1629,8 @@ app.get('/api/expense-claims/:expenseId/receipt', requireAuth, (req, res) => {
         try {
             const buf = Buffer.isBuffer(row.file_data) ? row.file_data : Buffer.from(row.file_data);
             res.set('Content-Type', row.file_type || 'application/octet-stream');
-            res.set('Content-Disposition', `inline; filename="${row.file_name}"`);
+            const safeName = (row.file_name || 'receipt').replace(/[^\w.\-]/g, '_');
+            res.set('Content-Disposition', `inline; filename="${safeName}"`);
             res.set('Content-Length', buf.length);
             res.end(buf);
         } catch (e) { console.error('❌ Error sending expense receipt:', e); if (!res.headersSent) res.status(500).json({ error: 'Failed to send receipt' }); }
@@ -3966,7 +3967,8 @@ app.get('/api/transport-receipts/:receiptId', requireAuth, (req, res) => {
         try {
             const buf = Buffer.isBuffer(row.file_data) ? row.file_data : Buffer.from(row.file_data);
             res.setHeader('Content-Type', row.file_type || 'application/octet-stream');
-            res.setHeader('Content-Disposition', `inline; filename="${row.file_name}"`);
+            const safeName = (row.file_name || 'receipt').replace(/[^\w.\-]/g, '_');
+            res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
             res.setHeader('Content-Length', buf.length);
             res.end(buf);
         } catch (e) { console.error('❌ Error sending transport receipt:', e); if (!res.headersSent) res.status(500).json({ error: 'Failed to send receipt' }); }
@@ -6816,7 +6818,7 @@ function generateTransitBenefitPDF(claimIds, db) {
             const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
             const MARGIN = 72;
-            const doc = new PDFDocument({ size: 'LETTER', margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN }, bufferPages: true });
+            const doc = new PDFDocument({ size: 'LETTER', margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN } });
             const buffers = [];
             const pdfReceiptBuffers = []; // PDF receipts to merge via pdf-lib after doc.end()
             doc.on('data', chunk => buffers.push(chunk));
@@ -6825,23 +6827,40 @@ function generateTransitBenefitPDF(claimIds, db) {
                     let finalBuf = Buffer.concat(buffers);
                     pdfLog('[PDF-GEN] doc end event, buffer size:', finalBuf.length);
                     
-                    // Post-process: merge any PDF receipt attachments via pdf-lib
-                    if (pdfReceiptBuffers.length > 0) {
-                        const { PDFDocument: PDFLib } = require('pdf-lib');
-                        const mainDoc = await PDFLib.load(finalBuf);
-                        for (const receipt of pdfReceiptBuffers) {
-                            try {
-                                const receiptDoc = await PDFLib.load(receipt.buf);
-                                const pages = await mainDoc.copyPages(receiptDoc, receiptDoc.getPageIndices());
-                                pages.forEach(p => mainDoc.addPage(p));
-                                pdfLog('[PDF-GEN] Merged PDF receipt:', receipt.label, pages.length, 'pages');
-                            } catch (mergeErr) {
-                                pdfLog('[PDF-GEN] Could not merge PDF receipt:', mergeErr.message);
-                            }
+                    // Post-process with pdf-lib: merge PDF receipts + add page footers
+                    const { PDFDocument: PDFLib, rgb, StandardFonts } = require('pdf-lib');
+                    const mainDoc = await PDFLib.load(finalBuf);
+
+                    // Merge any PDF receipt attachments
+                    for (const receipt of pdfReceiptBuffers) {
+                        try {
+                            const receiptDoc = await PDFLib.load(receipt.buf);
+                            const pages = await mainDoc.copyPages(receiptDoc, receiptDoc.getPageIndices());
+                            pages.forEach(p => mainDoc.addPage(p));
+                            pdfLog('[PDF-GEN] Merged PDF receipt:', receipt.label, pages.length, 'pages');
+                        } catch (mergeErr) {
+                            pdfLog('[PDF-GEN] Could not merge PDF receipt:', mergeErr.message);
                         }
-                        finalBuf = Buffer.from(await mainDoc.save());
                     }
-                    
+
+                    // Add page footers on all pages
+                    const helvetica = await mainDoc.embedFont(StandardFonts.Helvetica);
+                    const allPages = mainDoc.getPages();
+                    const totalPages = allPages.length;
+                    for (let i = 0; i < totalPages; i++) {
+                        const page = allPages[i];
+                        const footerText = `Page ${i + 1} of ${totalPages}     Ref: ${refNumber}`;
+                        const textWidth = helvetica.widthOfTextAtSize(footerText, 8);
+                        page.drawText(footerText, {
+                            x: (page.getWidth() - textWidth) / 2,
+                            y: 30,
+                            size: 8,
+                            font: helvetica,
+                            color: rgb(0.5, 0.5, 0.5)
+                        });
+                    }
+
+                    finalBuf = Buffer.from(await mainDoc.save());
                     resolve(finalBuf);
                 } catch (postErr) {
                     pdfLog('[PDF-GEN] Post-processing error:', postErr.message);
@@ -7024,16 +7043,7 @@ function generateTransitBenefitPDF(claimIds, db) {
                     }
                 });
 
-                // Footer on all pages
-                const pageRange = doc.bufferedPageRange();
-                const totalPages = pageRange.count;
-                for (let i = 0; i < totalPages; i++) {
-                    doc.switchToPage(i);
-                    doc.save().fontSize(8).fillColor(COLORS.muted).font('Helvetica')
-                        .text(`Page ${i + 1} of ${totalPages}     Ref: ${refNumber}`, LEFT, 740, { width: pageW, align: 'center' })
-                        .restore();
-                }
-
+                // Footers added post-generation via pdf-lib (avoids PDFKit bufferPages ghost page bug)
                 pdfLog('[PDF-GEN] Calling doc.end()...');
                 doc.end();
               } catch (innerErr) {
@@ -7290,7 +7300,8 @@ app.get('/api/transit-claims/:id/receipt', (req, res, next) => {
             try {
                 const buf = Buffer.isBuffer(row.receipt_data) ? row.receipt_data : Buffer.from(row.receipt_data);
                 res.setHeader('Content-Type', row.receipt_type || 'application/octet-stream');
-                res.setHeader('Content-Disposition', `inline; filename="${row.receipt_file || 'receipt'}"`);
+                const safeName = (row.receipt_file || 'receipt').replace(/[^\w.\-]/g, '_');
+                res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
                 res.setHeader('Content-Length', buf.length);
                 return res.end(buf);
             } catch (e) { console.error('❌ Error sending transit receipt BLOB:', e); }
@@ -7304,7 +7315,8 @@ app.get('/api/transit-claims/:id/receipt', (req, res, next) => {
         const ext = path.extname(row.receipt_file).toLowerCase();
         const mimeTypes = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf' };
         res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
-        res.setHeader('Content-Disposition', `inline; filename="${row.receipt_file}"`);
+        const safeFileName = (row.receipt_file || 'receipt').replace(/[^\w.\-]/g, '_');
+        res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`);
         res.sendFile(filePath);
     });
 });
@@ -8224,7 +8236,8 @@ app.get('/api/hwa-claims/receipt/:receiptId', (req, res, next) => {
         try {
             const buf = Buffer.isBuffer(row.file_data) ? row.file_data : Buffer.from(row.file_data);
             res.setHeader('Content-Type', row.file_type || 'application/octet-stream');
-            res.setHeader('Content-Disposition', `inline; filename="${row.file_name}"`);
+            const safeName = (row.file_name || 'receipt').replace(/[^\w.\-]/g, '_');
+            res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
             res.setHeader('Content-Length', buf.length);
             res.end(buf);
         } catch (e) {
