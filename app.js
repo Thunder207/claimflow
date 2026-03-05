@@ -7931,25 +7931,29 @@ async function generatePhonePDF(claimId) {
         doc.text(`Supervisor: ${supervisor?.name || 'N/A'}`, 312, y + 20);
         doc.text('Date: _______________', 312, y + 35);
         
-        // Receipt pages
+        // Receipt pages — collect PDF receipts for post-merge via pdf-lib
+        const pdfReceiptBuffers = [];
         if (receipts.length > 0) {
-            doc.addPage();
-            doc.fontSize(12).fillColor('#1a237e').text(`ATTACHED RECEIPT (${receipts.length} page${receipts.length > 1 ? 's' : ''})`, 50, 50);
-            doc.moveTo(50, 70).lineTo(562, 70).strokeColor('#1a237e').lineWidth(1).stroke();
+            const imageReceipts = receipts.filter(r => r.file_data && r.file_type && r.file_type.startsWith('image/'));
+            const pdfReceipts = receipts.filter(r => r.file_data && r.file_type && r.file_type === 'application/pdf');
+            const hasImages = imageReceipts.length > 0;
+            const hasPdfs = pdfReceipts.length > 0;
             
-            let ry = 85;
-            for (const receipt of receipts) {
-                if (receipt.file_data && receipt.file_type && receipt.file_type.startsWith('image/')) {
+            if (hasImages) {
+                doc.addPage();
+                doc.fontSize(12).fillColor('#1a237e').text(`ATTACHED RECEIPTS`, 50, 50);
+                doc.moveTo(50, 70).lineTo(562, 70).strokeColor('#1a237e').lineWidth(1).stroke();
+                let ry = 85;
+                for (const receipt of imageReceipts) {
                     try {
-                        // Validate image
-                        const buf = Buffer.from(receipt.file_data);
-                        if (buf.length > 100) {
+                        const buf = Buffer.isBuffer(receipt.file_data) ? receipt.file_data : Buffer.from(receipt.file_data);
+                        if (buf.length > 50) {
                             const header = buf.slice(0, 4);
                             const isPNG = header[0] === 0x89 && header[1] === 0x50;
                             const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
                             if (isPNG || isJPEG) {
                                 if (ry > 500) { doc.addPage(); ry = 50; }
-                                doc.fontSize(9).fillColor('#666').text(`Page ${receipt.upload_order + 1}: ${receipt.file_name}`, 50, ry);
+                                doc.fontSize(9).fillColor('#666').text(`${receipt.file_name}`, 50, ry);
                                 ry += 15;
                                 doc.image(buf, 50, ry, { fit: [500, 400] });
                                 ry += 420;
@@ -7958,20 +7962,40 @@ async function generatePhonePDF(claimId) {
                     } catch (imgErr) {
                         console.error('❌ Error embedding phone receipt image:', imgErr);
                     }
-                } else {
-                    if (ry > 650) { doc.addPage(); ry = 50; }
-                    doc.fontSize(9).fillColor('#666').text(`Page ${receipt.upload_order + 1}: ${receipt.file_name} (${receipt.file_type})`, 50, ry);
-                    ry += 20;
+                }
+            }
+            
+            // Queue PDF receipts for pdf-lib merge
+            for (const receipt of pdfReceipts) {
+                try {
+                    const buf = Buffer.isBuffer(receipt.file_data) ? receipt.file_data : Buffer.from(receipt.file_data);
+                    if (buf.length > 10) {
+                        pdfReceiptBuffers.push(buf);
+                    }
+                } catch (e) {
+                    console.error('❌ Error preparing PDF receipt for merge:', e);
                 }
             }
         }
         
-        // Page numbers added via pdf-lib post-processing (avoids PDFKit bufferPages ghost page bug)
+        // Page numbers + PDF receipt merging via pdf-lib post-processing
         doc.end();
     }).then(async (pdfBuf) => {
-        // Add page numbers with pdf-lib
         const { PDFDocument: PDFLibDoc, rgb, StandardFonts } = require('pdf-lib');
         const pdfDoc = await PDFLibDoc.load(pdfBuf);
+        
+        // Merge PDF receipt attachments
+        for (const receiptBuf of pdfReceiptBuffers) {
+            try {
+                const receiptPdf = await PDFLibDoc.load(receiptBuf);
+                const copiedPages = await pdfDoc.copyPages(receiptPdf, receiptPdf.getPageIndices());
+                copiedPages.forEach(page => pdfDoc.addPage(page));
+            } catch (mergeErr) {
+                console.error('❌ Error merging PDF receipt into phone report:', mergeErr);
+            }
+        }
+        
+        // Add page numbers
         const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
         const pages = pdfDoc.getPages();
         const totalPages = pages.length;
