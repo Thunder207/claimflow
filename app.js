@@ -79,6 +79,12 @@ app.use((req, res, next) => {
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-src 'self' blob:; object-src 'self' blob:; worker-src blob:");
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    // Prevent caching of HTML pages so users always get latest version
+    if (req.path.endsWith('.html') || req.path === '/' || req.path === '/admin' || req.path === '/login') {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+    }
     next();
 });
 
