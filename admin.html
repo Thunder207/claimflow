@@ -2425,9 +2425,14 @@ try {
                 list.innerHTML = claims.map(c => {
                     const color = c.status === 'approved' ? '#28a745' : '#dc3545';
                     const icon = c.status === 'approved' ? '✅' : '❌';
-                    return `<div style="background:white;border-radius:8px;padding:10px 14px;margin-bottom:6px;border-left:3px solid ${color};display:flex;justify-content:space-between;align-items:center;">
+                    const receiptBtn = c.receipt_count > 0 ? `<button onclick="viewPhoneReceipts(${c.id})" style="background:#17a2b8;color:white;border:none;padding:3px 8px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600;">📎 Receipt</button>` : '';
+                    const pdfBtn = c.status === 'approved' && c.report_generated_at ? `<button onclick="downloadPhonePDFAdmin(${c.id})" style="background:#667eea;color:white;border:none;padding:3px 8px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>` : '';
+                    return `<div style="background:white;border-radius:8px;padding:10px 14px;margin-bottom:6px;border-left:3px solid ${color};display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
                         <div><strong>${icon} ${sanitizeForDisplay(c.employee_name)}</strong> — ${mn[c.claim_month - 1]} ${c.claim_year} · $${parseFloat(c.total_claim_amount).toFixed(2)}</div>
-                        <span style="font-size:11px;color:#999;">${new Date(c.approved_date).toLocaleDateString()}</span>
+                        <div style="display:flex;align-items:center;gap:6px;">
+                            <span style="font-size:11px;color:#999;">${new Date(c.approved_date).toLocaleDateString()}</span>
+                            ${receiptBtn} ${pdfBtn}
+                        </div>
                     </div>`;
                 }).join('');
             } catch (e) {}
@@ -2443,6 +2448,17 @@ try {
                 list.style.display = 'none';
                 toggle.textContent = '▶';
             }
+        }
+
+        async function downloadPhonePDFAdmin(claimId) {
+            try {
+                const resp = await fetch(`/api/phone-claims/${claimId}/pdf`, { headers: { 'Authorization': 'Bearer ' + sessionId } });
+                if (!resp.ok) { showMessage('danger', 'PDF not available'); return; }
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+            } catch (e) { showMessage('danger', 'Failed to download PDF'); }
         }
 
         async function viewPhoneReceipts(claimId) {
@@ -2643,14 +2659,15 @@ try {
                 list.innerHTML = claims.map(c => {
                     const color = c.status === 'approved' ? '#28a745' : '#dc3545';
                     const icon = c.status === 'approved' ? '✅' : '❌';
-                    const pdfBtn = c.status === 'approved' && c.report_ref
-                        ? `<button onclick="window.open('/api/hwa-claims/${c.id}/pdf?auth=${sessionId}','_blank')" style="background:#28a745;color:white;border:none;padding:3px 8px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600;margin-left:8px;">PDF</button>`
+                    const receiptBtn = c.receipt_count > 0 ? `<button onclick="viewHwaReceipts(${c.id})" style="background:#17a2b8;color:white;border:none;padding:3px 8px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600;">📎 Receipt</button>` : '';
+                    const pdfBtn = c.status === 'approved' && c.report_generated_at
+                        ? `<button onclick="downloadHwaPDFAdmin(${c.id})" style="background:#667eea;color:white;border:none;padding:3px 8px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`
                         : '';
-                    return `<div style="background:white;border-radius:8px;padding:10px 14px;margin-bottom:6px;border-left:3px solid ${color};display:flex;justify-content:space-between;align-items:center;">
+                    return `<div style="background:white;border-radius:8px;padding:10px 14px;margin-bottom:6px;border-left:3px solid ${color};display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
                         <div><strong>${icon} ${sanitizeForDisplay(c.employee_name)}</strong> — $${parseFloat(c.claim_amount).toFixed(2)} ${c.vendor ? '(' + c.vendor + ')' : ''}</div>
-                        <div style="display:flex;align-items:center;">
+                        <div style="display:flex;align-items:center;gap:6px;">
                             <span style="font-size:11px;color:#999;">${c.approved_date ? new Date(c.approved_date).toLocaleDateString() : ''}</span>
-                            ${pdfBtn}
+                            ${receiptBtn} ${pdfBtn}
                         </div>
                     </div>`;
                 }).join('');
@@ -2667,6 +2684,17 @@ try {
                 list.style.display = 'none';
                 toggle.textContent = '▶';
             }
+        }
+
+        async function downloadHwaPDFAdmin(claimId) {
+            try {
+                const resp = await fetch(`/api/hwa-claims/${claimId}/pdf`, { headers: { 'Authorization': 'Bearer ' + sessionId } });
+                if (!resp.ok) { showMessage('danger', 'PDF not available'); return; }
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+            } catch (e) { showMessage('danger', 'Failed to download PDF'); }
         }
 
         async function viewHwaReceipts(claimId) {

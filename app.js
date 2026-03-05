@@ -7585,7 +7585,11 @@ app.get('/api/phone-claims/pending', requireAuth, requireRole('supervisor'), (re
 
 // GET /api/phone-claims/supervisor-history — supervisor audit trail
 app.get('/api/phone-claims/supervisor-history', requireAuth, requireRole('supervisor'), (req, res) => {
-    db.all(`SELECT pc.*, e.name as employee_name, e.employee_number, e.department
+    db.all(`SELECT pc.id, pc.employee_id, pc.claim_month, pc.claim_year, pc.plan_receipt_amount, pc.device_receipt_amount,
+                   pc.plan_claim_amount, pc.device_claim_amount, pc.total_claim_amount, pc.status,
+                   pc.submitted_date, pc.approved_date, pc.approved_by, pc.rejection_reason, pc.report_ref, pc.report_generated_at,
+                   (SELECT COUNT(*) FROM phone_claim_receipts WHERE phone_claim_id = pc.id) as receipt_count,
+                   e.name as employee_name, e.employee_number, e.department
             FROM phone_claims pc
             JOIN employees e ON pc.employee_id = e.id
             WHERE pc.status IN ('approved', 'rejected') AND pc.approved_by = ?
@@ -8162,7 +8166,9 @@ app.post('/api/hwa-claims/:id/reject', requireAuth, requireRole('supervisor'), (
 
 // GET /api/hwa-claims/supervisor-history — supervisor audit trail
 app.get('/api/hwa-claims/supervisor-history', requireAuth, requireRole('supervisor'), (req, res) => {
-    db.all(`SELECT hc.id, hc.employee_id, hc.claim_year, hc.receipt_amount, hc.claim_amount, hc.vendor, hc.description, hc.status, hc.submitted_date, hc.approved_date, hc.approved_by, hc.rejection_reason, hc.report_ref, hc.report_generated_at, hc.created_at, e.name as employee_name, e.employee_number, e.department
+    db.all(`SELECT hc.id, hc.employee_id, hc.claim_year, hc.receipt_amount, hc.claim_amount, hc.vendor, hc.description, hc.status, hc.submitted_date, hc.approved_date, hc.approved_by, hc.rejection_reason, hc.report_ref, hc.report_generated_at, hc.created_at,
+                   (SELECT COUNT(*) FROM hwa_claim_receipts WHERE hwa_claim_id = hc.id) as receipt_count,
+                   e.name as employee_name, e.employee_number, e.department
             FROM hwa_claims hc
             JOIN employees e ON hc.employee_id = e.id
             WHERE hc.status IN ('approved', 'rejected') AND hc.approved_by = ?
