@@ -1272,23 +1272,6 @@ try {
             return input.trim().replace(/[<>]/g, '').slice(0, 500);
         }
         
-        function createReceiptOverlay(url, onClose) {
-            const overlay = document.createElement('div');
-            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:10000;display:flex;align-items:center;justify-content:center;cursor:pointer;';
-            const closeBtn = document.createElement('div');
-            closeBtn.innerHTML = '✕';
-            closeBtn.style.cssText = 'position:fixed;top:12px;right:16px;z-index:10002;width:36px;height:36px;background:#dc3545;color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:bold;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.4);';
-            document.body.appendChild(closeBtn);
-            const close = function() { 
-                if (overlay.parentNode) overlay.parentNode.removeChild(overlay); 
-                if (closeBtn.parentNode) closeBtn.parentNode.removeChild(closeBtn); 
-                if (onClose) onClose(); 
-            };
-            closeBtn.onclick = function(e) { e.stopPropagation(); close(); };
-            overlay.onclick = close;
-            return overlay;
-        }
-
         function sanitizeForDisplay(input) {
             if (typeof input !== 'string') return '';
             const div = document.createElement('div');
@@ -2125,8 +2108,7 @@ try {
                                     Submitted: ${new Date(claim.submitted_date).toLocaleDateString()}
                                 </div>
                             </div>
-                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                                ${(claim.receipt_file || claim.has_receipt) ? `<button onclick="viewTransitReceipt(${claim.id})" style="background:#17a2b8;color:white;border:none;padding:8px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">📎 View Receipt</button>` : ''}
+                            <div style="display: flex; gap: 8px;">
                                 <button onclick="approveTransitClaim(${claim.id}, this)" style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
                                     ✅ Approve
                                 </button>
@@ -2188,10 +2170,6 @@ try {
                                 <div style="color: #6c757d;">by ${approverStr} — ${dateStr}</div>
                                 ${!isApproved && claim.rejection_reason ? `<div style="color: #dc3545; font-style: italic; margin-top: 2px;">"${sanitizeForDisplay(claim.rejection_reason)}"</div>` : ''}
                                 ${isApproved && claim.report_ref ? `<div style="color: #6c757d; margin-top: 2px;">📄 ${claim.report_ref}</div>` : ''}
-                                <div style="display:flex;gap:6px;margin-top:6px;">
-                                    ${(claim.receipt_file || claim.has_receipt) ? `<button onclick="viewTransitReceipt(${claim.id})" style="background:#17a2b8;color:white;border:none;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600;">📎 Receipt</button>` : ''}
-                                    ${isApproved && claim.report_generated_at ? `<button onclick="downloadTransitPDFAdmin(${claim.id})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>` : ''}
-                                </div>
                             </div>
                         </div>
                     </div>`;
@@ -2215,49 +2193,6 @@ try {
         }
         
         let _transitActionInProgress = false;
-        async function downloadTransitPDFAdmin(claimId) {
-            try {
-                const resp = await fetch(`/api/transit-claims/${claimId}/pdf`, {
-                    headers: { 'Authorization': 'Bearer ' + sessionId }
-                });
-                if (!resp.ok) { showMessage('danger', 'PDF not available'); return; }
-                const blob = await resp.blob();
-                const url = URL.createObjectURL(blob);
-                window.open(url, '_blank');
-                setTimeout(() => URL.revokeObjectURL(url), 60000);
-            } catch (e) { showMessage('danger', 'Failed to download PDF'); }
-        }
-
-        async function viewTransitReceipt(claimId) {
-            try {
-                const resp = await fetch(`/api/transit-claims/${claimId}/receipt`, {
-                    headers: { 'Authorization': 'Bearer ' + sessionId }
-                });
-                if (!resp.ok) {
-                    const err = await resp.json().catch(() => ({}));
-                    showMessage('danger', err.error || 'Failed to load receipt');
-                    return;
-                }
-                const contentType = resp.headers.get('Content-Type') || '';
-                const blob = await resp.blob();
-                const url = URL.createObjectURL(blob);
-                
-                if (contentType.startsWith('image/')) {
-                    const overlay = createReceiptOverlay(url, function() { URL.revokeObjectURL(url); });
-                    const img = document.createElement('img');
-                    img.src = url;
-                    img.style.cssText = 'max-width:95vw;max-height:90vh;border-radius:8px;';
-                    overlay.appendChild(img);
-                    document.body.appendChild(overlay);
-                } else {
-                    window.open(url, '_blank');
-                    setTimeout(() => URL.revokeObjectURL(url), 60000);
-                }
-            } catch (e) {
-                showMessage('danger', 'Failed to load receipt');
-            }
-        }
-
         async function approveTransitClaim(claimId, btn) {
             if (_transitActionInProgress) return;
             
@@ -2265,8 +2200,8 @@ try {
             if (!btn || !btn.dataset.confirmed) {
                 if (btn) {
                     const parent = btn.parentElement;
-                    // Hide all sibling buttons except this one
-                    parent.querySelectorAll('button').forEach(b => { if (b !== btn) b.style.display = 'none'; });
+                    const rejectBtn = parent.querySelector('button:last-child');
+                    if (rejectBtn) rejectBtn.style.display = 'none';
                     btn.dataset.confirmed = 'pending';
                     btn.innerHTML = '✅ Confirm Approve';
                     btn.style.background = '#1e7e34';
@@ -2454,27 +2389,10 @@ try {
                 const receipts = await resp.json();
                 if (receipts.length === 0) { alert('No receipts found'); return; }
                 
-                // Fetch each receipt with auth and display
-                for (const r of receipts) {
-                    const rResp = await fetch(`/api/phone-claims/receipt/${r.id}`, {
-                        headers: { 'Authorization': 'Bearer ' + sessionId }
-                    });
-                    if (!rResp.ok) { showMessage('danger', 'Failed to load receipt'); continue; }
-                    const contentType = rResp.headers.get('Content-Type') || '';
-                    const blob = await rResp.blob();
-                    const url = URL.createObjectURL(blob);
-                    if (contentType.startsWith('image/')) {
-                        const overlay = createReceiptOverlay(url, function() { URL.revokeObjectURL(url); });
-                        const img = document.createElement('img');
-                        img.src = url;
-                        img.style.cssText = 'max-width:95vw;max-height:90vh;border-radius:8px;';
-                        overlay.appendChild(img);
-                        document.body.appendChild(overlay);
-                    } else {
-                        window.open(url, '_blank');
-                        setTimeout(() => URL.revokeObjectURL(url), 60000);
-                    }
-                }
+                // Open each receipt in a new tab
+                receipts.forEach(r => {
+                    window.open(`/api/phone-claims/receipt/${r.id}?auth=${sessionId}`, '_blank');
+                });
             } catch (e) {
                 showMessage('danger', 'Failed to load receipts');
             }
@@ -2677,26 +2595,9 @@ try {
                 if (!resp.ok) return;
                 const receipts = await resp.json();
                 if (receipts.length === 0) { alert('No receipts found'); return; }
-                for (const r of receipts) {
-                    const rResp = await fetch(`/api/hwa-claims/receipt/${r.id}`, {
-                        headers: { 'Authorization': 'Bearer ' + sessionId }
-                    });
-                    if (!rResp.ok) { showMessage('danger', 'Failed to load receipt'); continue; }
-                    const contentType = rResp.headers.get('Content-Type') || '';
-                    const blob = await rResp.blob();
-                    const url = URL.createObjectURL(blob);
-                    if (contentType.startsWith('image/')) {
-                        const overlay = createReceiptOverlay(url, function() { URL.revokeObjectURL(url); });
-                        const img = document.createElement('img');
-                        img.src = url;
-                        img.style.cssText = 'max-width:95vw;max-height:90vh;border-radius:8px;';
-                        overlay.appendChild(img);
-                        document.body.appendChild(overlay);
-                    } else {
-                        window.open(url, '_blank');
-                        setTimeout(() => URL.revokeObjectURL(url), 60000);
-                    }
-                }
+                receipts.forEach(r => {
+                    window.open(`/api/hwa-claims/receipt/${r.id}?auth=${sessionId}`, '_blank');
+                });
             } catch (e) {
                 showMessage('danger', 'Failed to load receipts');
             }
@@ -3759,12 +3660,20 @@ try {
         }
 
         function viewReceipt(receiptPath) {
-            const overlay = createReceiptOverlay(null, null);
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 2000;
+                background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center;
+                padding: 20px; cursor: pointer;
+            `;
+            
             const img = document.createElement('img');
             img.src = receiptPath;
-            img.style.cssText = 'max-width:90%;max-height:90%;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.5);';
-            overlay.appendChild(img);
-            document.body.appendChild(overlay);
+            img.style.cssText = 'max-width: 90%; max-height: 90%; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5);';
+            
+            modal.appendChild(img);
+            modal.onclick = () => modal.remove();
+            document.body.appendChild(modal);
         }
 
         async function viewExpenseReceipt(expenseId) {
@@ -3776,12 +3685,15 @@ try {
                 const blob = await resp.blob();
                 const url = URL.createObjectURL(blob);
                 if (blob.type && blob.type.startsWith('image/')) {
-                    const overlay = createReceiptOverlay(url, function() { URL.revokeObjectURL(url); });
+                    // Images: show in modal overlay
+                    const modal = document.createElement('div');
+                    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2000;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;padding:20px;cursor:pointer;';
+                    modal.onclick = () => { modal.remove(); URL.revokeObjectURL(url); };
                     const img = document.createElement('img');
                     img.src = url;
                     img.style.cssText = 'max-width:90%;max-height:90%;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.5);';
-                    overlay.appendChild(img);
-                    document.body.appendChild(overlay);
+                    modal.appendChild(img);
+                    document.body.appendChild(modal);
                 } else {
                     // PDFs/docs: open in new tab (works on all devices)
                     window.open(url, '_blank');
