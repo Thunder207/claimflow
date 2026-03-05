@@ -7617,16 +7617,28 @@ app.get('/api/phone-claims/receipt/:receiptId', (req, res, next) => {
     requireAuth(req, res, next);
 }, (req, res) => {
     db.get(`SELECT file_data, file_name, file_type FROM phone_claim_receipts WHERE id = ?`, [req.params.receiptId], (err, row) => {
-        if (err) return res.status(500).json({ error: 'Database error' });
+        if (err) { console.error('❌ Phone receipt DB error:', err); return res.status(500).json({ error: 'Database error' }); }
         if (!row || !row.file_data) return res.status(404).json({ error: 'Receipt not found' });
         try {
-            const buf = Buffer.isBuffer(row.file_data) ? row.file_data : Buffer.from(row.file_data);
+            console.log(`[PHONE-RECEIPT] id=${req.params.receiptId} dataType=${typeof row.file_data} isBuffer=${Buffer.isBuffer(row.file_data)} dataLen=${row.file_data?.length || 'N/A'} constructor=${row.file_data?.constructor?.name}`);
+            let buf;
+            if (Buffer.isBuffer(row.file_data)) {
+                buf = row.file_data;
+            } else if (row.file_data instanceof Uint8Array) {
+                buf = Buffer.from(row.file_data);
+            } else if (typeof row.file_data === 'string') {
+                buf = Buffer.from(row.file_data, 'binary');
+            } else {
+                buf = Buffer.from(row.file_data);
+            }
+            console.log(`[PHONE-RECEIPT] bufLen=${buf.length}`);
             res.setHeader('Content-Type', row.file_type || 'application/octet-stream');
-            res.setHeader('Content-Disposition', `inline; filename="${row.file_name || 'receipt'}"`);
+            const safeName = (row.file_name || 'receipt').replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');
+            res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
             res.setHeader('Content-Length', buf.length);
             res.end(buf);
         } catch (e) {
-            console.error('❌ Error sending phone receipt:', e);
+            console.error('❌ Error sending phone receipt:', e.message, e.stack);
             if (!res.headersSent) res.status(500).json({ error: 'Failed to send receipt' });
         }
     });
