@@ -2072,8 +2072,18 @@ try {
                                         <button onclick="viewTransitReceipt(${expense._transitId})" style="background:#17a2b8;color:white;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">📎 Receipt</button>
                                         <button onclick="downloadTransitPDFAdmin(${expense._transitId})" style="background:#667eea;color:white;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">📄 PDF Report</button>
                                     </div>` : ''}
+                                    ${expense._isPhone && expense.status === 'approved' ? `
+                                    <div style="display:flex;gap:8px;margin-top:10px;">
+                                        ${expense.receipt_count > 0 ? `<button onclick="viewPhoneReceipts(${expense._phoneId})" style="background:#17a2b8;color:white;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">📎 Receipt</button>` : ''}
+                                        <button onclick="downloadPhonePDFAdmin(${expense._phoneId})" style="background:#667eea;color:white;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">📄 PDF Report</button>
+                                    </div>` : ''}
+                                    ${expense._isHwa && expense.status === 'approved' ? `
+                                    <div style="display:flex;gap:8px;margin-top:10px;">
+                                        ${expense.receipt_count > 0 ? `<button onclick="viewHwaReceipts(${expense._hwaId})" style="background:#17a2b8;color:white;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">📎 Receipt</button>` : ''}
+                                        <button onclick="downloadHwaPDFAdmin(${expense._hwaId})" style="background:#667eea;color:white;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">📄 PDF Report</button>
+                                    </div>` : ''}
                                 </div>
-                                ${!expense._isTransit && expense.receipt_path ? `<button class="btn btn-secondary" onclick="viewReceipt('${expense.receipt_path}')" style="font-size: 12px;">📎 Receipt</button>` : ''}
+                                ${!expense._isTransit && !expense._isPhone && !expense._isHwa && expense.receipt_path ? `<button class="btn btn-secondary" onclick="viewReceipt('${expense.receipt_path}')" style="font-size: 12px;">📎 Receipt</button>` : ''}
                             </div>
                         </div>`;
                     });
@@ -2949,6 +2959,73 @@ try {
                         });
                     }
                 } catch (e) { console.log('Transit history merge skipped:', e); }
+
+                // Merge approved/rejected phone claims
+                try {
+                    const phoneResp = await fetch('/api/phone-claims/supervisor-history', {
+                        headers: { 'Authorization': 'Bearer ' + sessionId }
+                    });
+                    if (phoneResp.ok) {
+                        const phoneClaims = await phoneResp.json();
+                        const mn = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+                        (phoneClaims || []).forEach(pc => {
+                            allLoadedExpenses.push({
+                                id: 'phone-' + pc.id,
+                                _isPhone: true,
+                                _phoneId: pc.id,
+                                employee_name: pc.employee_name,
+                                employee_number: pc.employee_number,
+                                department: pc.department,
+                                expense_type: 'Phone Benefit',
+                                category: '📱 Phone Benefit',
+                                amount: pc.total_claim_amount,
+                                date: pc.approved_date || pc.submitted_date,
+                                vendor: 'Phone/Telecom',
+                                description: `${mn[pc.claim_month - 1]} ${pc.claim_year} — Plan: $${parseFloat(pc.plan_claim_amount||0).toFixed(2)}, Device: $${parseFloat(pc.device_claim_amount||0).toFixed(2)}`,
+                                status: pc.status,
+                                trip_name: null,
+                                report_ref: pc.report_ref || null,
+                                report_generated_at: pc.report_generated_at,
+                                receipt_count: pc.receipt_count || 0,
+                                rejection_reason: pc.rejection_reason || '',
+                                approver_name: pc.approver_name || ''
+                            });
+                        });
+                    }
+                } catch (e) { console.log('Phone history merge skipped:', e); }
+
+                // Merge approved/rejected HWA claims
+                try {
+                    const hwaResp = await fetch('/api/hwa-claims/supervisor-history', {
+                        headers: { 'Authorization': 'Bearer ' + sessionId }
+                    });
+                    if (hwaResp.ok) {
+                        const hwaClaims = await hwaResp.json();
+                        (hwaClaims || []).forEach(hc => {
+                            allLoadedExpenses.push({
+                                id: 'hwa-' + hc.id,
+                                _isHwa: true,
+                                _hwaId: hc.id,
+                                employee_name: hc.employee_name,
+                                employee_number: hc.employee_number,
+                                department: hc.department,
+                                expense_type: 'Health & Wellness',
+                                category: '💪 Health & Wellness',
+                                amount: hc.claim_amount,
+                                date: hc.approved_date || hc.submitted_date,
+                                vendor: hc.vendor || 'Wellness',
+                                description: hc.description || `${hc.claim_year} HWA Claim`,
+                                status: hc.status,
+                                trip_name: null,
+                                report_ref: hc.report_ref || null,
+                                report_generated_at: hc.report_generated_at,
+                                receipt_count: hc.receipt_count || 0,
+                                rejection_reason: hc.rejection_reason || '',
+                                approver_name: hc.approver_name || ''
+                            });
+                        });
+                    }
+                } catch (e) { console.log('HWA history merge skipped:', e); }
 
                 await updateDashboardStats(allLoadedExpenses);
                 displayFilteredExpenses(allLoadedExpenses);
