@@ -1646,7 +1646,7 @@ app.get('/api/expense-claims/group/:claimGroup/pdf', requireAuth, (req, res) => 
         if (!row || !row.claim_group_pdf) return res.status(404).json({ error: 'No PDF report found' });
         res.set('Content-Type', 'application/pdf');
         res.set('Content-Disposition', `inline; filename="claim-${claimGroup}.pdf"`);
-        res.send(row.claim_group_pdf);
+        try { const buf = Buffer.isBuffer(row.claim_group_pdf) ? row.claim_group_pdf : Buffer.from(row.claim_group_pdf); res.setHeader("Content-Length", buf.length); res.end(buf); } catch(e) { console.error("PDF send error:", e); if(!res.headersSent) res.status(500).json({error:"Failed to send PDF"}); }
     });
 });
 
@@ -2123,9 +2123,13 @@ app.get('/api/expenses/:id/receipt', requireAuth, (req, res) => {
         
         // Serve BLOB if available
         if (expense.receipt_data && expense.receipt_type) {
-            res.setHeader('Content-Type', expense.receipt_type);
-            res.setHeader('Content-Disposition', 'inline');
-            return res.send(expense.receipt_data);
+            try {
+                const buf = Buffer.isBuffer(expense.receipt_data) ? expense.receipt_data : Buffer.from(expense.receipt_data);
+                res.setHeader('Content-Type', expense.receipt_type);
+                res.setHeader('Content-Disposition', 'inline');
+                res.setHeader('Content-Length', buf.length);
+                return res.end(buf);
+            } catch (e) { console.error('❌ Error sending expense receipt:', e); return res.status(500).json({ error: 'Failed to send receipt' }); }
         }
         
         if (!expense.receipt_photo) {
@@ -6424,7 +6428,7 @@ app.get('/api/trips/:id/report', (req, res, next) => {
         if (!trip || !trip.pdf_report) return res.status(404).json({ error: 'No PDF report found for this trip' });
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="${trip.report_ref || 'report'}.pdf"`);
-        res.send(trip.pdf_report);
+        try { const buf = Buffer.isBuffer(trip.pdf_report) ? trip.pdf_report : Buffer.from(trip.pdf_report); res.setHeader("Content-Length", buf.length); res.end(buf); } catch(e) { console.error("PDF send error:", e); if(!res.headersSent) res.status(500).json({error:"Failed to send PDF"}); }
     });
 });
 
@@ -7257,7 +7261,7 @@ app.get('/api/transit-claims/:id/pdf', (req, res, next) => {
         if (!row || !row.pdf_report) return res.status(404).json({ error: 'PDF not found' });
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="${row.report_ref || 'transit-report'}.pdf"`);
-        res.send(row.pdf_report);
+        try { const buf = Buffer.isBuffer(row.pdf_report) ? row.pdf_report : Buffer.from(row.pdf_report); res.setHeader("Content-Length", buf.length); res.end(buf); } catch(e) { console.error("PDF send error:", e); if(!res.headersSent) res.status(500).json({error:"Failed to send PDF"}); }
     });
 });
 
@@ -7637,7 +7641,7 @@ app.get('/api/phone-claims/:id/pdf', (req, res, next) => {
         if (!row || !row.pdf_report) return res.status(404).json({ error: 'No PDF report found' });
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="${row.report_ref || 'phone-benefit'}.pdf"`);
-        res.send(row.pdf_report);
+        try { const buf = Buffer.isBuffer(row.pdf_report) ? row.pdf_report : Buffer.from(row.pdf_report); res.setHeader("Content-Length", buf.length); res.end(buf); } catch(e) { console.error("PDF send error:", e); if(!res.headersSent) res.status(500).json({error:"Failed to send PDF"}); }
     });
 });
 
@@ -8153,7 +8157,7 @@ app.get('/api/hwa-claims/:id/pdf', (req, res, next) => {
         if (!row || !row.pdf_report) return res.status(404).json({ error: 'No PDF report found' });
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="${row.report_ref || 'hwa-claim'}.pdf"`);
-        res.send(row.pdf_report);
+        try { const buf = Buffer.isBuffer(row.pdf_report) ? row.pdf_report : Buffer.from(row.pdf_report); res.setHeader("Content-Length", buf.length); res.end(buf); } catch(e) { console.error("PDF send error:", e); if(!res.headersSent) res.status(500).json({error:"Failed to send PDF"}); }
     });
 });
 
