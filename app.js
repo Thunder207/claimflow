@@ -797,6 +797,12 @@ function insertDefaultData() {
         db.run(`ALTER TABLE transit_claims ADD COLUMN pdf_report BLOB DEFAULT NULL`, (err) => {
             if (err && !err.message.includes('duplicate column')) {}
         });
+        db.run(`ALTER TABLE transit_claims ADD COLUMN receipt_data BLOB DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) console.error('Error adding receipt_data:', err.message);
+        });
+        db.run(`ALTER TABLE transit_claims ADD COLUMN receipt_type TEXT DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) console.error('Error adding receipt_type:', err.message);
+        });
         db.run(`ALTER TABLE transit_claims ADD COLUMN report_generated_at DATETIME DEFAULT NULL`, (err) => {
             if (err && !err.message.includes('duplicate column')) {}
         });
@@ -6695,10 +6701,18 @@ app.post('/api/transit-claims', requireAuth, upload.fields([
                 const claimAmount = Math.min(receiptAmount, monthlyMax);
                 const receiptFile = receipts[index] ? receipts[index].filename : null;
                 
+                // Read receipt file into BLOB for DB storage (survives Render deploys)
+                let receiptData = null;
+                let receiptType = null;
+                if (receipts[index]) {
+                    receiptType = receipts[index].mimetype;
+                    try { receiptData = fs.readFileSync(receipts[index].path); } catch (e) { console.warn('Could not read transit receipt for BLOB:', e.message); }
+                }
+                
                 db.run(`INSERT INTO transit_claims 
-                       (employee_id, claim_month, claim_year, receipt_amount, claim_amount, receipt_file, status, expense_batch_id, submitted_date)
-                       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, CURRENT_TIMESTAMP)`,
-                       [req.user.employeeId, claim.month, claim.year, receiptAmount, claimAmount, receiptFile, expenseBatchId],
+                       (employee_id, claim_month, claim_year, receipt_amount, claim_amount, receipt_file, receipt_data, receipt_type, status, expense_batch_id, submitted_date)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, CURRENT_TIMESTAMP)`,
+                       [req.user.employeeId, claim.month, claim.year, receiptAmount, claimAmount, receiptFile, receiptData, receiptType, expenseBatchId],
                        function(err) {
                     if (err) reject(err);
                     else resolve(this.lastID);
@@ -6804,8 +6818,36 @@ function generateTransitBenefitPDF(claimIds, db) {
             const MARGIN = 72;
             const doc = new PDFDocument({ size: 'LETTER', margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN }, bufferPages: true });
             const buffers = [];
+            const pdfReceiptBuffers = []; // PDF receipts to merge via pdf-lib after doc.end()
             doc.on('data', chunk => buffers.push(chunk));
-            doc.on('end', () => { pdfLog('[PDF-GEN] doc end event, buffer size:', Buffer.concat(buffers).length); resolve(Buffer.concat(buffers)); });
+            doc.on('end', async () => {
+                try {
+                    let finalBuf = Buffer.concat(buffers);
+                    pdfLog('[PDF-GEN] doc end event, buffer size:', finalBuf.length);
+                    
+                    // Post-process: merge any PDF receipt attachments via pdf-lib
+                    if (pdfReceiptBuffers.length > 0) {
+                        const { PDFDocument: PDFLib } = require('pdf-lib');
+                        const mainDoc = await PDFLib.load(finalBuf);
+                        for (const receipt of pdfReceiptBuffers) {
+                            try {
+                                const receiptDoc = await PDFLib.load(receipt.buf);
+                                const pages = await mainDoc.copyPages(receiptDoc, receiptDoc.getPageIndices());
+                                pages.forEach(p => mainDoc.addPage(p));
+                                pdfLog('[PDF-GEN] Merged PDF receipt:', receipt.label, pages.length, 'pages');
+                            } catch (mergeErr) {
+                                pdfLog('[PDF-GEN] Could not merge PDF receipt:', mergeErr.message);
+                            }
+                        }
+                        finalBuf = Buffer.from(await mainDoc.save());
+                    }
+                    
+                    resolve(finalBuf);
+                } catch (postErr) {
+                    pdfLog('[PDF-GEN] Post-processing error:', postErr.message);
+                    resolve(Buffer.concat(buffers)); // Fall back to unmerged PDF
+                }
+            });
             doc.on('error', (err) => { pdfLog('[PDF-GEN] doc error event:', err.message); reject(err); });
 
             const pageW = 612 - MARGIN * 2;
@@ -6928,53 +6970,57 @@ function generateTransitBenefitPDF(claimIds, db) {
                 );
 
                 // ═══════ PAGE 2+ — RECEIPT IMAGES ═══════
-                const fs = require('fs');
-                const path = require('path');
+                // ═══════ Embed receipt images, queue PDF receipts for post-merge ═══════
                 claims.forEach(claim => {
-                    if (claim.receipt_file) {
+                    // Prefer BLOB data from DB, fall back to file on disk
+                    let receiptBuf = null;
+                    let receiptMime = claim.receipt_type || '';
+                    
+                    if (claim.receipt_data) {
+                        receiptBuf = Buffer.isBuffer(claim.receipt_data) ? claim.receipt_data : Buffer.from(claim.receipt_data);
+                        pdfLog('[PDF-GEN] Using BLOB receipt data for', claim.receipt_file, receiptBuf.length + 'b');
+                    } else if (claim.receipt_file) {
                         const receiptPath = path.join(__dirname, 'uploads', claim.receipt_file);
                         if (fs.existsSync(receiptPath)) {
-                            doc.addPage();
-                            doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('ATTACHED RECEIPT', { align: 'center' });
-                            doc.moveDown(0.3);
-                            doc.fontSize(10).fillColor(COLORS.muted).font('Helvetica').text(
-                                `${monthNames[claim.claim_month - 1]} ${claim.claim_year} \u2014 ${fmtDollars(claim.receipt_amount)}`, { align: 'center' }
-                            );
-                            doc.moveDown(0.5);
-
-                            try {
-                                const ext = path.extname(receiptPath).toLowerCase();
-                                const fileSize = fs.statSync(receiptPath).size;
-                                if (['.jpg', '.jpeg', '.png'].includes(ext) && fileSize > 100) {
-                                    // Validate image by reading header bytes
-                                    const header = Buffer.alloc(8);
-                                    const fd = fs.openSync(receiptPath, 'r');
-                                    fs.readSync(fd, header, 0, 8, 0);
-                                    fs.closeSync(fd);
-                                    
-                                    const isPNG = header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47;
-                                    const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
-                                    
-                                    if (isPNG || isJPEG) {
-                                        pdfLog('[PDF-GEN] Embedding receipt image:', receiptPath, fileSize + 'b');
-                                        doc.image(receiptPath, LEFT, doc.y, { fit: [pageW, 580], align: 'center' });
-                                    } else {
-                                        pdfLog('[PDF-GEN] Invalid image header, skipping:', claim.receipt_file);
-                                        doc.fontSize(10).fillColor(COLORS.muted).text('Receipt file: ' + claim.receipt_file + ' (unsupported format)', { align: 'center' });
-                                    }
-                                } else if (fileSize <= 100) {
-                                    pdfLog('[PDF-GEN] Receipt too small (' + fileSize + 'b), skipping:', claim.receipt_file);
-                                    doc.fontSize(10).fillColor(COLORS.muted).text('Receipt file: ' + claim.receipt_file + ' (file too small to embed)', { align: 'center' });
-                                } else {
-                                    doc.fontSize(10).fillColor(COLORS.muted).text('Receipt file attached: ' + claim.receipt_file, { align: 'center' });
-                                }
-                            } catch (imgErr) {
-                                pdfLog('[PDF-GEN] Image error:', imgErr.message);
-                                doc.fontSize(10).fillColor(COLORS.muted).text('Receipt file: ' + claim.receipt_file + ' (could not embed)', { align: 'center' });
-                            }
-                        } else {
-                            pdfLog('[PDF-GEN] Receipt not found:', receiptPath);
+                            try { receiptBuf = fs.readFileSync(receiptPath); } catch (e) { pdfLog('[PDF-GEN] Could not read receipt file:', e.message); }
+                            const ext = path.extname(claim.receipt_file).toLowerCase();
+                            if (['.jpg', '.jpeg'].includes(ext)) receiptMime = 'image/jpeg';
+                            else if (ext === '.png') receiptMime = 'image/png';
+                            else if (ext === '.pdf') receiptMime = 'application/pdf';
                         }
+                    }
+                    
+                    if (!receiptBuf || receiptBuf.length < 50) return;
+                    
+                    // Check if this is a PDF receipt — defer to pdf-lib post-processing
+                    if (receiptMime === 'application/pdf' || (receiptBuf[0] === 0x25 && receiptBuf[1] === 0x50 && receiptBuf[2] === 0x44 && receiptBuf[3] === 0x46)) {
+                        pdfLog('[PDF-GEN] PDF receipt queued for pdf-lib merge:', claim.receipt_file);
+                        pdfReceiptBuffers.push({ buf: receiptBuf, label: `${monthNames[claim.claim_month - 1]} ${claim.claim_year}` });
+                        return;
+                    }
+                    
+                    // Image receipt — embed inline with PDFKit
+                    const header = receiptBuf.slice(0, 4);
+                    const isPNG = header[0] === 0x89 && header[1] === 0x50;
+                    const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
+                    
+                    if (isPNG || isJPEG) {
+                        doc.addPage();
+                        doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('ATTACHED RECEIPT', { align: 'center' });
+                        doc.moveDown(0.3);
+                        doc.fontSize(10).fillColor(COLORS.muted).font('Helvetica').text(
+                            `${monthNames[claim.claim_month - 1]} ${claim.claim_year} \u2014 ${fmtDollars(claim.receipt_amount)}`, { align: 'center' }
+                        );
+                        doc.moveDown(0.5);
+                        try {
+                            doc.image(receiptBuf, LEFT, doc.y, { fit: [pageW, 580], align: 'center' });
+                            pdfLog('[PDF-GEN] Embedded image receipt:', claim.receipt_file);
+                        } catch (imgErr) {
+                            pdfLog('[PDF-GEN] Image embed error:', imgErr.message);
+                            doc.fontSize(10).fillColor(COLORS.muted).text('Receipt could not be embedded', { align: 'center' });
+                        }
+                    } else {
+                        pdfLog('[PDF-GEN] Unknown image format, skipping:', claim.receipt_file);
                     }
                 });
 
@@ -7005,7 +7051,10 @@ function generateTransitBenefitPDF(claimIds, db) {
 
 // Get pending transit claims for supervisor
 app.get('/api/transit-claims/pending', requireAuth, requireRole('supervisor'), (req, res) => {
-    db.all(`SELECT tc.*, e.name as employee_name, e.department, e.employee_number
+    db.all(`SELECT tc.id, tc.employee_id, tc.claim_month, tc.claim_year, tc.receipt_amount, tc.claim_amount,
+                   tc.receipt_file, tc.status, tc.expense_batch_id, tc.submitted_date, tc.report_ref, tc.report_generated_at,
+                   (CASE WHEN tc.receipt_data IS NOT NULL THEN 1 ELSE 0 END) as has_receipt,
+                   e.name as employee_name, e.department, e.employee_number
             FROM transit_claims tc
             JOIN employees e ON tc.employee_id = e.id
             WHERE e.supervisor_id = ? AND tc.status = 'pending'
@@ -7020,7 +7069,8 @@ app.get('/api/transit-claims/pending', requireAuth, requireRole('supervisor'), (
 app.get('/api/transit-claims/supervisor-history', requireAuth, requireRole('supervisor'), (req, res) => {
     db.all(`SELECT tc.id, tc.claim_month, tc.claim_year, tc.receipt_amount, tc.claim_amount, 
                    tc.status, tc.submitted_date, tc.approved_date, tc.approved_by, tc.rejection_reason,
-                   tc.report_ref, tc.report_generated_at,
+                   tc.report_ref, tc.report_generated_at, tc.receipt_file,
+                   (CASE WHEN tc.receipt_data IS NOT NULL THEN 1 ELSE 0 END) as has_receipt,
                    e.name as employee_name, e.department, e.employee_number,
                    approver.name as approver_name
             FROM transit_claims tc
@@ -7231,25 +7281,29 @@ app.get('/api/transit-claims/:id/receipt', (req, res, next) => {
 }, requireAuth, (req, res) => {
     const claimId = parseInt(req.params.id);
     if (isNaN(claimId) || claimId <= 0) return res.status(400).json({ error: 'Invalid claim ID' });
-    db.get(`SELECT receipt_file FROM transit_claims WHERE id = ?`, [claimId], (err, row) => {
+    db.get(`SELECT receipt_file, receipt_data, receipt_type FROM transit_claims WHERE id = ?`, [claimId], (err, row) => {
         if (err) return res.status(500).json({ error: 'Database error' });
-        if (!row || !row.receipt_file) return res.status(404).json({ error: 'No receipt found' });
+        if (!row) return res.status(404).json({ error: 'No receipt found' });
         
-        const filePath = path.join(__dirname, 'uploads', row.receipt_file);
-        if (!fs.existsSync(filePath)) {
-            return res.status(404).json({ error: 'Receipt file not found on disk' });
+        // Prefer BLOB data (survives deploys), fall back to file on disk
+        if (row.receipt_data) {
+            try {
+                const buf = Buffer.isBuffer(row.receipt_data) ? row.receipt_data : Buffer.from(row.receipt_data);
+                res.setHeader('Content-Type', row.receipt_type || 'application/octet-stream');
+                res.setHeader('Content-Disposition', `inline; filename="${row.receipt_file || 'receipt'}"`);
+                res.setHeader('Content-Length', buf.length);
+                return res.end(buf);
+            } catch (e) { console.error('❌ Error sending transit receipt BLOB:', e); }
         }
         
-        // Determine content type from extension
-        const ext = path.extname(row.receipt_file).toLowerCase();
-        const mimeTypes = {
-            '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
-            '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf',
-            '.heic': 'image/heic', '.heif': 'image/heif'
-        };
-        const contentType = mimeTypes[ext] || 'application/octet-stream';
+        // Fallback: serve from file
+        if (!row.receipt_file) return res.status(404).json({ error: 'No receipt found' });
+        const filePath = path.join(__dirname, 'uploads', row.receipt_file);
+        if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Receipt file not found' });
         
-        res.setHeader('Content-Type', contentType);
+        const ext = path.extname(row.receipt_file).toLowerCase();
+        const mimeTypes = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf' };
+        res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
         res.setHeader('Content-Disposition', `inline; filename="${row.receipt_file}"`);
         res.sendFile(filePath);
     });

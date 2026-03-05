@@ -2126,7 +2126,7 @@ try {
                                 </div>
                             </div>
                             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                                ${claim.receipt_file ? `<button onclick="viewTransitReceipt(${claim.id})" style="background:#17a2b8;color:white;border:none;padding:8px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">📎 View Receipt</button>` : ''}
+                                ${(claim.receipt_file || claim.has_receipt) ? `<button onclick="viewTransitReceipt(${claim.id})" style="background:#17a2b8;color:white;border:none;padding:8px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">📎 View Receipt</button>` : ''}
                                 <button onclick="approveTransitClaim(${claim.id}, this)" style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600;">
                                     ✅ Approve
                                 </button>
@@ -2188,6 +2188,10 @@ try {
                                 <div style="color: #6c757d;">by ${approverStr} — ${dateStr}</div>
                                 ${!isApproved && claim.rejection_reason ? `<div style="color: #dc3545; font-style: italic; margin-top: 2px;">"${sanitizeForDisplay(claim.rejection_reason)}"</div>` : ''}
                                 ${isApproved && claim.report_ref ? `<div style="color: #6c757d; margin-top: 2px;">📄 ${claim.report_ref}</div>` : ''}
+                                <div style="display:flex;gap:6px;margin-top:6px;">
+                                    ${(claim.receipt_file || claim.has_receipt) ? `<button onclick="viewTransitReceipt(${claim.id})" style="background:#17a2b8;color:white;border:none;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600;">📎 Receipt</button>` : ''}
+                                    ${isApproved && claim.report_generated_at ? `<button onclick="downloadTransitPDFAdmin(${claim.id})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>` : ''}
+                                </div>
                             </div>
                         </div>
                     </div>`;
@@ -2211,6 +2215,19 @@ try {
         }
         
         let _transitActionInProgress = false;
+        async function downloadTransitPDFAdmin(claimId) {
+            try {
+                const resp = await fetch(`/api/transit-claims/${claimId}/pdf`, {
+                    headers: { 'Authorization': 'Bearer ' + sessionId }
+                });
+                if (!resp.ok) { showMessage('danger', 'PDF not available'); return; }
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+            } catch (e) { showMessage('danger', 'Failed to download PDF'); }
+        }
+
         async function viewTransitReceipt(claimId) {
             try {
                 const resp = await fetch(`/api/transit-claims/${claimId}/receipt`, {
