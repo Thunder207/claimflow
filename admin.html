@@ -2067,8 +2067,13 @@ try {
                                         📅 ${expense.date} • 📍 ${expense.location || 'N/A'}
                                     </div>
                                     ${actionButtons ? `<div style="margin-top: 10px;">${actionButtons}</div>` : ''}
+                                    ${expense._isTransit && expense.status === 'approved' ? `
+                                    <div style="display:flex;gap:8px;margin-top:10px;">
+                                        <button onclick="viewTransitReceipt(${expense._transitId})" style="background:#17a2b8;color:white;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">📎 Receipt</button>
+                                        <button onclick="downloadTransitPDFAdmin(${expense._transitId})" style="background:#667eea;color:white;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">📄 PDF Report</button>
+                                    </div>` : ''}
                                 </div>
-                                ${expense.receipt_path ? `<button class="btn btn-secondary" onclick="viewReceipt('${expense.receipt_path}')" style="font-size: 12px;">📎 Receipt</button>` : ''}
+                                ${!expense._isTransit && expense.receipt_path ? `<button class="btn btn-secondary" onclick="viewReceipt('${expense.receipt_path}')" style="font-size: 12px;">📎 Receipt</button>` : ''}
                             </div>
                         </div>`;
                     });
