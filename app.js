@@ -7787,12 +7787,7 @@ async function generatePhonePDF(claimId) {
         const chunks = [];
         doc.on('data', c => chunks.push(c));
         doc.on('end', () => {
-            const pdf = Buffer.concat(chunks);
-            db.run(`UPDATE phone_claims SET pdf_report = ?, report_generated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-                [pdf, claimId], (err) => {
-                    if (err) return reject(err);
-                    resolve(pdf);
-                });
+            resolve(Buffer.concat(chunks));
         });
         doc.on('error', reject);
         
@@ -7947,14 +7942,30 @@ async function generatePhonePDF(claimId) {
             }
         }
         
-        // Page numbers
-        const range = doc.bufferedPageRange();
-        for (let i = range.start; i < range.start + range.count; i++) {
-            doc.switchToPage(i);
-            doc.fontSize(8).fillColor('#999').text(`Page ${i + 1} of ${range.count}`, 50, doc.page.height - 30, { align: 'center', width: doc.page.width - 100 });
-        }
-        
+        // Page numbers added via pdf-lib post-processing (avoids PDFKit bufferPages ghost page bug)
         doc.end();
+    }).then(async (pdfBuf) => {
+        // Add page numbers with pdf-lib
+        const { PDFDocument: PDFLibDoc, rgb, StandardFonts } = require('pdf-lib');
+        const pdfDoc = await PDFLibDoc.load(pdfBuf);
+        const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        const pages = pdfDoc.getPages();
+        const totalPages = pages.length;
+        for (let i = 0; i < totalPages; i++) {
+            const page = pages[i];
+            const { width } = page.getSize();
+            const text = `Page ${i + 1} of ${totalPages}`;
+            const textWidth = font.widthOfTextAtSize(text, 8);
+            page.drawText(text, { x: (width - textWidth) / 2, y: 20, size: 8, font, color: rgb(0.6, 0.6, 0.6) });
+        }
+        const finalBuf = Buffer.from(await pdfDoc.save());
+        return new Promise((resolve, reject) => {
+            db.run(`UPDATE phone_claims SET pdf_report = ?, report_generated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                [finalBuf, claimId], (err) => {
+                    if (err) return reject(err);
+                    resolve(finalBuf);
+                });
+        });
     });
 }
 

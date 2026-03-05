@@ -2490,7 +2490,7 @@ try {
                     const rResp = await fetch(`/api/phone-claims/receipt/${r.id}`, {
                         headers: { 'Authorization': 'Bearer ' + sessionId }
                     });
-                    if (!rResp.ok) { showMessage('danger', 'Failed to load receipt'); continue; }
+                    if (!rResp.ok) { console.error('Failed to load receipt', r.id); continue; }
                     const contentType = rResp.headers.get('Content-Type') || '';
                     const blob = await rResp.blob();
                     const url = URL.createObjectURL(blob);
@@ -2502,12 +2502,26 @@ try {
                         overlay.appendChild(img);
                         document.body.appendChild(overlay);
                     } else {
-                        window.open(url, '_blank');
-                        setTimeout(() => URL.revokeObjectURL(url), 60000);
+                        // Use iframe/download in modal instead of window.open (popup-blocked on mobile)
+                        const overlay = createReceiptOverlay(url, function() { URL.revokeObjectURL(url); });
+                        if (contentType === 'application/pdf') {
+                            const iframe = document.createElement('iframe');
+                            iframe.src = url;
+                            iframe.style.cssText = 'width:95vw;height:90vh;border:none;border-radius:8px;background:#fff;';
+                            overlay.appendChild(iframe);
+                        } else {
+                            const dlLink = document.createElement('a');
+                            dlLink.href = url;
+                            dlLink.download = r.file_name || 'receipt';
+                            dlLink.style.cssText = 'color:#fff;font-size:18px;text-decoration:underline;padding:20px;';
+                            dlLink.textContent = '\u2B07 Download ' + (r.file_name || 'receipt');
+                            overlay.appendChild(dlLink);
+                        }
+                        document.body.appendChild(overlay);
                     }
                 }
             } catch (e) {
-                showMessage('danger', 'Failed to load receipts');
+                console.error('Failed to load phone receipts', e);
             }
         }
 
