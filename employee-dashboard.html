@@ -2261,14 +2261,19 @@
                 const expenseType = document.getElementById('expense-type').value;
                 const fileInput = document.getElementById('file-input');
 
-                // Validate hotel receipt and date requirements
-                if (expenseType === 'hotel') {
-                    if (!fileInput.files[0]) {
-                        showMessage('error', '📷 Hotel expenses require a receipt photo. Please scroll down and capture/upload your receipt.');
-                        document.querySelector('.photo-section').scrollIntoView({ behavior: 'smooth' });
-                        return;
-                    }
+                // Receipt-required types (everything except NJC per-diem and kilometric)
+                const noReceiptTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km'];
+                const receiptRequired = !noReceiptTypes.includes(expenseType);
 
+                if (receiptRequired && !fileInput.files[0]) {
+                    const typeName = getExpenseTypeName(expenseType);
+                    showMessage('error', `⚠️ Receipt required for ${typeName}. Please scroll down and capture/upload your receipt.`);
+                    document.querySelector('.photo-section').scrollIntoView({ behavior: 'smooth' });
+                    return;
+                }
+
+                // Validate hotel date requirements
+                if (expenseType === 'hotel') {
                     const checkinDate = document.getElementById('hotel-checkin').value;
                     const checkoutDate = document.getElementById('hotel-checkout').value;
 
@@ -2550,14 +2555,17 @@
 
             const expenseType = document.getElementById('expense-type').value;
 
-            // Validate hotel receipt and date requirements
-            if (expenseType === 'hotel') {
-                if (!fileInput.files[0]) {
-                    showMessage('error', '📷 Hotel expenses require a receipt photo. Please scroll down and capture/upload your receipt.');
-                    document.querySelector('.photo-section').scrollIntoView({ behavior: 'smooth' });
-                    return;
-                }
+            // Receipt-required types (everything except NJC per-diem and kilometric)
+            const noReceiptTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km'];
+            if (!noReceiptTypes.includes(expenseType) && !fileInput.files[0]) {
+                const typeName = getExpenseTypeName(expenseType);
+                showMessage('error', `⚠️ Receipt required for ${typeName}. Please scroll down and capture/upload your receipt.`);
+                document.querySelector('.photo-section').scrollIntoView({ behavior: 'smooth' });
+                return;
+            }
 
+            // Validate hotel date requirements
+            if (expenseType === 'hotel') {
                 const checkinDate = document.getElementById('hotel-checkin').value;
                 const checkoutDate = document.getElementById('hotel-checkout').value;
 
@@ -9632,6 +9640,21 @@
                 }
             }
             
+            // Validate receipts for transport modes that require them
+            const receiptRequiredModes = ['flight', 'train', 'bus', 'rental', 'taxi'];
+            const modeNames = { flight: 'Flight', train: 'Train', bus: 'Bus', rental: 'Rental Car', taxi: 'Taxi' };
+            for (const mode of receiptRequiredModes) {
+                const button = document.querySelector(`#tdp-transport-toggles [data-mode="${mode}"]`);
+                if (button && button.classList.contains('active')) {
+                    const hasNewFiles = tdpTransportReceipts[mode] && tdpTransportReceipts[mode].length > 0;
+                    const hasExisting = document.querySelectorAll(`#tdp-${mode}-receipt-list .receipt-existing`).length > 0;
+                    if (!hasNewFiles && !hasExisting) {
+                        showMessage('error', `⚠️ Receipt required for ${modeNames[mode]} — please upload a receipt before submitting.`);
+                        return false;
+                    }
+                }
+            }
+            
             return true;
         }
 
@@ -10272,6 +10295,13 @@
                     return;
                 }
                 // Name and City are optional
+                // Receipt required for hotel
+                const hasHotelReceipt = (h.receiptFiles && h.receiptFiles.length > 0) || 
+                    (h.existingReceipts && h.existingReceipts.length > 0);
+                if (!hasHotelReceipt) {
+                    showMessage('error', `⚠️ Receipt required for Hotel #${i+1} — $${h.total.toFixed(2)}. Please upload a hotel receipt.`);
+                    return;
+                }
                 validHotels.push(h);
             }
             

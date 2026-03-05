@@ -8484,7 +8484,7 @@ async function generateHwaPDF(claimId) {
                 if (receipt.file_data && receipt.file_type && receipt.file_type.startsWith('image/')) {
                     try {
                         const buf = Buffer.from(receipt.file_data);
-                        if (buf.length > 100) {
+                        if (buf.length > 50) {
                             const header = buf.slice(0, 4);
                             const isPNG = header[0] === 0x89 && header[1] === 0x50;
                             const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
