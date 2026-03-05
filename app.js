@@ -8167,7 +8167,7 @@ app.post('/api/hwa-claims/:id/reject', requireAuth, requireRole('supervisor'), (
 // GET /api/hwa-claims/supervisor-history — supervisor audit trail
 app.get('/api/hwa-claims/supervisor-history', requireAuth, requireRole('supervisor'), (req, res) => {
     db.all(`SELECT hc.id, hc.employee_id, hc.claim_year, hc.receipt_amount, hc.claim_amount, hc.vendor, hc.description, hc.status, hc.submitted_date, hc.approved_date, hc.approved_by, hc.rejection_reason, hc.report_ref, hc.report_generated_at, hc.created_at,
-                   (SELECT COUNT(*) FROM hwa_claim_receipts WHERE hwa_claim_id = hc.id) as receipt_count,
+                   (SELECT COUNT(*) FROM hwa_claim_receipts WHERE claim_id = hc.id) as receipt_count,
                    e.name as employee_name, e.employee_number, e.department
             FROM hwa_claims hc
             JOIN employees e ON hc.employee_id = e.id
