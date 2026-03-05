@@ -7806,6 +7806,7 @@ async function generatePhonePDF(claimId) {
         });
     });
     
+    const pdfReceiptBuffersOuter = [];
     return new Promise((resolve, reject) => {
         const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
         const chunks = [];
@@ -7932,7 +7933,6 @@ async function generatePhonePDF(claimId) {
         doc.text('Date: _______________', 312, y + 35);
         
         // Receipt pages — collect PDF receipts for post-merge via pdf-lib
-        const pdfReceiptBuffers = [];
         if (receipts.length > 0) {
             const imageReceipts = receipts.filter(r => r.file_data && r.file_type && r.file_type.startsWith('image/'));
             const pdfReceipts = receipts.filter(r => r.file_data && r.file_type && r.file_type === 'application/pdf');
@@ -7970,7 +7970,7 @@ async function generatePhonePDF(claimId) {
                 try {
                     const buf = Buffer.isBuffer(receipt.file_data) ? receipt.file_data : Buffer.from(receipt.file_data);
                     if (buf.length > 10) {
-                        pdfReceiptBuffers.push(buf);
+                        pdfReceiptBuffersOuter.push(buf);
                     }
                 } catch (e) {
                     console.error('❌ Error preparing PDF receipt for merge:', e);
@@ -7985,7 +7985,7 @@ async function generatePhonePDF(claimId) {
         const pdfDoc = await PDFLibDoc.load(pdfBuf);
         
         // Merge PDF receipt attachments
-        for (const receiptBuf of pdfReceiptBuffers) {
+        for (const receiptBuf of pdfReceiptBuffersOuter) {
             try {
                 const receiptPdf = await PDFLibDoc.load(receiptBuf);
                 const copiedPages = await pdfDoc.copyPages(receiptPdf, receiptPdf.getPageIndices());
