@@ -7696,7 +7696,14 @@
         });
 
         function saveStandaloneDrafts() {
-            localStorage.setItem('standalone_drafts_' + (currentUser?.id || ''), JSON.stringify(standaloneDrafts));
+            // File objects can't be serialized — strip them before saving
+            const serializable = standaloneDrafts.map(d => {
+                if (d.type === 'claim_group' && d.items) {
+                    return { ...d, items: d.items.map(i => ({ ...i, receiptFile: null, receiptName: i.receiptName || '' })) };
+                }
+                return d;
+            });
+            localStorage.setItem('standalone_drafts_' + (currentUser?.id || ''), JSON.stringify(serializable));
         }
 
         function showStandaloneError(msg) {
@@ -7942,9 +7949,9 @@
                             description: item.details || '',
                             expense_type: CLAIM_CATEGORIES.find(c => c.value === item.category)?.type || 'other'
                         }))));
-                        // Append receipt files per line item
+                        // Append receipt files per line item (only real File objects, not dead serialized refs)
                         draft.items.forEach((item, idx) => {
-                            if (item.receiptFile) {
+                            if (item.receiptFile && item.receiptFile instanceof File) {
                                 formData.append(`receipt_${idx}`, item.receiptFile, item.receiptFile.name);
                             }
                         });
