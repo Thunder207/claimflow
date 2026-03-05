@@ -2229,6 +2229,18 @@ try {
             }
         }
         
+        // Helper: trigger download for PDF blobs (iframes don't work on mobile Safari)
+        function triggerBlobDownload(blobUrl, filename) {
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = filename || 'report.pdf';
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+        }
+
         let _transitActionInProgress = false;
         async function downloadTransitPDFAdmin(claimId) {
             try {
@@ -2238,12 +2250,7 @@ try {
                 if (!resp.ok) { console.error('Transit PDF not available'); return; }
                 const blob = await resp.blob();
                 const url = URL.createObjectURL(blob);
-                const overlay = createReceiptOverlay(url, function() { URL.revokeObjectURL(url); });
-                const iframe = document.createElement('iframe');
-                iframe.src = url;
-                iframe.style.cssText = 'width:95vw;height:90vh;border:none;border-radius:8px;background:#fff;';
-                overlay.appendChild(iframe);
-                document.body.appendChild(overlay);
+                triggerBlobDownload(url, `transit-benefit-${claimId}.pdf`);
             } catch (e) { console.error('Failed to download transit PDF', e); }
         }
 
@@ -2259,18 +2266,16 @@ try {
                 const contentType = resp.headers.get('Content-Type') || '';
                 const blob = await resp.blob();
                 const url = URL.createObjectURL(blob);
+                if (contentType === 'application/pdf') {
+                    triggerBlobDownload(url, 'transit-receipt.pdf');
+                    return;
+                }
                 const overlay = createReceiptOverlay(url, function() { URL.revokeObjectURL(url); });
-                
                 if (contentType.startsWith('image/')) {
                     const img = document.createElement('img');
                     img.src = url;
                     img.style.cssText = 'max-width:95vw;max-height:90vh;border-radius:8px;';
                     overlay.appendChild(img);
-                } else if (contentType === 'application/pdf') {
-                    const iframe = document.createElement('iframe');
-                    iframe.src = url;
-                    iframe.style.cssText = 'width:95vw;height:90vh;border:none;border-radius:8px;background:#fff;';
-                    overlay.appendChild(iframe);
                 } else {
                     const dlLink = document.createElement('a');
                     dlLink.href = url; dlLink.download = 'receipt';
@@ -2482,12 +2487,7 @@ try {
                 if (!resp.ok) { console.error('Phone PDF not available'); return; }
                 const blob = await resp.blob();
                 const url = URL.createObjectURL(blob);
-                const overlay = createReceiptOverlay(url, function() { URL.revokeObjectURL(url); });
-                const iframe = document.createElement('iframe');
-                iframe.src = url;
-                iframe.style.cssText = 'width:95vw;height:90vh;border:none;border-radius:8px;background:#fff;';
-                overlay.appendChild(iframe);
-                document.body.appendChild(overlay);
+                triggerBlobDownload(url, `phone-benefit-${claimId}.pdf`);
             } catch (e) { console.error('Failed to download phone PDF', e); }
         }
 
@@ -2517,22 +2517,19 @@ try {
                         overlay.appendChild(img);
                         document.body.appendChild(overlay);
                     } else {
-                        // Use iframe/download in modal instead of window.open (popup-blocked on mobile)
-                        const overlay = createReceiptOverlay(url, function() { URL.revokeObjectURL(url); });
+                        // Download PDFs, show overlay for other types
                         if (contentType === 'application/pdf') {
-                            const iframe = document.createElement('iframe');
-                            iframe.src = url;
-                            iframe.style.cssText = 'width:95vw;height:90vh;border:none;border-radius:8px;background:#fff;';
-                            overlay.appendChild(iframe);
+                            triggerBlobDownload(url, r.file_name || 'receipt.pdf');
                         } else {
+                            const overlay = createReceiptOverlay(url, function() { URL.revokeObjectURL(url); });
                             const dlLink = document.createElement('a');
                             dlLink.href = url;
                             dlLink.download = r.file_name || 'receipt';
                             dlLink.style.cssText = 'color:#fff;font-size:18px;text-decoration:underline;padding:20px;';
                             dlLink.textContent = '\u2B07 Download ' + (r.file_name || 'receipt');
                             overlay.appendChild(dlLink);
+                            document.body.appendChild(overlay);
                         }
-                        document.body.appendChild(overlay);
                     }
                 }
             } catch (e) {
@@ -2736,12 +2733,7 @@ try {
                 if (!resp.ok) { console.error('HWA PDF not available'); return; }
                 const blob = await resp.blob();
                 const url = URL.createObjectURL(blob);
-                const overlay = createReceiptOverlay(url, function() { URL.revokeObjectURL(url); });
-                const iframe = document.createElement('iframe');
-                iframe.src = url;
-                iframe.style.cssText = 'width:95vw;height:90vh;border:none;border-radius:8px;background:#fff;';
-                overlay.appendChild(iframe);
-                document.body.appendChild(overlay);
+                triggerBlobDownload(url, `hwa-benefit-${claimId}.pdf`);
             } catch (e) { console.error('Failed to download HWA PDF', e); }
         }
 
@@ -2761,17 +2753,16 @@ try {
                     const contentType = rResp.headers.get('Content-Type') || '';
                     const blob = await rResp.blob();
                     const url = URL.createObjectURL(blob);
+                    if (contentType === 'application/pdf') {
+                        triggerBlobDownload(url, r.file_name || 'receipt.pdf');
+                        continue;
+                    }
                     const overlay = createReceiptOverlay(url, function() { URL.revokeObjectURL(url); });
                     if (contentType.startsWith('image/')) {
                         const img = document.createElement('img');
                         img.src = url;
                         img.style.cssText = 'max-width:95vw;max-height:90vh;border-radius:8px;';
                         overlay.appendChild(img);
-                    } else if (contentType === 'application/pdf') {
-                        const iframe = document.createElement('iframe');
-                        iframe.src = url;
-                        iframe.style.cssText = 'width:95vw;height:90vh;border:none;border-radius:8px;background:#fff;';
-                        overlay.appendChild(iframe);
                     } else {
                         const dlLink = document.createElement('a');
                         dlLink.href = url; dlLink.download = r.file_name || 'receipt';
@@ -3926,17 +3917,16 @@ try {
                 if (!resp.ok) { console.error('Expense receipt not found, status:', resp.status); return; }
                 const blob = await resp.blob();
                 const url = URL.createObjectURL(blob);
+                if (blob.type === 'application/pdf') {
+                    triggerBlobDownload(url, 'expense-receipt.pdf');
+                    return;
+                }
                 const overlay = createReceiptOverlay(url, function() { URL.revokeObjectURL(url); });
                 if (blob.type && blob.type.startsWith('image/')) {
                     const img = document.createElement('img');
                     img.src = url;
                     img.style.cssText = 'max-width:90%;max-height:90%;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.5);';
                     overlay.appendChild(img);
-                } else if (blob.type === 'application/pdf') {
-                    const iframe = document.createElement('iframe');
-                    iframe.src = url;
-                    iframe.style.cssText = 'width:95vw;height:90vh;border:none;border-radius:8px;background:#fff;';
-                    overlay.appendChild(iframe);
                 } else {
                     const dlLink = document.createElement('a');
                     dlLink.href = url; dlLink.download = 'receipt';
