@@ -3052,9 +3052,70 @@
             });
         }
         
+        // === Shared receipt/PDF helpers ===
+        function createReceiptOverlay(url, onClose) {
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:10000;display:flex;align-items:center;justify-content:center;cursor:pointer;';
+            const closeBtn = document.createElement('div');
+            closeBtn.innerHTML = '✕';
+            closeBtn.style.cssText = 'position:fixed;top:12px;right:16px;z-index:10002;width:36px;height:36px;background:#dc3545;color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:bold;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.4);';
+            document.body.appendChild(closeBtn);
+            const close = function() {
+                if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+                if (closeBtn.parentNode) closeBtn.parentNode.removeChild(closeBtn);
+                if (onClose) onClose();
+            };
+            closeBtn.onclick = function(e) { e.stopPropagation(); close(); };
+            overlay.onclick = close;
+            return overlay;
+        }
+
+        function triggerBlobDownload(blobUrl, filename) {
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = filename || 'report.pdf';
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+        }
+
+        async function viewExpenseReceipt(expenseId) {
+            try {
+                const resp = await fetch(`/api/expense-claims/${expenseId}/receipt`, {
+                    headers: { 'Authorization': 'Bearer ' + sessionId }
+                });
+                if (!resp.ok) { console.error('Expense receipt not found, status:', resp.status); return; }
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                if (blob.type === 'application/pdf') {
+                    triggerBlobDownload(url, 'expense-receipt.pdf');
+                    return;
+                }
+                const overlay = createReceiptOverlay(url, function() { URL.revokeObjectURL(url); });
+                if (blob.type && blob.type.startsWith('image/')) {
+                    const img = document.createElement('img');
+                    img.src = url;
+                    img.style.cssText = 'max-width:90%;max-height:90%;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.5);';
+                    overlay.appendChild(img);
+                } else {
+                    const dlLink = document.createElement('a');
+                    dlLink.href = url; dlLink.download = 'receipt';
+                    dlLink.style.cssText = 'color:#fff;font-size:18px;text-decoration:underline;padding:20px;';
+                    dlLink.textContent = '⬇ Download receipt';
+                    overlay.appendChild(dlLink);
+                }
+                document.body.appendChild(overlay);
+            } catch(e) { console.error('Error loading expense receipt:', e); }
+        }
+
         // Download existing transit PDF
         function downloadTransitPDF(claimId) {
-            window.open(`/api/transit-claims/${claimId}/pdf?auth=${sessionId}`, '_blank');
+            fetch(`/api/transit-claims/${claimId}/pdf`, { headers: { 'Authorization': 'Bearer ' + sessionId } })
+                .then(r => { if (!r.ok) throw new Error('PDF not available'); return r.blob(); })
+                .then(b => { const u = URL.createObjectURL(b); triggerBlobDownload(u, 'transit-report.pdf'); })
+                .catch(e => console.error('Transit PDF error:', e));
         }
 
         async function downloadClaimPDF(claimGroup) {
@@ -3062,16 +3123,18 @@
                 const resp = await fetch(`/api/expense-claims/group/${encodeURIComponent(claimGroup)}/pdf`, {
                     headers: { 'Authorization': 'Bearer ' + sessionId }
                 });
-                if (!resp.ok) { const err = await resp.json().catch(() => ({})); alert(err.error || 'PDF not available'); return; }
+                if (!resp.ok) { console.error('PDF not available'); return; }
                 const blob = await resp.blob();
                 const url = URL.createObjectURL(blob);
-                window.open(url, '_blank');
-                setTimeout(() => URL.revokeObjectURL(url), 30000);
-            } catch(e) { alert('Error downloading PDF: ' + e.message); }
+                triggerBlobDownload(url, 'expense-report.pdf');
+            } catch(e) { console.error('Error downloading PDF:', e); }
         }
 
         function downloadTripPDF(tripId) {
-            window.open(`/api/trips/${tripId}/report?token=${sessionId}`, '_blank');
+            fetch(`/api/trips/${tripId}/report`, { headers: { 'Authorization': 'Bearer ' + sessionId } })
+                .then(r => { if (!r.ok) throw new Error('PDF not available'); return r.blob(); })
+                .then(b => { const u = URL.createObjectURL(b); triggerBlobDownload(u, 'trip-report.pdf'); })
+                .catch(e => console.error('Trip PDF error:', e));
         }
         
         // Generate PDF retroactively for old approved claim
@@ -5978,25 +6041,36 @@
                             <table style="width:100%;border-collapse:collapse;font-size:13px;">
                                 <thead>
                                     <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
-                                        <th style="padding:10px 12px;text-align:left;color:#64748b;font-weight:600;">Date</th>
                                         <th style="padding:10px 12px;text-align:left;color:#64748b;font-weight:600;">Category</th>
                                         <th style="padding:10px 12px;text-align:right;color:#64748b;font-weight:600;">Amount</th>
-                                        <th style="padding:10px 12px;text-align:left;color:#64748b;font-weight:600;">Description</th>
+                                        <th style="padding:10px 12px;text-align:left;color:#64748b;font-weight:600;">Details</th>
+                                        <th style="padding:10px 12px;text-align:center;color:#64748b;font-weight:600;">Receipt</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    ${trip.expenses.map(e => `
+                                    ${trip.expenses.map(e => {
+                                        const isPerDiem = ['breakfast','lunch','dinner','incidentals'].includes(e.expense_type);
+                                        const isKm = e.expense_type === 'mileage' || e.expense_type === 'kilometric';
+                                        const noReceiptNeeded = isPerDiem || isKm;
+                                        const hasReceipt = e.has_receipt || e.receipt_photo;
+                                        const receiptCell = noReceiptNeeded
+                                            ? '<span style="color:#999;">N/A</span>'
+                                            : hasReceipt
+                                                ? `<span onclick="viewExpenseReceipt(${e.id})" style="color:#2196f3;text-decoration:underline;cursor:pointer;">📎 View</span>`
+                                                : '<span style="color:#dc3545;">⚠️ Missing</span>';
+                                        const details = e.vendor ? sanitizeForDisplay(e.vendor) : (sanitizeForDisplay(e.description || ''));
+                                        return `
                                         <tr style="border-bottom:1px solid #f1f5f9;">
-                                            <td style="padding:8px 12px;color:#475569;">${fmtDate(e.date)}</td>
                                             <td style="padding:8px 12px;color:#1e293b;font-weight:500;">${capitalize(e.meal_name || e.expense_type || '')}</td>
                                             <td style="padding:8px 12px;text-align:right;color:#059669;font-weight:600;">$${parseFloat(e.amount).toFixed(2)}</td>
-                                            <td style="padding:8px 12px;color:#64748b;">${sanitizeForDisplay(e.description || '')}</td>
-                                        </tr>
-                                    `).join('')}
+                                            <td style="padding:8px 12px;color:#64748b;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${details}</td>
+                                            <td style="padding:8px 12px;text-align:center;">${receiptCell}</td>
+                                        </tr>`;
+                                    }).join('')}
                                     <tr style="background:#f0fdf4;border-top:2px solid #e2e8f0;">
-                                        <td colspan="2" style="padding:10px 12px;font-weight:700;color:#1e293b;">TOTAL</td>
+                                        <td style="padding:10px 12px;font-weight:700;color:#1e293b;">TOTAL</td>
                                         <td style="padding:10px 12px;text-align:right;font-weight:700;color:#059669;font-size:14px;">$${tripTotal.toFixed(2)}</td>
-                                        <td style="padding:10px 12px;"></td>
+                                        <td colspan="2" style="padding:10px 12px;"></td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -6065,27 +6139,28 @@
                         ungrouped.push(exp);
                     }
                 });
-                // Render claim groups
-                const catIcons = { 'purchase': '🛒', 'kilometric': '🚗', 'parking': '🅿️', 'other': '📋' };
+                const catIcons = { 'purchase': '🛒', 'kilometric': '🚗', 'parking': '🅿️', 'other': '📋', 'phone_telecom': '📱', 'software': '💻', 'professional_dev': '🎓', 'internet': '🌐' };
+                // Render claim groups as collapsible cards
                 Object.entries(claimGroups).forEach(([cgId, exps]) => {
                     const total = exps.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
                     const descMatch = (exps[0].description || '').match(/^\[(.+?)\]/);
-                    const purpose = descMatch ? descMatch[1] : cgId;
+                    const purpose = descMatch ? descMatch[1] : 'Expense Claim';
                     const statuses = [...new Set(exps.map(e => e.status))];
                     const allApproved = statuses.length === 1 && statuses[0] === 'approved';
                     const overallStatus = allApproved ? 'approved' : statuses.includes('pending') ? 'pending' : statuses[0];
                     const pdfBtn = allApproved ? `<button onclick="event.stopPropagation();downloadClaimPDF('${cgId}')" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>` : '';
+                    const cardId = 'claim-' + cgId.replace(/[^a-zA-Z0-9]/g, '-');
+                    const empName = exps[0].employee_name || '';
                     html += `
-                    <div style="background:#fff;border-radius:10px;padding:14px 18px;margin-bottom:10px;border-left:4px solid #4a90e2;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                    <div style="margin-bottom:12px;">
+                        <div onclick="toggleTripExpenses('${cardId}')" style="background:linear-gradient(135deg,#f8f9ff 0%,#eef1f8 100%);padding:14px 18px;border-radius:12px;border-left:4px solid #4a90e2;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" role="button" aria-expanded="false">
                             <div>
-                                <strong style="color:#1e293b;font-size:14px;">📦 ${purpose}</strong>
+                                <strong style="font-size:15px;color:#1e293b;">
+                                    <span id="${cardId}-arrow" style="display:inline-block;transition:transform 0.2s;margin-right:4px;">▶</span>
+                                    🧾 ${sanitizeForDisplay(purpose)}
+                                </strong>
                                 <div style="font-size:13px;color:#64748b;margin-top:3px;">
-                                    ${exps.length} item${exps.length > 1 ? 's' : ''} · <strong style="color:#059669;">$${total.toFixed(2)}</strong>
-                                    ${exps[0].date ? ` · ${fmtDate(exps[0].date)}` : ''}
-                                </div>
-                                <div style="font-size:12px;color:#888;margin-top:4px;">
-                                    ${exps.map(e => { const icon = catIcons[e.expense_type] || '📋'; return `${icon} ${e.category || e.expense_type}: $${parseFloat(e.amount).toFixed(2)}`; }).join(' · ')}
+                                    ${empName ? sanitizeForDisplay(empName) + ' · ' : ''}${exps[0].date ? fmtDate(exps[0].date, true) + ' · ' : ''}${exps.length} item${exps.length > 1 ? 's' : ''} · <strong style="color:#059669;">$${total.toFixed(2)}</strong>
                                 </div>
                             </div>
                             <div style="display:flex;align-items:center;gap:8px;">
@@ -6093,11 +6168,79 @@
                                 ${statusBadge(overallStatus)}
                             </div>
                         </div>
+                        <div id="${cardId}" style="display:none;border-radius:0 0 12px 12px;overflow:hidden;background:#fff;border:1px solid #e2e8f0;border-top:none;">
+                            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                                <thead>
+                                    <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
+                                        <th style="padding:10px 12px;text-align:left;color:#64748b;font-weight:600;">Category</th>
+                                        <th style="padding:10px 12px;text-align:right;color:#64748b;font-weight:600;">Amount</th>
+                                        <th style="padding:10px 12px;text-align:left;color:#64748b;font-weight:600;">Details</th>
+                                        <th style="padding:10px 12px;text-align:center;color:#64748b;font-weight:600;">Receipt</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${exps.map(e => {
+                                        const icon = catIcons[e.expense_type] || '📋';
+                                        const isKm = e.expense_type === 'kilometric';
+                                        const kmMatch = e.description && e.description.match(/(\d+(?:\.\d+)?)km/);
+                                        const hasReceipt = e.has_receipt || e.receipt_photo;
+                                        const receiptCell = isKm
+                                            ? '<span style="color:#999;">N/A</span>'
+                                            : hasReceipt
+                                                ? `<span onclick="viewExpenseReceipt(${e.id})" style="color:#2196f3;text-decoration:underline;cursor:pointer;">📎 View</span>`
+                                                : '<span style="color:#dc3545;">⚠️ Missing</span>';
+                                        const details = isKm && kmMatch ? `${kmMatch[1]} km` : (e.vendor ? sanitizeForDisplay(e.vendor) : '');
+                                        const label = capitalize(e.category || e.expense_type || '');
+                                        return `
+                                        <tr style="border-bottom:1px solid #f1f5f9;">
+                                            <td style="padding:8px 12px;color:#1e293b;font-weight:500;">${icon} ${label}</td>
+                                            <td style="padding:8px 12px;text-align:right;color:#059669;font-weight:600;">$${parseFloat(e.amount).toFixed(2)}</td>
+                                            <td style="padding:8px 12px;color:#64748b;">${details}</td>
+                                            <td style="padding:8px 12px;text-align:center;">${receiptCell}</td>
+                                        </tr>`;
+                                    }).join('')}
+                                    <tr style="background:#f0fdf4;border-top:2px solid #e2e8f0;">
+                                        <td style="padding:10px 12px;font-weight:700;color:#1e293b;">TOTAL</td>
+                                        <td style="padding:10px 12px;text-align:right;font-weight:700;color:#059669;font-size:14px;">$${total.toFixed(2)}</td>
+                                        <td colspan="2"></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>`;
                 });
-                // Render ungrouped
+                // Render ungrouped as single-item collapsible cards
                 ungrouped.forEach(exp => {
-                    html += renderExpenseItem(exp);
+                    if (exp._isTransit || exp._isPhone || exp._isHwa) {
+                        html += renderExpenseItem(exp);
+                        return;
+                    }
+                    const icon = catIcons[exp.expense_type] || '📋';
+                    const isKm = exp.expense_type === 'kilometric';
+                    const hasReceipt = exp.has_receipt || exp.receipt_photo;
+                    const receiptCell = isKm
+                        ? '<span style="color:#999;">N/A</span>'
+                        : hasReceipt
+                            ? `<span onclick="viewExpenseReceipt(${exp.id})" style="color:#2196f3;text-decoration:underline;cursor:pointer;">📎 View</span>`
+                            : '<span style="color:#dc3545;">⚠️ Missing</span>';
+                    const label = capitalize(exp.category || exp.meal_name || exp.expense_type || '');
+                    html += `
+                    <div style="background:#fff;border-radius:10px;padding:14px 18px;margin-bottom:10px;border-left:4px solid #94a3b8;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                            <div>
+                                <strong style="color:#1e293b;font-size:14px;">${icon} ${label}</strong>
+                                <div style="font-size:13px;color:#64748b;margin-top:3px;">
+                                    <strong style="color:#059669;">$${parseFloat(exp.amount).toFixed(2)}</strong>
+                                    ${exp.vendor ? ' — ' + sanitizeForDisplay(exp.vendor) : ''}
+                                    ${exp.date ? ` · ${fmtDate(exp.date, true)}` : ''}
+                                </div>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                ${receiptCell}
+                                ${statusBadge(exp.status)}
+                            </div>
+                        </div>
+                    </div>`;
                 });
             }
 
