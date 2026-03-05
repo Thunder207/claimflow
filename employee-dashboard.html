@@ -5774,6 +5774,35 @@
                     }
                 } catch (e) { console.log('Phone history load skipped:', e); }
 
+                // Also load HWA claims and merge them in
+                try {
+                    const hwaResp = await apiCall('/api/hwa-claims/history');
+                    if (hwaResp.ok) {
+                        const hwaData = await hwaResp.json();
+                        const hwaClaims = (hwaData || []).map(hc => ({
+                            id: 'hwa-' + hc.id,
+                            _hwaId: hc.id,
+                            _isHwa: true,
+                            category: 'Health & Wellness',
+                            expense_type: '💪 Health & Wellness',
+                            meal_name: '',
+                            amount: hc.claim_amount,
+                            date: hc.approved_date || hc.submitted_date || hc.created_at,
+                            vendor: hc.vendor || 'Wellness',
+                            description: `${sanitizeForDisplay(hc.description || '')} — $${parseFloat(hc.claim_amount).toFixed(2)}`,
+                            status: hc.status,
+                            rejection_reason: hc.rejection_reason || '',
+                            approval_comment: '',
+                            return_reason: '',
+                            location: '',
+                            trip_name: null,
+                            report_ref: hc.report_ref || null,
+                            has_pdf: !!(hc.report_generated_at)
+                        }));
+                        sanitizedExpenses.push(...hwaClaims);
+                    }
+                } catch (e) { console.log('HWA history load skipped:', e); }
+
                 // Sort by date descending
                 sanitizedExpenses.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
@@ -5868,7 +5897,7 @@
             const standalone = [];  // everything else
 
             expenses.forEach(exp => {
-                if (exp._isTransit || exp._isPhone) {
+                if (exp._isTransit || exp._isPhone || exp._isHwa) {
                     benefits.push(exp);
                 } else if (exp.trip_name) {
                     if (!trips[exp.trip_name]) {
@@ -5983,6 +6012,13 @@
                         borderColor = '#7c4dff';
                         if (b.has_pdf && b.status === 'approved') {
                             pdfBtn = `<button onclick="event.stopPropagation();downloadPhonePDF(${b._phoneId})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`;
+                        }
+                    } else if (b._isHwa) {
+                        icon = '💪';
+                        label = 'Health & Wellness';
+                        borderColor = '#10b981';
+                        if (b.has_pdf && b.status === 'approved') {
+                            pdfBtn = `<button onclick="event.stopPropagation();downloadHwaPDF(${b._hwaId})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`;
                         }
                     } else if (b._isTransit) {
                         if (b.has_pdf && b.status === 'approved') {
@@ -6122,6 +6158,33 @@
                                     📅 ${expense.date ? new Date(expense.date).toLocaleDateString() : '—'} • ${sanitizeForDisplay(expense.description)}
                                 </div>
                                 ${expense.report_ref ? `<div style="font-size: 12px; color: #6c757d; margin-top: 4px;">📄 Ref: ${expense.report_ref}</div>` : ''}
+                                ${expense.rejection_reason ? `<div style="font-size: 12px; color: #721c24; margin-top: 4px; padding: 6px 10px; background: #f8d7da; border-radius: 6px;">❌ <strong>Rejected:</strong> ${sanitizeForDisplay(expense.rejection_reason)}</div>` : ''}
+                                ${pdfBtn}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // HWA claim rendering
+            if (expense._isHwa) {
+                const pdfBtn = expense.has_pdf 
+                    ? `<button onclick="downloadHwaPDF(${expense._hwaId})" style="background:#667eea;color:white;border:none;padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600;margin-top:6px;">📄 Download PDF</button>`
+                    : '';
+                return `
+                    <div class="expense-item" style="margin: 0; border-radius: 0; border-top: 1px solid #eee; border-left: 3px solid #10b981;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 15px; flex-wrap: wrap;">
+                            <div style="flex-grow: 1;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <div style="font-weight: bold; color: #2c3e50; font-size: 15px;">
+                                        💪 Health & Wellness
+                                        <span style="color: #10b981; font-size: 16px; font-weight: bold; margin-left: 8px;">$${parseFloat(expense.amount).toFixed(2)}</span>
+                                    </div>
+                                    <span class="status-badge ${statusClass}">${statusText}</span>
+                                </div>
+                                <div style="color: #666; font-size: 13px;">
+                                    📅 ${expense.date ? new Date(expense.date).toLocaleDateString() : '—'} • ${sanitizeForDisplay(expense.vendor || '')} ${expense.description ? '— ' + sanitizeForDisplay(expense.description) : ''}
+                                </div>
                                 ${expense.rejection_reason ? `<div style="font-size: 12px; color: #721c24; margin-top: 4px; padding: 6px 10px; background: #f8d7da; border-radius: 6px;">❌ <strong>Rejected:</strong> ${sanitizeForDisplay(expense.rejection_reason)}</div>` : ''}
                                 ${pdfBtn}
                             </div>
