@@ -4734,6 +4734,7 @@ app.get('/api/travel-auth', requireAuth, (req, res) => {
     } else if (req.user.role === 'supervisor') {
         if (req.query.view === 'team') {
             // 🚨 GOVERNANCE FIX: Supervisor sees ONLY direct reports (not indirect/recursive)
+            // 🎯 APPROVAL FIX: Exclude draft items - supervisors only see submitted/pending items needing approval
             query = `
                 SELECT ta.*, e.name as employee_name, s.name as approver_name,
                        (SELECT COUNT(*) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expense_count,
@@ -4741,7 +4742,7 @@ app.get('/api/travel-auth', requireAuth, (req, res) => {
                 FROM travel_authorizations ta
                 JOIN employees e ON ta.employee_id = e.id
                 LEFT JOIN employees s ON ta.approver_id = s.id
-                WHERE e.supervisor_id = ?
+                WHERE e.supervisor_id = ? AND ta.status != 'draft'
                 ORDER BY ta.created_at DESC
             `;
         } else {
