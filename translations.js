@@ -1,7 +1,7 @@
 const TRANSLATIONS = {
   en: {
     // ===== LOGIN PAGE =====
-    login_title: "ClaimFlow",
+    login_title: "💼 <span style='font-weight:800; font-size:48px; letter-spacing:-1px;'><span style='color:#FBBF24;'>Claim</span><span style='color:#FFFFFF;'>Flow</span></span>",
     login_subtitle: "NJC-Compliant Expense Management",
     login_email: "Email Address",
     login_password: "Password",
@@ -116,7 +116,7 @@ const TRANSLATIONS = {
     total_expenses: "Total Expenses",
     
     // ===== ADMIN DASHBOARD =====
-    admin_title: "🏛️ ClaimFlow",
+    admin_title: "🏛️ <span style='font-weight:800; font-size:24px; letter-spacing:-0.5px;'><span style='color:#FBBF24;'>Claim</span><span style='color:#FFFFFF;'>Flow</span></span>",
     admin_subtitle: "Comprehensive expense tracking and approval dashboard",
     sys_admin: "System Administrator",
     choose_dashboard_view: "👤 Choose Your Dashboard View",
@@ -356,7 +356,7 @@ const TRANSLATIONS = {
   
   fr: {
     // ===== PAGE DE CONNEXION =====
-    login_title: "ClaimFlow",
+    login_title: "💼 <span style='font-weight:800; font-size:48px; letter-spacing:-1px;'><span style='color:#FBBF24;'>Claim</span><span style='color:#FFFFFF;'>Flow</span></span>",
     login_subtitle: "Gestion des dépenses conforme au CNM",
     login_email: "Adresse courriel",
     login_password: "Mot de passe",
@@ -471,7 +471,7 @@ const TRANSLATIONS = {
     total_expenses: "Total des dépenses",
     
     // ===== TABLEAU DE BORD ADMIN =====
-    admin_title: "🏛️ ClaimFlow",
+    admin_title: "🏛️ <span style='font-weight:800; font-size:24px; letter-spacing:-0.5px;'><span style='color:#FBBF24;'>Claim</span><span style='color:#FFFFFF;'>Flow</span></span>",
     admin_subtitle: "Tableau de bord complet de suivi et d'approbation des dépenses",
     sys_admin: "Administrateur système",
     choose_dashboard_view: "👤 Choisissez votre vue du tableau de bord",
@@ -747,7 +747,12 @@ function applyTranslations() {
     } else if (el.tagName === 'TEXTAREA') {
       el.placeholder = translation;
     } else {
-      el.textContent = translation;
+      // Use innerHTML for translations that contain HTML styling (like login_title, admin_title)
+      if (key === 'login_title' || key === 'admin_title') {
+        el.innerHTML = translation;
+      } else {
+        el.textContent = translation;
+      }
     }
   });
   
