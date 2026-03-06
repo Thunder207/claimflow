@@ -1,7 +1,7 @@
 const TRANSLATIONS = {
   en: {
     // ===== LOGIN PAGE =====
-    login_title: "💼 <span style='font-weight:800; font-size:48px; letter-spacing:-1px;'><span style='color:#FBBF24;'>Claim</span><span style='color:#FFFFFF;'>Flow</span></span>",
+    login_title: "<span style='font-weight:800; font-size:40px; letter-spacing:-1px;'><span style='color:#FBBF24;'>Claim</span><span style='color:#FFFFFF;'>Flow</span></span>",
     login_subtitle: "NJC-Compliant Expense Management",
     login_email: "Email Address",
     login_password: "Password",
@@ -356,7 +356,7 @@ const TRANSLATIONS = {
   
   fr: {
     // ===== PAGE DE CONNEXION =====
-    login_title: "💼 <span style='font-weight:800; font-size:48px; letter-spacing:-1px;'><span style='color:#FBBF24;'>Claim</span><span style='color:#FFFFFF;'>Flow</span></span>",
+    login_title: "<span style='font-weight:800; font-size:40px; letter-spacing:-1px;'><span style='color:#FBBF24;'>Claim</span><span style='color:#FFFFFF;'>Flow</span></span>",
     login_subtitle: "Gestion des dépenses conforme au CNM",
     login_email: "Adresse courriel",
     login_password: "Mot de passe",
