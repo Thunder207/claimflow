@@ -1,0 +1,8797 @@
+// Prevent unhandled rejections from crashing the server
+const pdfDebug = { lastError: null, log: [] };
+function pdfLog(...args) { const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '); pdfDebug.log.push(new Date().toISOString().substr(11,8) + ' ' + msg); if (pdfDebug.log.length > 50) pdfDebug.log.shift(); console.log('📄', msg); }
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Unhandled Rejection:', reason);
+    pdfDebug.lastError = 'unhandledRejection: ' + String(reason && reason.stack || reason);
+});
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err);
+    pdfDebug.lastError = 'uncaughtException: ' + err.message + '\n' + err.stack;
+});
+
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const multer = require('multer');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const path = require('path');
+const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
+const NJCRatesService = require('./njc-rates-service');
+const PDFDocument = require('pdfkit');
+const nodemailer = require('nodemailer');
+
+// Simple password hashing (in production, use bcrypt)
+function hashPassword(password) {
+    return crypto.createHash('sha256').update(password + 'expense_tracker_salt').digest('hex');
+}
+
+function verifyPassword(password, hash) {
+    return hashPassword(password) === hash;
+}
+
+// Input sanitization utilities for security
+function sanitizeString(input, maxLength = 255) {
+    if (typeof input !== 'string') return '';
+    // Strip HTML tags to prevent XSS
+    input = input.replace(/<[^>]*>/g, '');
+    return input.trim().slice(0, maxLength);
+}
+
+function sanitizeAmount(input) {
+    const amount = parseFloat(input);
+    if (isNaN(amount) || amount < 0 || amount > 999999.99) {
+        throw new Error('Invalid amount');
+    }
+    return amount;
+}
+
+function validateEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email) && email.length <= 254;
+}
+
+const app = express();
+
+// Initialize NJC Rates Service
+const njcRates = new NJCRatesService();
+const port = process.env.PORT || 3000;
+
+// 📁 Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// 🛠️ Middleware
+app.use(cors({
+    origin: ['https://claimflow-e0za.onrender.com'],
+    credentials: true
+}));
+
+// Security headers
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-src 'self' blob:; object-src 'self' blob:; worker-src blob:");
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    // Prevent caching of HTML pages so users always get latest version
+    if (req.path.endsWith('.html') || req.path === '/' || req.path === '/admin' || req.path === '/login') {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+    }
+    next();
+});
+
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
+
+// Force no-cache on all responses to prevent stale page issues
+app.use((req, res, next) => {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.set('Surrogate-Control', 'no-store');
+    next();
+});
+
+// 🔒 SECURE STATIC FILE SERVING
+// Block direct access to HTML files - force proper authentication flow
+app.use((req, res, next) => {
+    // Block direct access to HTML files that could bypass authentication
+    if (req.path.endsWith('.html') && !req.path.includes('/uploads/')) {
+
+        return res.redirect('/login');
+    }
+    next();
+});
+
+app.use('/uploads', express.static('uploads'));
+
+// Serve translations.js explicitly for bilingual support
+app.get('/translations.js', (req, res) => {
+    res.sendFile(path.join(__dirname, 'translations.js'));
+});
+
+app.use(express.static(__dirname));
+
+// Session management (simple in-memory for demo)
+const sessions = new Map();
+
+function generateSessionId() {
+    return crypto.randomBytes(32).toString('hex');
+}
+
+function createSession(employeeId, role = 'employee') {
+    const sessionId = generateSessionId();
+    sessions.set(sessionId, {
+        employeeId,
+        role,
+        createdAt: new Date(),
+        lastActive: new Date()
+    });
+    return sessionId;
+}
+
+function getSession(sessionId) {
+    const session = sessions.get(sessionId);
+    if (session) {
+        // Check if session has expired (8 hours = 8 * 60 * 60 * 1000 ms)
+        const SESSION_TIMEOUT = 8 * 60 * 60 * 1000; // 8 hours
+        const now = new Date();
+        const timeSinceLastActive = now - session.lastActive;
+        
+        if (timeSinceLastActive > SESSION_TIMEOUT) {
+
+            sessions.delete(sessionId);
+            return null;
+        }
+        
+        session.lastActive = now;
+        return session;
+    }
+    return null;
+}
+
+function clearSession(sessionId) {
+    sessions.delete(sessionId);
+}
+
+// 🔍 QA AGENT HEALTH CHECK ENDPOINTS (No Auth Required)
+app.get('/api/health/database', (req, res) => {
+    try {
+        db.get("SELECT COUNT(*) as count FROM employees", (err, row) => {
+            if (err) {
+                return res.status(500).json({ error: 'Database connection failed', details: err.message });
+            }
+            res.json({ status: 'healthy', employees: row.count });
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Database test failed', details: error.message });
+    }
+});
+
+app.get('/api/health/tables', (req, res) => {
+    const tables = ['employees', 'expenses', 'trips', 'njc_rates'];
+    const results = {};
+    
+    Promise.all(tables.map(table => {
+        return new Promise((resolve) => {
+            db.get(`SELECT COUNT(*) as count FROM ${table}`, (err, row) => {
+                results[table] = err ? { error: err.message } : { count: row.count };
+                resolve();
+            });
+        });
+    })).then(() => {
+        res.json({ status: 'healthy', tables: results });
+    });
+});
+
+app.get('/api/health/system', (req, res) => {
+    res.json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        version: '1.0.0',
+        node_version: process.version,
+        uptime: process.uptime()
+    });
+});
+
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'healthy',
+        message: 'Government Employee Expense Tracker is running',
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Authentication middleware
+function requireAuth(req, res, next) {
+    const sessionId = req.headers.authorization?.replace('Bearer ', '');
+    const session = getSession(sessionId);
+    
+    if (!session) {
+        return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    req.user = session;
+    next();
+}
+
+function requireRole(...roles) {
+    return (req, res, next) => {
+        if (roles.includes(req.user.role) || req.user.role === 'admin') {
+            return next();
+        }
+        return res.status(403).json({ error: 'Insufficient permissions' });
+    };
+}
+
+// 📷 Configure multer for file uploads
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        // Bug 3 Fix: Ensure uploads directory exists at upload time
+        if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+        cb(null, uploadsDir);
+    },
+    filename: function (req, file, cb) {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, 'receipt-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({ 
+    storage: storage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    fileFilter: function (req, file, cb) {
+        const allowedTypes = /jpeg|jpg|png|gif|webp|pdf/;
+        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        const mimetype = allowedTypes.test(file.mimetype) || file.mimetype === 'application/pdf';
+        
+        if (mimetype && extname) {
+            return cb(null, true);
+        } else {
+            cb(new Error('Only image files (JPEG, PNG, GIF, WebP) and PDFs are allowed'));
+        }
+    }
+});
+
+// 🗄️ Database connection
+const db = new sqlite3.Database('expenses.db', (err) => {
+    if (err) {
+        console.error('❌ Database connection failed:', err.message);
+    } else {
+        console.log('✅ Connected to SQLite database');
+        initializeDatabase();
+    }
+});
+
+// 📊 Initialize database schema
+function initializeDatabase() {
+    const queries = [
+        // Employees table (enhanced with auth and delegation)
+        `CREATE TABLE IF NOT EXISTS employees (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            employee_number TEXT UNIQUE,
+            email TEXT UNIQUE,
+            password_hash TEXT,
+            position TEXT,
+            department TEXT,
+            supervisor_id INTEGER,
+            is_active INTEGER DEFAULT 1,
+            role TEXT DEFAULT 'employee',
+            delegate_id INTEGER,
+            delegation_start_date DATE,
+            delegation_end_date DATE,
+            delegation_reason TEXT,
+            last_login DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (supervisor_id) REFERENCES employees (id),
+            FOREIGN KEY (delegate_id) REFERENCES employees (id)
+        )`,
+        
+        // 🧳 Trips table - For grouping expenses (like Concur expense reports)
+        `CREATE TABLE IF NOT EXISTS trips (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            trip_name TEXT NOT NULL,
+            destination TEXT,
+            purpose TEXT,
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            status TEXT DEFAULT 'draft',
+            total_amount DECIMAL(10,2) DEFAULT 0.00,
+            submitted_at DATETIME,
+            justification TEXT DEFAULT NULL,
+            approved_by TEXT,
+            approved_at DATETIME,
+            approval_comment TEXT,
+            rejection_reason TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees (id)
+        )`,
+        
+        // Expenses table (enhanced with trip association)
+        `CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_name TEXT NOT NULL,
+            employee_id INTEGER,
+            trip_id INTEGER,
+            expense_type TEXT NOT NULL,
+            meal_name TEXT,
+            date DATE NOT NULL,
+            location TEXT,
+            amount DECIMAL(10,2) NOT NULL,
+            vendor TEXT,
+            description TEXT,
+            receipt_photo TEXT,
+            receipt_data BLOB,
+            receipt_type TEXT,
+            status TEXT DEFAULT 'pending',
+            approved_by TEXT,
+            approved_at DATETIME,
+            approval_comment TEXT,
+            rejection_reason TEXT,
+            return_reason TEXT,
+            returned_by TEXT,
+            returned_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees (id),
+            FOREIGN KEY (trip_id) REFERENCES trips (id)
+        )`,
+        
+        // Audit trail table for expense status changes
+        `CREATE TABLE IF NOT EXISTS expense_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            expense_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            actor_id INTEGER NOT NULL,
+            actor_name TEXT NOT NULL,
+            comment TEXT,
+            previous_status TEXT,
+            new_status TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (expense_id) REFERENCES expenses (id),
+            FOREIGN KEY (actor_id) REFERENCES employees (id)
+        )`,
+        
+        // Login audit trail table for security compliance
+        `CREATE TABLE IF NOT EXISTS login_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL,
+            employee_id INTEGER,
+            success INTEGER NOT NULL,
+            failure_reason TEXT,
+            ip_address TEXT,
+            user_agent TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees (id)
+        )`,
+        
+        // Employee audit trail table for governance compliance
+        `CREATE TABLE IF NOT EXISTS employee_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            field_changed TEXT,
+            old_value TEXT,
+            new_value TEXT,
+            performed_by INTEGER NOT NULL,
+            performed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees (id),
+            FOREIGN KEY (performed_by) REFERENCES employees (id)
+        )`,
+        
+        // NJC Rates table
+        // NJC rates table now managed through comprehensive rate management system
+        // See NJC-RATES-SYSTEM.md for details
+        
+        // 💰 GL Accounts table for Sage 300 mapping
+        `CREATE TABLE IF NOT EXISTS gl_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            expense_type TEXT NOT NULL UNIQUE,
+            gl_code TEXT NOT NULL,
+            gl_name TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`,
+        
+        // 🏢 Department Cost Centers table for Sage 300 mapping
+        `CREATE TABLE IF NOT EXISTS department_cost_centers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            department TEXT NOT NULL UNIQUE,
+            cost_center_code TEXT NOT NULL,
+            cost_center_name TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`,
+        `CREATE TABLE IF NOT EXISTS njc_rates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rate_type TEXT NOT NULL,
+            amount REAL NOT NULL,
+            effective_date DATE NOT NULL,
+            end_date DATE,
+            province TEXT DEFAULT 'ALL',
+            notes TEXT,
+            created_by TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`,
+        
+        // Signup tokens table for employee self-service signup
+        `CREATE TABLE IF NOT EXISTS signup_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            expires_at DATETIME NOT NULL,
+            used INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees (id)
+        )`,
+        
+        // Travel authorizations table for AT governance system
+        `CREATE TABLE IF NOT EXISTS travel_authorizations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            trip_id INTEGER,
+            destination TEXT NOT NULL,
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            purpose TEXT NOT NULL,
+            est_transport REAL DEFAULT 0,
+            est_lodging REAL DEFAULT 0,
+            est_meals REAL DEFAULT 0,
+            est_other REAL DEFAULT 0,
+            est_total REAL DEFAULT 0,
+            approver_id INTEGER,
+            status TEXT DEFAULT 'pending',
+            rejection_reason TEXT,
+            approved_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees (id),
+            FOREIGN KEY (trip_id) REFERENCES trips (id),
+            FOREIGN KEY (approver_id) REFERENCES employees (id)
+        )`,
+        
+        // App settings table
+        `CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_by INTEGER,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`,
+
+        // Expense report sequence for reference numbers
+        `CREATE TABLE IF NOT EXISTS expense_report_sequence (
+            year INTEGER PRIMARY KEY,
+            last_number INTEGER DEFAULT 0
+        )`,
+
+        // Email log for expense report distribution
+        `CREATE TABLE IF NOT EXISTS email_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trip_id INTEGER,
+            ref_number TEXT,
+            recipient_type TEXT,
+            recipient_email TEXT,
+            subject TEXT,
+            status TEXT,
+            error_message TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`,
+
+        // Variance threshold audit log
+        `CREATE TABLE IF NOT EXISTS settings_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            setting_key TEXT NOT NULL,
+            old_value TEXT,
+            new_value TEXT NOT NULL,
+            changed_by INTEGER NOT NULL,
+            changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (changed_by) REFERENCES employees(id)
+        )`,
+
+        // 🚍 Public Transit Benefit claims table
+        `CREATE TABLE IF NOT EXISTS transit_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            claim_month INTEGER NOT NULL,
+            claim_year INTEGER NOT NULL,
+            receipt_amount DECIMAL(10,2) NOT NULL,
+            claim_amount DECIMAL(10,2) NOT NULL,
+            receipt_file TEXT,
+            status TEXT DEFAULT 'draft',
+            submitted_date DATETIME,
+            approved_date DATETIME,
+            approved_by INTEGER,
+            rejection_reason TEXT,
+            expense_batch_id TEXT,
+            report_ref TEXT,
+            pdf_report BLOB,
+            report_generated_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees (id),
+            FOREIGN KEY (approved_by) REFERENCES employees (id),
+            UNIQUE(employee_id, claim_month, claim_year)
+        )`,
+
+        `CREATE TABLE IF NOT EXISTS ptb_report_sequence (
+            year INTEGER PRIMARY KEY,
+            last_number INTEGER DEFAULT 0
+        )`,
+
+        // 📱 Phone Benefit claims table
+        `CREATE TABLE IF NOT EXISTS phone_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            claim_month INTEGER NOT NULL,
+            claim_year INTEGER NOT NULL,
+            plan_receipt_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+            plan_claim_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+            device_receipt_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+            device_claim_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+            total_claim_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+            status TEXT DEFAULT 'pending',
+            submitted_date DATETIME,
+            approved_date DATETIME,
+            approved_by INTEGER,
+            rejection_reason TEXT,
+            expense_batch_id TEXT,
+            report_ref TEXT,
+            pdf_report BLOB,
+            report_generated_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees (id),
+            FOREIGN KEY (approved_by) REFERENCES employees (id),
+            UNIQUE(employee_id, claim_month, claim_year)
+        )`,
+
+        // 📱 Phone Benefit receipt files (multi-page support)
+        `CREATE TABLE IF NOT EXISTS phone_claim_receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone_claim_id INTEGER NOT NULL,
+            file_data BLOB NOT NULL,
+            file_name TEXT NOT NULL,
+            file_type TEXT NOT NULL,
+            file_size INTEGER DEFAULT 0,
+            upload_order INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (phone_claim_id) REFERENCES phone_claims (id) ON DELETE CASCADE
+        )`,
+
+        // 🚗 Transport receipts (multi-file per mode per trip)
+        `CREATE TABLE IF NOT EXISTS transport_receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trip_id INTEGER NOT NULL,
+            transport_mode TEXT NOT NULL,
+            file_data BLOB NOT NULL,
+            file_name TEXT NOT NULL,
+            file_type TEXT NOT NULL,
+            file_size INTEGER DEFAULT 0,
+            upload_order INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (trip_id) REFERENCES trips (id) ON DELETE CASCADE
+        )`,
+
+        // 📱 Phone Benefit report sequence
+        `CREATE TABLE IF NOT EXISTS phb_report_sequence (
+            year INTEGER PRIMARY KEY,
+            last_number INTEGER DEFAULT 0
+        )`,
+
+        `CREATE TABLE IF NOT EXISTS hwa_report_sequence (
+            year INTEGER PRIMARY KEY,
+            last_number INTEGER DEFAULT 0
+        )`,
+
+        // 💪 Health & Wellness Account (HWA) claims table
+        `CREATE TABLE IF NOT EXISTS hwa_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            claim_year INTEGER NOT NULL,
+            receipt_amount DECIMAL(10,2) NOT NULL,
+            claim_amount DECIMAL(10,2) NOT NULL,
+            vendor TEXT,
+            description TEXT,
+            status TEXT DEFAULT 'pending',
+            submitted_date DATETIME,
+            approved_date DATETIME,
+            approved_by TEXT,
+            rejection_reason TEXT,
+            report_ref TEXT,
+            report_generated_at DATETIME,
+            pdf_report BLOB,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees(id)
+        )`,
+
+        // 💪 HWA claim receipts (multi-file support)
+        `CREATE TABLE IF NOT EXISTS hwa_claim_receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            claim_id INTEGER NOT NULL,
+            file_data BLOB,
+            file_name TEXT,
+            file_type TEXT,
+            file_size INTEGER,
+            upload_order INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (claim_id) REFERENCES hwa_claims(id)
+        )`,
+
+        // 📦 Expense claim receipts (one per line item)
+        `CREATE TABLE IF NOT EXISTS expense_claim_receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            expense_id INTEGER NOT NULL,
+            file_data BLOB NOT NULL,
+            file_name TEXT NOT NULL,
+            file_type TEXT NOT NULL,
+            file_size INTEGER DEFAULT 0,
+            upload_order INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE CASCADE
+        )`
+    ];
+    
+    // Run queries sequentially to ensure tables exist before inserting data
+    let completedQueries = 0;
+    
+    queries.forEach(query => {
+        db.run(query, (err) => {
+            if (err) {
+                console.error('❌ Database initialization error:', err.message);
+            } else {
+                completedQueries++;
+                if (completedQueries === queries.length) {
+                    // All tables created, now insert default data
+                    setTimeout(() => insertDefaultData(), 100);
+                }
+            }
+        });
+    });
+}
+
+// 📋 Insert default data
+function insertDefaultData() {
+    // Insert sample employees with login credentials - FIXED HIERARCHY
+    const employees = [
+        ['John Smith', 'EMP001', 'john.smith@company.com', hashPassword('manager123'), 'Senior Manager', 'Management', null, 'admin'],
+        ['Sarah Johnson', 'EMP002', 'sarah.johnson@company.com', hashPassword('sarah123'), 'Finance Supervisor', 'Finance', null, 'supervisor'], // Independent
+        ['Mike Davis', 'EMP003', 'mike.davis@company.com', hashPassword('mike123'), 'Accountant', 'Finance', 2, 'employee'], // Reports to Sarah
+        ['Lisa Brown', 'EMP004', 'lisa.brown@company.com', hashPassword('lisa123'), 'Operations Supervisor', 'Operations', null, 'supervisor'], // Independent  
+        ['David Wilson', 'EMP005', 'david.wilson@company.com', hashPassword('david123'), 'Operations Specialist', 'Operations', 4, 'employee'], // Reports to Lisa
+        ['Anna Lee', 'EMP006', 'anna.lee@company.com', hashPassword('anna123'), 'Project Coordinator', 'Operations', 4, 'employee'] // Reports to Lisa
+    ];
+    
+    // Insert employees sequentially to guarantee consistent IDs
+    function insertEmployeeSequential(index) {
+        if (index >= employees.length) {
+            // All employees inserted, now run migrations
+            runPostInsertMigrations();
+            return;
+        }
+        db.run(`INSERT OR IGNORE INTO employees (name, employee_number, email, password_hash, position, department, supervisor_id, role) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, employees[index], (err) => {
+            if (err && !err.message.includes('UNIQUE constraint failed')) {
+                console.error('❌ Error inserting employee:', err.message);
+            }
+            insertEmployeeSequential(index + 1);
+        });
+    }
+    insertEmployeeSequential(0);
+    
+    function runPostInsertMigrations() {
+        // CRITICAL FIX: Assign Mike Davis to Sarah Johnson as supervisor (missing in demo data)
+        db.run(`UPDATE employees SET supervisor_id = (SELECT id FROM employees WHERE email = 'sarah.johnson@company.com') 
+                WHERE employee_number = 'EMP003' AND supervisor_id IS NULL`, (err) => {
+            if (err) console.error('❌ Error fixing Mike Davis supervisor:', err.message);
+            else console.log('✅ Fixed Mike Davis supervisor assignment');
+        });
+        
+        // 🚨 GOVERNANCE FIX: Lisa Brown should be INDEPENDENT Operations supervisor, NOT report to Sarah
+        db.run(`UPDATE employees SET supervisor_id = NULL 
+                WHERE employee_number = 'EMP004'`, (err) => {
+            if (err) console.error('❌ Error making Lisa independent supervisor:', err.message);
+            else console.log('✅ Fixed Lisa Brown - now independent Operations supervisor');
+        });
+        
+        // Add category column for standalone expenses
+        db.run(`ALTER TABLE expenses ADD COLUMN category TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding category column:', err.message);
+            }
+        });
+
+        // Ensure cost_center_id column exists on employees table
+        db.run(`ALTER TABLE employees ADD COLUMN cost_center_id INTEGER`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding cost_center_id column:', err.message);
+            }
+        });
+
+        // Add details column for travel authorization per-day breakdown
+        db.run(`ALTER TABLE travel_authorizations ADD COLUMN details TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding details column:', err.message);
+            }
+        });
+
+        // Add name column to travel_authorizations if missing
+        db.run(`ALTER TABLE travel_authorizations ADD COLUMN name TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                // column already exists, fine
+            }
+        });
+
+        // Add travel_auth_id column to expenses table for estimated expenses
+        db.run(`ALTER TABLE expenses ADD COLUMN travel_auth_id INTEGER REFERENCES travel_authorizations(id)`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding travel_auth_id column:', err.message);
+            }
+        });
+        
+        db.run(`ALTER TABLE expenses ADD COLUMN receipt_data BLOB`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding receipt_data column:', err.message);
+            }
+        });
+        db.run(`ALTER TABLE expenses ADD COLUMN receipt_type TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding receipt_type column:', err.message);
+            }
+        });
+
+        db.run(`ALTER TABLE trips ADD COLUMN justification TEXT DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding justification column:', err.message);
+            }
+        });
+
+        // PDF Report columns on trips table
+        db.run(`ALTER TABLE trips ADD COLUMN pdf_report BLOB DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding pdf_report column:', err.message);
+            }
+        });
+        db.run(`ALTER TABLE trips ADD COLUMN report_ref TEXT DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding report_ref column:', err.message);
+            }
+        });
+        db.run(`ALTER TABLE trips ADD COLUMN report_generated_at TEXT DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding report_generated_at column:', err.message);
+            }
+        });
+
+        // Add claim_group column for expense claim groups
+        db.run(`ALTER TABLE expenses ADD COLUMN claim_group TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+                console.error('❌ Error adding claim_group column:', err.message);
+            }
+        });
+
+        // Add claim_group_pdf for expense claim group PDFs
+        db.run(`ALTER TABLE expenses ADD COLUMN claim_group_pdf BLOB DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {}
+        });
+
+        // Add standalone_pdf for individual expense PDFs
+        db.run(`ALTER TABLE expenses ADD COLUMN standalone_pdf BLOB DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {}
+        });
+        db.run(`ALTER TABLE expenses ADD COLUMN report_ref TEXT DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {}
+        });
+        db.run(`ALTER TABLE expenses ADD COLUMN report_generated_at DATETIME DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {}
+        });
+
+        // Transit claims PDF columns
+        db.run(`ALTER TABLE transit_claims ADD COLUMN report_ref TEXT DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {}
+        });
+        db.run(`ALTER TABLE transit_claims ADD COLUMN pdf_report BLOB DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {}
+        });
+        db.run(`ALTER TABLE transit_claims ADD COLUMN receipt_data BLOB DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) console.error('Error adding receipt_data:', err.message);
+        });
+        db.run(`ALTER TABLE transit_claims ADD COLUMN receipt_type TEXT DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) console.error('Error adding receipt_type:', err.message);
+        });
+        db.run(`ALTER TABLE transit_claims ADD COLUMN report_generated_at DATETIME DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {}
+        });
+    }
+    
+    // Seed NJC rates with historical and current periods
+    const njcRates = [
+        // 2023 rates (historical)
+        ['breakfast', 23.00, '2023-04-01', '2024-03-31', 'ALL', '2023-2024 fiscal year rates', 'system'],
+        ['lunch', 28.50, '2023-04-01', '2024-03-31', 'ALL', '2023-2024 fiscal year rates', 'system'],
+        ['dinner', 45.75, '2023-04-01', '2024-03-31', 'ALL', '2023-2024 fiscal year rates', 'system'],
+        ['incidentals', 30.50, '2023-04-01', '2024-03-31', 'ALL', '2023-2024 fiscal year rates', 'system'],
+        ['vehicle', 0.61, '2023-04-01', '2024-03-31', 'ALL', '2023-2024 fiscal year km rate', 'system'],
+        // 2024-2025 current rates
+        ['breakfast', 23.45, '2024-04-01', null, 'ALL', '2024-2025 fiscal year rates', 'system'],
+        ['lunch', 29.75, '2024-04-01', null, 'ALL', '2024-2025 fiscal year rates', 'system'],
+        ['dinner', 47.05, '2024-04-01', null, 'ALL', '2024-2025 fiscal year rates', 'system'],
+        ['incidentals', 32.08, '2024-04-01', null, 'ALL', '2024-2025 fiscal year rates', 'system'],
+        ['vehicle', 0.68, '2024-04-01', null, 'ALL', '2024-2025 fiscal year km rate', 'system'],
+    ];
+
+    njcRates.forEach(rate => {
+        db.run(`INSERT OR IGNORE INTO njc_rates (rate_type, amount, effective_date, end_date, province, notes, created_by) 
+                VALUES (?, ?, ?, ?, ?, ?, ?)`, rate, (err) => {
+            if (err && !err.message.includes('UNIQUE constraint failed')) {
+                console.error('❌ Error inserting NJC rate:', err.message);
+            }
+        });
+    });
+
+    // Insert default GL account mappings
+    const glAccounts = [
+        ['meals', '5410', 'Travel - Meals'],
+        ['hotel', '5420', 'Travel - Accommodation'],
+        ['vehicle', '5430', 'Travel - Vehicle'],
+        ['incidentals', '5440', 'Travel - Incidentals'],
+        ['other', '5490', 'Travel - Other Expenses']
+    ];
+    
+    glAccounts.forEach(account => {
+        db.run(`INSERT OR IGNORE INTO gl_accounts (expense_type, gl_code, gl_name) VALUES (?, ?, ?)`, account, (err) => {
+            if (err && !err.message.includes('UNIQUE constraint failed')) {
+                console.error('❌ Error inserting GL account:', err.message);
+            }
+        });
+    });
+    
+    // Insert default department cost centers (based on existing employees)
+    const costCenters = [
+        ['Finance', '100', 'Finance Department'],
+        ['Operations', '200', 'Operations Department'], 
+        ['Engineering', '300', 'Engineering Department'],
+        ['Marketing', '400', 'Marketing Department']
+    ];
+    
+    costCenters.forEach(center => {
+        db.run(`INSERT OR IGNORE INTO department_cost_centers (department, cost_center_code, cost_center_name) VALUES (?, ?, ?)`, center, (err) => {
+            if (err && !err.message.includes('UNIQUE constraint failed')) {
+                console.error('❌ Error inserting cost center:', err.message);
+            }
+        });
+    });
+    
+    console.log('✅ Default data initialized (including Sage 300 GL mappings)');
+    
+    // Seed additional employees and demo data if DB is fresh
+    setTimeout(() => {
+        db.get('SELECT COUNT(*) as count FROM employees', (err, row) => {
+            if (row && row.count <= 6) {
+
+                const extraEmployees = [
+                    ['Rachel Chen', 'EMP007', 'rachel.chen@company.com', hashPassword('rachel123'), 'Team Lead', 'Engineering', null, 'supervisor'],
+                    ['Marcus Thompson', 'EMP008', 'marcus.thompson@company.com', hashPassword('marcus123'), 'Team Lead', 'Marketing', null, 'supervisor'],
+                    ['Priya Patel', 'EMP009', 'priya.patel@company.com', hashPassword('priya123'), 'Team Lead', 'Finance', null, 'supervisor'],
+                    ['James Carter', 'EMP010', 'james.carter@company.com', hashPassword('james123'), 'Software Developer', 'Engineering', null, 'employee'],
+                    ['Emily Zhang', 'EMP011', 'emily.zhang@company.com', hashPassword('emily123'), 'Data Analyst', 'Engineering', null, 'employee'],
+                    ['Omar Hassan', 'EMP012', 'omar.hassan@company.com', hashPassword('omar123'), 'UX Designer', 'Engineering', null, 'employee'],
+                    ['Sophie Martin', 'EMP013', 'sophie.martin@company.com', hashPassword('sophie123'), 'Marketing Specialist', 'Marketing', null, 'employee'],
+                    ['Tyler Brooks', 'EMP014', 'tyler.brooks@company.com', hashPassword('tyler123'), 'Content Manager', 'Marketing', null, 'employee'],
+                    ['Nina Kowalski', 'EMP015', 'nina.kowalski@company.com', hashPassword('nina123'), 'Social Media Lead', 'Marketing', null, 'employee'],
+                    ['Alex Rivera', 'EMP016', 'alex.rivera@company.com', hashPassword('alex123'), 'Financial Analyst', 'Finance', null, 'employee'],
+                    ['Fatima Al-Rashid', 'EMP017', 'fatima.alrashid@company.com', hashPassword('fatima123'), 'Accountant', 'Finance', null, 'employee'],
+                    ["Ben O'Connor", 'EMP018', 'ben.oconnor@company.com', hashPassword('ben123'), 'Budget Officer', 'Finance', null, 'employee'],
+                    ['Diana Reyes', 'EMP019', 'diana.reyes@company.com', hashPassword('diana123'), 'Policy Analyst', 'Operations', null, 'employee']
+                ];
+                let inserted = 0;
+                extraEmployees.forEach(emp => {
+                    db.run(`INSERT OR IGNORE INTO employees (name, employee_number, email, password_hash, position, department, supervisor_id, role) VALUES (?,?,?,?,?,?,?,?)`, emp, (err) => {
+                        inserted++;
+                        if (inserted === extraEmployees.length) {
+                            // Fix supervisor assignments
+                            db.all('SELECT id, email FROM employees', (err, rows) => {
+                                if (!rows) return;
+                                const byEmail = {};
+                                rows.forEach(r => byEmail[r.email] = r.id);
+                                const sarah = byEmail['sarah.johnson@company.com'];
+                                const rachel = byEmail['rachel.chen@company.com'];
+                                const marcus = byEmail['marcus.thompson@company.com'];
+                                const priya = byEmail['priya.patel@company.com'];
+                                const lisa = byEmail['lisa.brown@company.com'];
+                                // Supervisors report to Sarah (top-level supervisor)
+                                if (rachel) db.run('UPDATE employees SET supervisor_id = ? WHERE id = ?', [sarah, rachel]);
+                                if (marcus) db.run('UPDATE employees SET supervisor_id = ? WHERE id = ?', [sarah, marcus]);
+                                if (priya) db.run('UPDATE employees SET supervisor_id = ? WHERE id = ?', [sarah, priya]);
+                                // Employees to their supervisors
+                                ['james.carter','emily.zhang','omar.hassan'].forEach(e => { if (byEmail[e+'@company.com']) db.run('UPDATE employees SET supervisor_id = ? WHERE id = ?', [rachel, byEmail[e+'@company.com']]); });
+                                ['sophie.martin','tyler.brooks','nina.kowalski'].forEach(e => { if (byEmail[e+'@company.com']) db.run('UPDATE employees SET supervisor_id = ? WHERE id = ?', [marcus, byEmail[e+'@company.com']]); });
+                                ['alex.rivera','fatima.alrashid','ben.oconnor'].forEach(e => { if (byEmail[e+'@company.com']) db.run('UPDATE employees SET supervisor_id = ? WHERE id = ?', [priya, byEmail[e+'@company.com']]); });
+                                if (byEmail['diana.reyes@company.com']) db.run('UPDATE employees SET supervisor_id = ? WHERE id = ?', [lisa, byEmail['diana.reyes@company.com']]);
+                                // Remove admin as supervisor
+                                const admin = byEmail['john.smith@company.com'];
+                                db.run('UPDATE employees SET supervisor_id = NULL WHERE supervisor_id = ? AND email != ?', [admin, 'sarah.johnson@company.com']);
+                                db.run('UPDATE employees SET supervisor_id = NULL WHERE email = ?', ['sarah.johnson@company.com']);
+
+                            });
+                        }
+                    });
+                });
+            }
+        });
+    }, 2000);
+    
+    // Seed default variance thresholds
+    db.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('variance_pct_threshold', '10')`, (err) => {
+        if (err && !err.message.includes('UNIQUE constraint failed')) {
+            console.error('❌ Error inserting variance_pct_threshold:', err.message);
+        }
+    });
+    db.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('variance_dollar_threshold', '100')`, (err) => {
+        if (err && !err.message.includes('UNIQUE constraint failed')) {
+            console.error('❌ Error inserting variance_dollar_threshold:', err.message);
+        }
+    });
+
+    // 🚍 Seed default transit benefit settings
+    db.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('transit_monthly_max', '100.00')`, (err) => {
+        if (err && !err.message.includes('UNIQUE constraint failed')) {
+            console.error('❌ Error inserting transit_monthly_max:', err.message);
+        }
+    });
+    db.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('transit_claim_window', '2')`, (err) => {
+        if (err && !err.message.includes('UNIQUE constraint failed')) {
+            console.error('❌ Error inserting transit_claim_window:', err.message);
+        }
+    });
+    
+    // 📱 Seed default phone benefit settings
+    db.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('phone_monthly_max', '100.00')`, (err) => {
+        if (err && !err.message.includes('UNIQUE constraint failed')) {
+            console.error('❌ Error inserting phone_monthly_max:', err.message);
+        }
+    });
+    db.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('phone_claim_window', '2')`, (err) => {
+        if (err && !err.message.includes('UNIQUE constraint failed')) {
+            console.error('❌ Error inserting phone_claim_window:', err.message);
+        }
+    });
+    
+    // 💪 Seed default HWA settings
+    db.run(`INSERT OR IGNORE INTO app_settings (key, value) VALUES ('hwa_annual_max', '500.00')`, (err) => {
+        if (err && !err.message.includes('UNIQUE constraint failed')) {
+            console.error('❌ Error inserting hwa_annual_max:', err.message);
+        }
+    });
+    
+    console.log('✅ Default variance threshold, transit, phone, and HWA benefit settings initialized');
+}
+
+// 🌐 Routes
+
+// 🔐 SECURE ROUTING - AUTHENTICATION REQUIRED
+// All routes require proper authentication flow
+
+app.get('/', (req, res) => {
+    // Always redirect to login - no bypass allowed
+    res.redirect('/login');
+});
+
+app.get('/login', (req, res) => {
+    res.sendFile(path.join(__dirname, 'login.html'));
+});
+
+// Protected employee dashboard - requires authentication
+app.get('/dashboard', (req, res) => {
+    res.sendFile(path.join(__dirname, 'employee-dashboard.html'));
+});
+
+// Protected admin panel - requires authentication 
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'admin.html'));
+});
+
+// Legacy route protection - prevent direct access to old forms
+app.get('/index.html', (req, res) => {
+    res.redirect('/login');
+});
+
+// Employee dashboard alias (for convenience)
+app.get('/employee', (req, res) => {
+    res.redirect('/dashboard');
+});
+
+// 🔐 Authentication Routes
+
+// Rate limiting for login attempts (simple in-memory solution)
+const loginAttempts = new Map();
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
+
+// Employee login with improved security
+app.post('/api/auth/login', async (req, res) => {
+    let { email, password } = req.body;
+    
+    // Input validation and sanitization
+    if (!email || !password) {
+        return res.status(400).json({
+            success: false,
+            error: 'Email and password are required'
+        });
+    }
+    
+    email = sanitizeString(email, 254);
+    
+    if (!validateEmail(email)) {
+        return res.status(400).json({
+            success: false,
+            error: 'Invalid email format'
+        });
+    }
+    
+    if (password.length > 128) {
+        return res.status(400).json({
+            success: false,
+            error: 'Password is too long'
+        });
+    }
+    
+    // Simple rate limiting check
+    const clientKey = req.ip || 'unknown';
+    const attempts = loginAttempts.get(clientKey) || { count: 0, firstAttempt: Date.now() };
+    
+    if (attempts.count >= MAX_LOGIN_ATTEMPTS) {
+        const timePassed = Date.now() - attempts.firstAttempt;
+        if (timePassed < LOCKOUT_DURATION) {
+            return res.status(429).json({
+                success: false,
+                error: 'Too many login attempts. Please try again later.'
+            });
+        } else {
+            // Reset attempts after lockout period
+            loginAttempts.delete(clientKey);
+        }
+    }
+    
+    // Find employee
+    db.get('SELECT * FROM employees WHERE email = ? AND is_active = 1', [email], (err, employee) => {
+        if (err) {
+            console.error('❌ Login error:', err);
+            return res.status(500).json({
+                success: false,
+                error: 'Login failed'
+            });
+        }
+        
+        if (!employee || !employee.password_hash || !verifyPassword(password, employee.password_hash)) {
+            // Track failed login attempt
+            attempts.count += 1;
+            attempts.firstAttempt = attempts.firstAttempt || Date.now();
+            loginAttempts.set(clientKey, attempts);
+            
+            // Log failed login attempt
+            let failureReason = 'Invalid password';
+            if (!employee) {
+                failureReason = 'User not found';
+            } else if (!employee.password_hash) {
+                failureReason = 'Account setup incomplete - user must complete signup process';
+            }
+            
+            logLoginAttempt(email, employee?.id || null, false, failureReason, 
+                req.ip || req.connection.remoteAddress, req.get('User-Agent'));
+            
+            return res.status(401).json({
+                success: false,
+                error: !employee || !employee.password_hash ? 
+                    'Account setup incomplete. Please check your email for a signup link.' :
+                    'Invalid email or password'
+            });
+        }
+        
+        // Clear login attempts on successful login
+        loginAttempts.delete(clientKey);
+        
+        // Log successful login attempt
+        logLoginAttempt(email, employee.id, true, null, 
+            req.ip || req.connection.remoteAddress, req.get('User-Agent'));
+        
+        // Update last login
+        db.run('UPDATE employees SET last_login = CURRENT_TIMESTAMP WHERE id = ?', [employee.id]);
+        
+        // Create session
+        const sessionId = createSession(employee.id, employee.role);
+
+        // Sanitize user data in response
+        res.json({
+            success: true,
+            sessionId,
+            user: {
+                id: employee.id,
+                name: sanitizeString(employee.name),
+                email: email, // Already sanitized above
+                employee_number: sanitizeString(employee.employee_number),
+                position: sanitizeString(employee.position),
+                department: sanitizeString(employee.department),
+                role: employee.role,
+                supervisor_id: employee.supervisor_id
+            }
+        });
+    });
+});
+
+// Employee logout
+app.post('/api/auth/logout', requireAuth, (req, res) => {
+    const sessionId = req.headers.authorization?.replace('Bearer ', '');
+    clearSession(sessionId);
+    
+    res.json({ success: true, message: 'Logged out successfully' });
+});
+
+// Get current user info
+app.get('/api/auth/me', requireAuth, (req, res) => {
+    db.get('SELECT id, name, email, employee_number, position, department, role, supervisor_id FROM employees WHERE id = ?', 
+        [req.user.employeeId], (err, employee) => {
+        if (err || !employee) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        res.json(employee);
+    });
+});
+
+// Create employee account (admin only)
+app.post('/api/auth/register', requireAuth, requireRole('admin'), (req, res) => {
+    const { name, employee_number, email, password, position, department, supervisor_id, role } = req.body;
+    
+    if (!name || !employee_number || !email || !password) {
+        return res.status(400).json({
+            success: false,
+            error: 'Name, employee number, email, and password are required'
+        });
+    }
+    
+    const passwordHash = hashPassword(password);
+    
+    const query = `
+        INSERT INTO employees (name, employee_number, email, password_hash, position, department, supervisor_id, role)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    
+    db.run(query, [name, employee_number, email, passwordHash, position, department, supervisor_id, role || 'employee'], function(err) {
+        if (err) {
+            if (err.message.includes('UNIQUE constraint failed')) {
+                return res.status(409).json({
+                    success: false,
+                    error: 'Employee number or email already exists'
+                });
+            }
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to create account'
+            });
+        }
+        
+        res.json({
+            success: true,
+            id: this.lastID,
+            message: 'Employee account created successfully'
+        });
+    });
+});
+
+// 📊 API Routes
+
+// Get all expenses (admin) or team expenses (supervisor)
+app.get('/api/expenses', requireAuth, (req, res) => {
+    let query;
+    let params = [];
+    
+    if (req.user.role === 'admin') {
+        // Admin sees all expenses
+        query = `
+            SELECT e.id, e.employee_name, e.employee_id, e.expense_type, e.date, e.amount, e.vendor, e.description, e.receipt_photo, e.receipt_type, e.category, e.claim_group, e.status, e.trip_id, e.created_at, e.rejection_reason, e.report_ref, e.report_generated_at,
+                   (CASE WHEN e.receipt_data IS NOT NULL THEN 1 ELSE 0 END) as has_receipt,
+                   emp.name as employee_name_from_db,
+                   emp.supervisor_id,
+                   sup.name as supervisor_name
+            FROM expenses e
+            LEFT JOIN employees emp ON e.employee_id = emp.id
+            LEFT JOIN employees sup ON emp.supervisor_id = sup.id
+            ORDER BY e.created_at DESC
+        `;
+    } else if (req.user.role === 'supervisor') {
+        // 🚨 GOVERNANCE FIX: Supervisor sees ONLY direct reports' expenses (not indirect)
+        query = `
+            SELECT e.id, e.employee_name, e.employee_id, e.expense_type, e.date, e.amount, e.vendor, e.description, e.receipt_photo, e.receipt_type, e.category, e.claim_group, e.status, e.trip_id, e.created_at, e.rejection_reason, e.report_ref, e.report_generated_at,
+                   (CASE WHEN e.receipt_data IS NOT NULL THEN 1 ELSE 0 END) as has_receipt,
+                   emp.name as employee_name_from_db,
+                   emp.supervisor_id,
+                   sup.name as supervisor_name,
+                   t.trip_name,
+                   t.start_date as trip_start,
+                   t.end_date as trip_end,
+                   t.destination as trip_destination,
+                   t.status as trip_status
+            FROM expenses e
+            LEFT JOIN employees emp ON e.employee_id = emp.id
+            LEFT JOIN employees sup ON emp.supervisor_id = sup.id
+            LEFT JOIN trips t ON e.trip_id = t.id
+            WHERE emp.supervisor_id = ?
+            ORDER BY e.created_at DESC
+        `;
+        params = [req.user.employeeId];
+    } else {
+        return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    db.all(query, params, (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching expenses:', err);
+            return res.status(500).json({ error: 'Failed to fetch expenses' });
+        }
+
+        res.json(rows);
+    });
+});
+
+// Submit new expense (authenticated employees)
+app.post('/api/expenses', requireAuth, upload.single('receipt'), async (req, res) => {
+    try {
+        let {
+            expense_type,
+            meal_name,
+            date,
+            location,
+            amount,
+            vendor,
+            description,
+            trip_id,
+            category
+        } = req.body;
+        
+        // Sanitize all string inputs
+        expense_type = sanitizeString(expense_type, 50);
+        meal_name = sanitizeString(meal_name, 100);
+        location = sanitizeString(location, 255);
+        vendor = sanitizeString(vendor, 255);
+        description = sanitizeString(description, 1000);
+        category = sanitizeString(category, 100);
+        
+        // Validate required fields
+        if (!expense_type || !date || !amount) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Please fill in all required fields: expense type, date, and amount before submitting.' 
+            });
+        }
+        
+        // Validate and sanitize amount
+        try {
+            amount = sanitizeAmount(amount);
+        } catch (error) {
+            return res.status(400).json({
+                success: false,
+                error: 'Please enter a valid amount between $0.01 and $999,999.99'
+            });
+        }
+        
+        // Validate date format and range
+        // Use date-only comparison to avoid timezone issues
+        const dateParts = date.split('-');
+        const expenseDate = new Date(Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2]));
+        const now = new Date();
+        const todayUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+        const oneYearAgo = new Date(todayUTC);
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+        
+        // Only block clearly invalid dates (> 1 year old or invalid)
+        if (isNaN(expenseDate.getTime()) || expenseDate < oneYearAgo) {
+            return res.status(400).json({
+                success: false,
+                error: 'Please enter a valid date within the last year'
+            });
+        }
+        
+        // Flag future-dated expenses (don't block — supervisor will review)
+        let isFutureDated = expenseDate > todayUTC;
+        
+        // Sanitize trip_id if provided
+        if (trip_id) {
+            trip_id = parseInt(trip_id);
+            if (isNaN(trip_id)) {
+                trip_id = null;
+            }
+        }
+    
+    // CRITICAL FIX: Validate expense type and handle common aliases
+    const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other', 'transport', 'transport_flight', 'transport_train', 'transport_bus', 'transport_rental', 'transport_taxi', 'kilometric', 'parking', 'purchase'];
+    
+    // Handle common expense type aliases
+    if (expense_type === 'meals') {
+        return res.status(400).json({
+            success: false,
+            error: 'Use specific meal types: "breakfast", "lunch", or "dinner" instead of "meals"',
+            valid_types: validExpenseTypes
+        });
+    }
+    if (expense_type === 'transport') {
+        expense_type = 'vehicle_km'; // Normalize transport to vehicle_km
+    }
+    
+    if (!validExpenseTypes.includes(expense_type)) {
+        return res.status(400).json({
+            success: false,
+            error: `Invalid expense type "${expense_type}". Allowed types: ${validExpenseTypes.join(', ')}`
+        });
+    }
+    
+    // Bug 4 Fix: Validate expense date falls within trip date range
+    if (trip_id) {
+        try {
+            const trip = await new Promise((resolve, reject) => {
+                db.get('SELECT start_date, end_date, trip_name FROM trips WHERE id = ?', [trip_id],
+                    (err, row) => err ? reject(err) : resolve(row));
+            });
+            if (trip && (date < trip.start_date || date > trip.end_date)) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Expense date ${date} is outside the trip "${trip.trip_name}" date range (${trip.start_date} to ${trip.end_date}).`
+                });
+            }
+        } catch (err) {
+            console.error('❌ Error validating expense date against trip:', err);
+        }
+    }
+    
+    // Check if this is a per diem expense type
+    const perDiemTypes = ['breakfast', 'lunch', 'dinner', 'incidentals'];
+    const isPerDiem = perDiemTypes.includes(expense_type);
+    
+    // CRITICAL: Per diem duplicate prevention — scoped to same trip
+    if (isPerDiem && trip_id) {
+        const hasDuplicate = await new Promise((resolve, reject) => {
+            db.get(
+                `SELECT COUNT(*) as count FROM expenses WHERE employee_id = ? AND expense_type = ? AND date = ? AND trip_id = ? AND status NOT IN ('rejected', 'estimate')`,
+                [req.user.employeeId, expense_type, date, trip_id],
+                (err, row) => err ? reject(err) : resolve(row.count > 0)
+            );
+        });
+        
+        if (hasDuplicate) {
+
+            return res.status(400).json({
+                success: false,
+                error: `You've already claimed ${expense_type} for ${date}. Government policy allows only one ${expense_type} per diem per day. Please check your expense history.`
+            });
+        }
+    }
+    
+    // Hotel category validation: receipt required (but not for trip Day Planner — receipt uploaded separately)
+    if (expense_type === 'hotel' && !req.file && !trip_id) {
+        return res.status(400).json({
+            success: false,
+            error: 'Hotel expenses require a receipt photo for audit compliance. Please scroll down and upload your hotel receipt before submitting.'
+        });
+    }
+    
+    // Per diem rate validation (only for trip-based expenses)
+    if (trip_id && njcRates.isPerDiem(expense_type)) {
+        try {
+            const validation = await njcRates.validatePerDiemExpense(expense_type, amount, date);
+            if (!validation.valid) {
+                return res.status(400).json({
+                    success: false,
+                    error: validation.message
+                });
+            }
+        } catch (valErr) {
+            console.error('❌ Per diem validation error:', valErr);
+            // Don't block submission on validation errors — just log
+        }
+    }
+    
+    // Vehicle km rate validation ($0.68/km — amount must be a multiple of rate, max 10,000km)
+    if (expense_type === 'vehicle_km') {
+        const ratePerKm = 0.68;
+        const impliedKm = amount / ratePerKm;
+        if (amount <= 0) {
+            return res.status(400).json({ success: false, error: 'Vehicle expense amount must be positive.' });
+        }
+        if (impliedKm > 10000) {
+            return res.status(400).json({ success: false, error: `Vehicle claim implies ${impliedKm.toFixed(0)}km — exceeds 10,000km single-trip maximum.` });
+        }
+        // Validate amount is a clean multiple of $0.68 (within rounding tolerance)
+        const remainder = amount % ratePerKm;
+        if (remainder > 0.01 && remainder < (ratePerKm - 0.01)) {
+            const suggestedKm = Math.round(amount / ratePerKm);
+            const suggestedAmount = (suggestedKm * ratePerKm).toFixed(2);
+            return res.status(400).json({ success: false, error: `Vehicle amount must match the NJC rate of $${ratePerKm}/km. For $${amount.toFixed(2)}, did you mean ${suggestedKm} km = $${suggestedAmount}?` });
+        }
+    }
+    
+    // Prevent duplicate per diem claims on same day for same trip
+    const perDiemTypesCheck = ['breakfast', 'lunch', 'dinner', 'incidentals'];
+    if (perDiemTypesCheck.includes(expense_type) && trip_id) {
+        const dupRow = await new Promise((resolve, reject) => {
+            db.get('SELECT id FROM expenses WHERE trip_id = ? AND expense_type = ? AND date = ? AND status NOT IN (\'rejected\', \'estimate\')',
+                [trip_id, expense_type, date], (e, row) => e ? reject(e) : resolve(row));
+        }).catch(() => null);
+        if (dupRow) {
+            const pnames = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', incidentals: 'Incidentals' };
+            return res.status(400).json({ success: false, error: `${pnames[expense_type]} already claimed for ${date}. Only one per day allowed.` });
+        }
+    }
+
+    // Get employee info from session
+    db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err, employee) => {
+        if (err || !employee) {
+            return res.status(404).json({
+                success: false,
+                error: 'Employee not found'
+            });
+        }
+        
+        const receiptPath = req.file ? `/uploads/${req.file.filename}` : null;
+        let receiptData = null;
+        const receiptType = req.file ? req.file.mimetype : null;
+        if (req.file) {
+            try { receiptData = fs.readFileSync(req.file.path); } catch (e) { console.warn('Could not read receipt file for BLOB storage:', e.message); }
+        }
+        
+        // Simple insert for ALL expense types (per diem already validated above)
+        const query = `
+            INSERT INTO expenses (employee_name, employee_id, trip_id, expense_type, meal_name, date, location, amount, vendor, description, receipt_photo, receipt_data, receipt_type, category)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+        
+        // Append future-date flag to description for supervisor visibility
+        let finalDescription = description || '';
+        if (isFutureDated) {
+            finalDescription = (finalDescription ? finalDescription + ' | ' : '') + '⚠️ FUTURE-DATED EXPENSE (submitted before expense date)';
+        }
+        
+        const params = [employee.name, req.user.employeeId, trip_id || null, expense_type, meal_name, date, location, amount, vendor, finalDescription, receiptPath, receiptData, receiptType, category || null];
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('❌ Error submitting expense:', err);
+                return res.status(500).json({ success: false, error: 'Failed to submit expense' });
+            }
+            
+            const expenseId = this.lastID;
+            
+            // Log expense creation to audit trail
+            logExpenseAudit(expenseId, 'submitted', req.user.employeeId, employee.name, 
+                `${expense_type} expense submitted: $${amount} at ${location}`, null, 'pending');
+            
+            const msg = isPerDiem 
+                ? `✅ ${meal_name || expense_type} per diem submitted! Locked to prevent duplicates.`
+                : 'Expense submitted successfully!';
+
+            res.json({ success: true, id: expenseId, message: msg });
+        });
+    });
+    } catch (error) {
+        console.error('❌ Error processing expense submission:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'An error occurred while processing your expense. Please try again.'
+        });
+    }
+});
+
+// === EXPENSE CLAIM GROUPS ===
+// Submit a group of expenses as a single claim
+app.post('/api/expense-claims', requireAuth, upload.any(), async (req, res) => {
+    try {
+        const purpose = sanitizeString(req.body.purpose, 200);
+        const date = req.body.date;
+        const items = req.body.items;
+        let parsedItems;
+        try {
+            parsedItems = typeof items === 'string' ? JSON.parse(items) : items;
+        } catch (e) {
+            return res.status(400).json({ success: false, error: 'Invalid items format' });
+        }
+
+        if (!purpose || !date || !Array.isArray(parsedItems) || parsedItems.length === 0) {
+            return res.status(400).json({ success: false, error: 'Purpose, date, and at least one line item are required.' });
+        }
+
+        // Validate date format
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!dateRegex.test(date)) {
+            return res.status(400).json({ success: false, error: 'Invalid date format' });
+        }
+
+        const claimGroup = 'CLM-' + Date.now();
+
+        // Get employee info
+        const employee = await new Promise((resolve, reject) => {
+            db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err, row) => {
+                if (err) reject(err);
+                else resolve(row);
+            });
+        });
+
+        if (!employee) {
+            return res.status(404).json({ success: false, error: 'Employee not found' });
+        }
+
+        const results = [];
+        const files = req.files || [];
+
+        for (let i = 0; i < parsedItems.length; i++) {
+            const item = parsedItems[i];
+            let amount = parseFloat(item.amount);
+            const category = sanitizeString(item.category, 100);
+            const vendor = sanitizeString(item.vendor, 255);
+            const description = sanitizeString(item.description, 1000);
+            let expenseType = 'other';
+
+            // Calculate kilometric amount server-side
+            if (category === 'Kilometric' || item.expense_type === 'kilometric') {
+                expenseType = 'kilometric';
+                const km = parseFloat(item.km) || 0;
+                if (km <= 0) continue;
+                // NJC rate: $0.61/km for first 5000km, $0.55/km after
+                if (km <= 5000) {
+                    amount = km * 0.61;
+                } else {
+                    amount = (5000 * 0.61) + ((km - 5000) * 0.55);
+                }
+                amount = Math.round(amount * 100) / 100;
+            } else if (category === 'Parking' || item.expense_type === 'parking') {
+                expenseType = 'parking';
+            } else if (category === 'Purchase/Supply' || item.expense_type === 'purchase') {
+                expenseType = 'purchase';
+            } else {
+                expenseType = 'other';
+            }
+
+            if (isNaN(amount) || amount <= 0 || amount > 999999.99) continue;
+
+            const prefixedDesc = `[${sanitizeString(purpose, 200)}] ${description || category}`;
+
+            // Match receipt file by index (field name: receipt_0, receipt_1, etc.)
+            const receiptFile = files.find(f => f.fieldname === `receipt_${i}`) || null;
+            let receiptData = null;
+            const receiptPath = receiptFile ? `/uploads/${receiptFile.filename}` : null;
+            const receiptType = receiptFile ? receiptFile.mimetype : null;
+            if (receiptFile) {
+                try { receiptData = fs.readFileSync(receiptFile.path); } catch (e) {}
+            }
+
+            const insertResult = await new Promise((resolve, reject) => {
+                db.run(
+                    `INSERT INTO expenses (employee_name, employee_id, expense_type, date, amount, vendor, description, receipt_photo, receipt_data, receipt_type, category, claim_group, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+                    [employee.name, req.user.employeeId, expenseType, date, amount, vendor, prefixedDesc, receiptPath, receiptData, receiptType, category, claimGroup],
+                    function(err) {
+                        if (err) reject(err);
+                        else resolve({ id: this.lastID });
+                    }
+                );
+            });
+
+            // Store receipt in expense_claim_receipts table
+            if (receiptFile && receiptData) {
+                await new Promise((resolve, reject) => {
+                    db.run(
+                        `INSERT INTO expense_claim_receipts (expense_id, file_data, file_name, file_type, file_size, upload_order) VALUES (?, ?, ?, ?, ?, ?)`,
+                        [insertResult.id, receiptData, receiptFile.originalname, receiptFile.mimetype, receiptFile.size, i],
+                        (err) => { if (err) { console.error('Receipt store error:', err); } resolve(); }
+                    );
+                });
+            }
+
+            // Log audit
+            logExpenseAudit(insertResult.id, 'submitted', req.user.employeeId, employee.name,
+                `Claim group ${claimGroup}: ${expenseType} $${amount.toFixed(2)}`, null, 'pending');
+
+            results.push(insertResult);
+        }
+
+        res.json({
+            success: true,
+            claim_group: claimGroup,
+            count: results.length,
+            message: `✅ ${results.length} expense(s) submitted as claim "${purpose}"`
+        });
+    } catch (error) {
+        console.error('❌ Error processing expense claim:', error);
+        res.status(500).json({ success: false, error: 'Failed to process expense claim.' });
+    }
+});
+
+// Get receipt for an expense claim line item
+app.get('/api/expense-claims/:expenseId/receipt', requireAuth, (req, res) => {
+    const { expenseId } = req.params;
+    db.get(`SELECT file_data, file_name, file_type FROM expense_claim_receipts WHERE expense_id = ?`, [expenseId], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row || !row.file_data) {
+            // Fall back to receipt_data on expenses table
+            db.get(`SELECT receipt_data, receipt_type FROM expenses WHERE id = ?`, [expenseId], (err2, exp) => {
+                if (err2 || !exp || !exp.receipt_data) return res.status(404).json({ error: 'No receipt found' });
+                try {
+                    const buf = Buffer.isBuffer(exp.receipt_data) ? exp.receipt_data : Buffer.from(exp.receipt_data);
+                    res.set('Content-Type', exp.receipt_type || 'application/octet-stream');
+                    res.set('Content-Length', buf.length);
+                    res.end(buf);
+                } catch (e) { console.error('❌ Error sending expense receipt:', e); if (!res.headersSent) res.status(500).json({ error: 'Failed to send receipt' }); }
+            });
+            return;
+        }
+        try {
+            const buf = Buffer.isBuffer(row.file_data) ? row.file_data : Buffer.from(row.file_data);
+            res.set('Content-Type', row.file_type || 'application/octet-stream');
+            const safeName = (row.file_name || 'receipt').replace(/[^\w.\-]/g, '_');
+            res.set('Content-Disposition', `inline; filename="${safeName}"`);
+            res.set('Content-Length', buf.length);
+            res.end(buf);
+        } catch (e) { console.error('❌ Error sending expense receipt:', e); if (!res.headersSent) res.status(500).json({ error: 'Failed to send receipt' }); }
+    });
+});
+
+// Check if expense has a receipt
+app.get('/api/expense-claims/:expenseId/receipt-info', requireAuth, (req, res) => {
+    const { expenseId } = req.params;
+    db.get(`SELECT id, file_name, file_type, file_size FROM expense_claim_receipts WHERE expense_id = ?`, [expenseId], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (row) return res.json({ hasReceipt: true, fileName: row.file_name, fileType: row.file_type });
+        // Check expenses table fallback
+        db.get(`SELECT receipt_data, receipt_type FROM expenses WHERE id = ? AND receipt_data IS NOT NULL`, [expenseId], (err2, exp) => {
+            if (err2) return res.status(500).json({ error: 'Database error' });
+            res.json({ hasReceipt: !!(exp && exp.receipt_data), fileType: exp ? exp.receipt_type : null });
+        });
+    });
+});
+
+// Download claim group PDF report
+app.get('/api/expense-claims/group/:claimGroup/pdf', requireAuth, (req, res) => {
+    const { claimGroup } = req.params;
+    db.get(`SELECT claim_group_pdf FROM expenses WHERE claim_group = ? AND claim_group_pdf IS NOT NULL LIMIT 1`, [claimGroup], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row || !row.claim_group_pdf) return res.status(404).json({ error: 'No PDF report found' });
+        res.set('Content-Type', 'application/pdf');
+        res.set('Content-Disposition', `inline; filename="claim-${claimGroup}.pdf"`);
+        try { const buf = Buffer.isBuffer(row.claim_group_pdf) ? row.claim_group_pdf : Buffer.from(row.claim_group_pdf); res.setHeader("Content-Length", buf.length); res.end(buf); } catch(e) { console.error("PDF send error:", e); if(!res.headersSent) res.status(500).json({error:"Failed to send PDF"}); }
+    });
+});
+
+// Generate PDF for a claim group (called after approval)
+app.post('/api/expense-claims/group/:claimGroup/generate-pdf', requireAuth, async (req, res) => {
+    if (req.user.role !== 'supervisor') {
+        return res.status(403).json({ error: 'Only supervisors can generate claim PDFs' });
+    }
+    const { claimGroup } = req.params;
+    try {
+        // Get all expenses in this claim group
+        const expenses = await new Promise((resolve, reject) => {
+            db.all(`SELECT e.*, emp.name as emp_name, emp.department, emp.employee_number
+                    FROM expenses e JOIN employees emp ON e.employee_id = emp.id
+                    WHERE e.claim_group = ? ORDER BY e.id`, [claimGroup], (err, rows) => {
+                if (err) reject(err); else resolve(rows || []);
+            });
+        });
+        if (expenses.length === 0) return res.status(404).json({ error: 'No expenses found for this claim group' });
+
+        // Get receipts for each expense
+        const receipts = await new Promise((resolve, reject) => {
+            const expIds = expenses.map(e => e.id);
+            db.all(`SELECT * FROM expense_claim_receipts WHERE expense_id IN (${expIds.map(() => '?').join(',')}) ORDER BY expense_id`, expIds, (err, rows) => {
+                if (err) reject(err); else resolve(rows || []);
+            });
+        });
+        const receiptMap = {};
+        receipts.forEach(r => { receiptMap[r.expense_id] = r; });
+
+        // Extract purpose from description
+        const descMatch = (expenses[0].description || '').match(/^\[(.+?)\]/);
+        const purpose = descMatch ? descMatch[1] : claimGroup;
+        const empName = expenses[0].emp_name || expenses[0].employee_name || 'Unknown';
+        const dept = expenses[0].department || '';
+        const empNum = expenses[0].employee_number || '';
+        const claimDate = expenses[0].date || '';
+        const total = expenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+        const approverName = req.user.name || 'Supervisor';
+
+        // Generate PDF with PDFKit
+        const PDFDocument = require('pdfkit');
+        const { PDFDocument: PDFLib, rgb, StandardFonts } = require('pdf-lib');
+        const MARGIN = 50;
+
+        const pdfBuffers = [];
+        const doc = new PDFDocument({ size: 'LETTER', margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN } });
+        doc.on('data', chunk => pdfBuffers.push(chunk));
+
+        const pdfReady = new Promise((resolve) => {
+            doc.on('end', () => resolve(Buffer.concat(pdfBuffers)));
+        });
+
+        // Header
+        doc.fontSize(20).font('Helvetica-Bold').text('EXPENSE CLAIM REPORT', { align: 'center' });
+        doc.moveDown(0.5);
+        doc.fontSize(10).font('Helvetica').fillColor('#666').text('ClaimFlow - Expense Management System', { align: 'center' });
+        doc.moveDown(1);
+
+        // Claim details
+        doc.fillColor('#000');
+        doc.fontSize(12).font('Helvetica-Bold').text('Claim Details');
+        doc.moveDown(0.3);
+        doc.fontSize(10).font('Helvetica');
+        const detailY = doc.y;
+        doc.text(`Claim Reference: ${claimGroup}`, MARGIN, detailY);
+        doc.text(`Purpose: ${purpose}`, MARGIN, detailY + 15);
+        doc.text(`Employee: ${empName}${empNum ? ' (' + empNum + ')' : ''}`, MARGIN, detailY + 30);
+        doc.text(`Department: ${dept}`, MARGIN, detailY + 45);
+        doc.text(`Date: ${claimDate}`, MARGIN, detailY + 60);
+        doc.text(`Approved by: ${approverName}`, MARGIN, detailY + 75);
+        doc.text(`Approved: ${new Date().toISOString().split('T')[0]}`, MARGIN, detailY + 90);
+        doc.y = detailY + 115;
+
+        // Line items table
+        doc.fontSize(12).font('Helvetica-Bold').text('Line Items');
+        doc.moveDown(0.3);
+
+        // Table header
+        const tableTop = doc.y;
+        const colX = [MARGIN, MARGIN + 30, MARGIN + 180, MARGIN + 300, MARGIN + 400];
+        doc.fontSize(9).font('Helvetica-Bold');
+        doc.text('#', colX[0], tableTop);
+        doc.text('Category', colX[1], tableTop);
+        doc.text('Vendor', colX[2], tableTop);
+        doc.text('Receipt', colX[3], tableTop);
+        doc.text('Amount', colX[4], tableTop);
+        doc.moveTo(MARGIN, tableTop + 14).lineTo(562, tableTop + 14).stroke('#ccc');
+
+        let rowY = tableTop + 20;
+        doc.font('Helvetica').fontSize(9);
+        expenses.forEach((exp, idx) => {
+            if (rowY > 700) { doc.addPage(); rowY = MARGIN; }
+            const hasRcpt = receiptMap[exp.id] || exp.receipt_data;
+            const kmMatch = exp.description && exp.description.match(/(\d+(?:\.\d+)?)km/);
+            const label = exp.category || exp.expense_type || 'Other';
+            doc.text(String(idx + 1), colX[0], rowY);
+            doc.text(label + (kmMatch ? ` (${kmMatch[1]}km)` : ''), colX[1], rowY, { width: 140 });
+            doc.text(exp.vendor || '-', colX[2], rowY, { width: 110 });
+            doc.text(hasRcpt ? 'Yes' : 'N/A', colX[3], rowY);
+            doc.text('$' + parseFloat(exp.amount).toFixed(2), colX[4], rowY);
+            rowY += 18;
+        });
+
+        // Total
+        doc.moveTo(MARGIN, rowY).lineTo(562, rowY).stroke('#ccc');
+        rowY += 6;
+        doc.font('Helvetica-Bold').fontSize(11);
+        doc.text('Total:', colX[3], rowY);
+        doc.text('$' + total.toFixed(2), colX[4], rowY);
+
+        doc.end();
+        let mainPdf = await pdfReady;
+
+        // Append receipt images as pages using pdf-lib
+        const pdfDoc = await PDFLib.load(mainPdf);
+        for (const exp of expenses) {
+            const receipt = receiptMap[exp.id];
+            const fileData = receipt ? receipt.file_data : exp.receipt_data;
+            const fileType = receipt ? receipt.file_type : exp.receipt_type;
+            if (!fileData) continue;
+
+            try {
+                if (fileType && fileType.includes('pdf')) {
+                    const receiptPdf = await PDFLib.load(fileData);
+                    const pages = await pdfDoc.copyPages(receiptPdf, receiptPdf.getPageIndices());
+                    pages.forEach(p => pdfDoc.addPage(p));
+                } else if (fileType && (fileType.includes('jpeg') || fileType.includes('jpg'))) {
+                    const img = await pdfDoc.embedJpg(fileData);
+                    const page = pdfDoc.addPage([612, 792]);
+                    const scale = Math.min((612 - 100) / img.width, (792 - 100) / img.height, 1);
+                    const w = img.width * scale;
+                    const h = img.height * scale;
+                    page.drawImage(img, { x: (612 - w) / 2, y: (792 - h) / 2, width: w, height: h });
+                } else if (fileType && fileType.includes('png')) {
+                    const img = await pdfDoc.embedPng(fileData);
+                    const page = pdfDoc.addPage([612, 792]);
+                    const scale = Math.min((612 - 100) / img.width, (792 - 100) / img.height, 1);
+                    const w = img.width * scale;
+                    const h = img.height * scale;
+                    page.drawImage(img, { x: (612 - w) / 2, y: (792 - h) / 2, width: w, height: h });
+                }
+            } catch (imgErr) {
+                console.error('Error embedding receipt in PDF:', imgErr.message);
+            }
+        }
+
+        // Add footers
+        const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        const pageCount = pdfDoc.getPageCount();
+        for (let i = 0; i < pageCount; i++) {
+            const page = pdfDoc.getPage(i);
+            const { height } = page.getSize();
+            page.drawText(`Page ${i + 1} of ${pageCount} | ${claimGroup} | Generated ${new Date().toISOString().split('T')[0]}`, {
+                x: 50, y: 20, size: 8, font: helvetica, color: rgb(0.5, 0.5, 0.5)
+            });
+        }
+
+        const finalPdf = Buffer.from(await pdfDoc.save());
+
+        // Store PDF on all expenses in the claim group
+        await new Promise((resolve, reject) => {
+            db.run(`UPDATE expenses SET claim_group_pdf = ? WHERE claim_group = ?`, [finalPdf, claimGroup], (err) => {
+                if (err) reject(err); else resolve();
+            });
+        });
+
+        res.json({ success: true, message: 'PDF report generated', size: finalPdf.length });
+    } catch (error) {
+        console.error('Error generating claim group PDF:', error);
+        res.status(500).json({ error: 'Failed to generate PDF report' });
+    }
+});
+
+// === STANDALONE EXPENSE PDF ===
+// Generate PDF for individual (ungrouped) expense
+async function generateStandaloneExpensePDF(expenseId) {
+    const expense = await new Promise((resolve, reject) => {
+        db.get(`SELECT e.*, emp.name as emp_name, emp.department, emp.employee_number, emp.position
+                FROM expenses e JOIN employees emp ON e.employee_id = emp.id
+                WHERE e.id = ?`, [expenseId], (err, row) => {
+            if (err) reject(err); else resolve(row);
+        });
+    });
+    if (!expense) throw new Error('Expense not found');
+
+    // Also check expense_claim_receipts table
+    const receiptRow = await new Promise((resolve, reject) => {
+        db.get(`SELECT * FROM expense_claim_receipts WHERE expense_id = ?`, [expenseId], (err, row) => {
+            if (err) reject(err); else resolve(row);
+        });
+    }).catch(() => null);
+
+    const PDFDocument = require('pdfkit');
+    const { PDFDocument: PDFLib, rgb, StandardFonts } = require('pdf-lib');
+    const MARGIN = 50;
+
+    const empName = expense.emp_name || expense.employee_name || 'Unknown';
+    const empNum = expense.employee_number || '';
+    const dept = expense.department || '';
+    const position = expense.position || '';
+    const category = expense.category || expense.expense_type || 'Other';
+    const isKm = expense.expense_type === 'kilometric';
+    const kmMatch = expense.description && expense.description.match(/(\d+(?:\.\d+)?)km/);
+    const refNum = `STE-${new Date().getFullYear()}-${String(expenseId).padStart(5, '0')}`;
+    const approvedDate = expense.approved_at ? new Date(expense.approved_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+
+    const pdfBuffers = [];
+    const doc = new PDFDocument({ size: 'LETTER', margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN } });
+    doc.on('data', chunk => pdfBuffers.push(chunk));
+    const pdfReady = new Promise((resolve) => { doc.on('end', () => resolve(Buffer.concat(pdfBuffers))); });
+
+    // Header
+    doc.fontSize(20).font('Helvetica-Bold').text('STANDALONE EXPENSE REPORT', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(10).font('Helvetica').fillColor('#666').text('ClaimFlow - Expense Management System', { align: 'center' });
+    doc.moveDown(0.3);
+    doc.fontSize(9).fillColor('#999').text(`Reference: ${refNum}  |  Generated: ${new Date().toISOString().split('T')[0]}`, { align: 'center' });
+    doc.moveDown(1.5);
+
+    // Employee info
+    doc.fillColor('#000');
+    doc.fontSize(12).font('Helvetica-Bold').text('EMPLOYEE INFORMATION');
+    doc.moveDown(0.3);
+    doc.moveTo(MARGIN, doc.y).lineTo(562, doc.y).stroke('#ccc');
+    doc.moveDown(0.5);
+    doc.fontSize(10).font('Helvetica');
+    doc.text(`Name: ${empName}${empNum ? '  (Employee #' + empNum + ')' : ''}`);
+    doc.text(`Department: ${dept}`);
+    if (position) doc.text(`Position: ${position}`);
+    doc.moveDown(1);
+
+    // Expense details table
+    doc.fontSize(12).font('Helvetica-Bold').text('EXPENSE DETAILS');
+    doc.moveDown(0.3);
+    doc.moveTo(MARGIN, doc.y).lineTo(562, doc.y).stroke('#ccc');
+    doc.moveDown(0.5);
+
+    const tblTop = doc.y;
+    const cols = [MARGIN, MARGIN + 150, MARGIN + 300, MARGIN + 400];
+    doc.fontSize(9).font('Helvetica-Bold');
+    doc.text('Category', cols[0], tblTop);
+    doc.text('Amount', cols[1], tblTop);
+    doc.text('Vendor', cols[2], tblTop);
+    doc.text('Date', cols[3], tblTop);
+    doc.moveTo(MARGIN, tblTop + 14).lineTo(562, tblTop + 14).stroke('#ccc');
+
+    let rowY = tblTop + 22;
+    doc.font('Helvetica').fontSize(9);
+    doc.text(category + (isKm && kmMatch ? ` (${kmMatch[1]}km)` : ''), cols[0], rowY, { width: 140 });
+    doc.text('$' + parseFloat(expense.amount).toFixed(2), cols[1], rowY);
+    doc.text(expense.vendor || (isKm ? 'Kilometric' : '-'), cols[2], rowY, { width: 90 });
+    doc.text(expense.date || '-', cols[3], rowY);
+
+    rowY += 22;
+    doc.moveTo(MARGIN, rowY).lineTo(562, rowY).stroke('#ccc');
+    rowY += 6;
+    doc.font('Helvetica-Bold').fontSize(11);
+    doc.text('Total:', cols[2], rowY);
+    doc.text('$' + parseFloat(expense.amount).toFixed(2), cols[3], rowY);
+    doc.y = rowY + 25;
+
+    // Description
+    const desc = (expense.description || '').replace(/^\[.+?\]\s*/, '').trim();
+    if (desc) {
+        doc.fontSize(10).font('Helvetica-Bold').text('Description:');
+        doc.font('Helvetica').text(desc);
+        doc.moveDown(0.5);
+    }
+
+    // Approval section
+    doc.moveDown(0.5);
+    doc.fontSize(12).font('Helvetica-Bold').text('APPROVAL');
+    doc.moveDown(0.3);
+    doc.moveTo(MARGIN, doc.y).lineTo(562, doc.y).stroke('#ccc');
+    doc.moveDown(0.5);
+    doc.fontSize(10).font('Helvetica');
+    doc.text(`Submitted: ${expense.created_at ? new Date(expense.created_at).toISOString().split('T')[0] : '-'}  by ${empName}`);
+    doc.text(`Approved: ${approvedDate}  by ${expense.approved_by || 'Supervisor'}`);
+    if (expense.approval_comment) doc.text(`Comment: ${expense.approval_comment}`);
+
+    // Signature lines
+    doc.moveDown(2);
+    doc.moveTo(MARGIN, doc.y).lineTo(MARGIN + 200, doc.y).stroke('#000');
+    doc.text(`Employee: ${empName}`, MARGIN, doc.y + 5);
+    doc.moveDown(1.5);
+    doc.moveTo(MARGIN, doc.y).lineTo(MARGIN + 200, doc.y).stroke('#000');
+    doc.text(`Supervisor: ${expense.approved_by || 'Supervisor'}`, MARGIN, doc.y + 5);
+
+    doc.end();
+    let mainPdf = await pdfReady;
+
+    // Embed receipt using pdf-lib
+    const pdfDoc = await PDFLib.load(mainPdf);
+    const fileData = receiptRow ? receiptRow.file_data : expense.receipt_data;
+    const fileType = receiptRow ? receiptRow.file_type : expense.receipt_type;
+    if (fileData) {
+        try {
+            if (fileType && fileType.includes('pdf')) {
+                const rPdf = await PDFLib.load(fileData);
+                const pages = await pdfDoc.copyPages(rPdf, rPdf.getPageIndices());
+                pages.forEach(p => pdfDoc.addPage(p));
+            } else if (fileType && (fileType.includes('jpeg') || fileType.includes('jpg'))) {
+                const img = await pdfDoc.embedJpg(fileData);
+                const page = pdfDoc.addPage([612, 792]);
+                const scale = Math.min(512 / img.width, 692 / img.height, 1);
+                page.drawImage(img, { x: (612 - img.width * scale) / 2, y: (792 - img.height * scale) / 2, width: img.width * scale, height: img.height * scale });
+            } else if (fileType && fileType.includes('png')) {
+                const img = await pdfDoc.embedPng(fileData);
+                const page = pdfDoc.addPage([612, 792]);
+                const scale = Math.min(512 / img.width, 692 / img.height, 1);
+                page.drawImage(img, { x: (612 - img.width * scale) / 2, y: (792 - img.height * scale) / 2, width: img.width * scale, height: img.height * scale });
+            }
+        } catch (imgErr) { console.error('Error embedding receipt in standalone PDF:', imgErr.message); }
+    }
+
+    // Footers
+    const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const pageCount = pdfDoc.getPageCount();
+    for (let i = 0; i < pageCount; i++) {
+        const page = pdfDoc.getPage(i);
+        page.drawText(`Page ${i + 1} of ${pageCount} | ${refNum} | Generated ${new Date().toISOString().split('T')[0]}`, {
+            x: 50, y: 20, size: 8, font: helvetica, color: rgb(0.5, 0.5, 0.5)
+        });
+    }
+
+    const finalPdf = Buffer.from(await pdfDoc.save());
+
+    // Store in DB
+    await new Promise((resolve, reject) => {
+        db.run(`UPDATE expenses SET standalone_pdf = ?, report_ref = ?, report_generated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [finalPdf, refNum, expenseId], (err) => { if (err) reject(err); else resolve(); });
+    });
+
+    return { ref: refNum, size: finalPdf.length };
+}
+
+// Serve standalone expense PDF
+app.get('/api/expenses/:id/pdf', requireAuth, (req, res) => {
+    const { id } = req.params;
+    db.get(`SELECT standalone_pdf, report_ref FROM expenses WHERE id = ?`, [id], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row || !row.standalone_pdf) return res.status(404).json({ error: 'No PDF report found for this expense' });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${(row.report_ref || 'expense-report').replace(/"/g, '')}.pdf"`);
+        try {
+            const buf = Buffer.isBuffer(row.standalone_pdf) ? row.standalone_pdf : Buffer.from(row.standalone_pdf);
+            res.setHeader('Content-Length', buf.length);
+            res.end(buf);
+        } catch (e) {
+            console.error('Standalone PDF send error:', e);
+            if (!res.headersSent) res.status(500).json({ error: 'Failed to send PDF' });
+        }
+    });
+});
+
+// Generate standalone expense PDF on demand
+app.post('/api/expenses/:id/generate-pdf', requireAuth, async (req, res) => {
+    try {
+        const result = await generateStandaloneExpensePDF(parseInt(req.params.id));
+        res.json({ success: true, message: 'PDF generated', ref: result.ref, size: result.size });
+    } catch (error) {
+        console.error('Error generating standalone PDF:', error);
+        res.status(500).json({ error: 'Failed to generate PDF' });
+    }
+});
+
+// CONCUR ENHANCEMENT: Get audit trail for expense
+app.get('/api/expenses/:id/audit-trail', requireAuth, (req, res) => {
+    const { id } = req.params;
+    
+    // First verify user has permission to view this expense
+    db.get('SELECT employee_id FROM expenses WHERE id = ?', [id], (err, expense) => {
+        if (err) {
+            console.error('❌ Error checking expense:', err);
+            return res.status(500).json({ error: 'Failed to check expense' });
+        }
+        
+        if (!expense) {
+            return res.status(404).json({ error: 'Expense not found' });
+        }
+        
+        // Allow if user owns expense, is supervisor of owner, or is admin
+        const canView = expense.employee_id === req.user.employeeId || 
+                        req.user.role === 'admin' || 
+                        req.user.role === 'supervisor';
+        
+        if (!canView) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
+        // Get audit trail
+        const query = `
+            SELECT al.*, e.name as actor_employee_name
+            FROM expense_audit_log al
+            LEFT JOIN employees e ON al.actor_id = e.id
+            WHERE al.expense_id = ?
+            ORDER BY al.timestamp DESC
+        `;
+        
+        db.all(query, [id], (err2, auditTrail) => {
+            if (err2) {
+                console.error('❌ Error fetching audit trail:', err2);
+                return res.status(500).json({ error: 'Failed to fetch audit trail' });
+            }
+            
+            res.json({
+                success: true,
+                expense_id: id,
+                audit_trail: auditTrail
+            });
+        });
+    });
+});
+
+// CONCUR ENHANCEMENT: Pre-submission validation check
+app.get('/api/pre-submission-check/:tripId', requireAuth, (req, res) => {
+    const { tripId } = req.params;
+    
+    // Get trip with expenses
+    const query = `
+        SELECT t.*, 
+               e.id as expense_id, e.expense_type, e.amount, e.receipt_photo, e.date, e.status
+        FROM trips t
+        LEFT JOIN expenses e ON t.id = e.trip_id
+        WHERE t.id = ? AND t.employee_id = ?
+        ORDER BY e.date ASC
+    `;
+    
+    db.all(query, [tripId, req.user.employeeId], (err, rows) => {
+        if (err) {
+            console.error('❌ Error in pre-submission check:', err);
+            return res.status(500).json({ error: 'Failed to perform pre-submission check' });
+        }
+        
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Trip not found' });
+        }
+        
+        const trip = rows[0];
+        const expenses = rows.filter(row => row.expense_id).map(row => ({
+            id: row.expense_id,
+            expense_type: row.expense_type,
+            amount: row.amount,
+            receipt_photo: row.receipt_photo,
+            date: row.date,
+            status: row.status
+        }));
+        
+        // Perform validation checks
+        const checks = {
+            expenses_count: {
+                status: expenses.length > 0 ? 'pass' : 'fail',
+                message: expenses.length > 0 ? 
+                    `${expenses.length} expense(s) added to trip` : 
+                    'No expenses added to this trip',
+                required: true
+            },
+            hotel_receipts: {
+                status: 'pass',
+                message: 'Receipt requirements satisfied',
+                required: true
+            },
+            policy_compliance: {
+                status: 'pass',
+                message: 'All amounts within policy limits',
+                required: true
+            },
+            date_ranges: {
+                status: 'pass',
+                message: 'All expense dates within trip period',
+                required: true
+            }
+        };
+        
+        // Check hotel receipts
+        const hotelExpenses = expenses.filter(e => e.expense_type === 'hotel');
+        const hotelsMissingReceipts = hotelExpenses.filter(e => !e.receipt_photo);
+        
+        if (hotelsMissingReceipts.length > 0) {
+            checks.hotel_receipts.status = 'fail';
+            checks.hotel_receipts.message = `${hotelsMissingReceipts.length} hotel expense(s) missing required receipts`;
+        }
+        
+        // Check expense dates within trip range
+        const tripStart = new Date(trip.start_date);
+        const tripEnd = new Date(trip.end_date);
+        const expensesOutsideRange = expenses.filter(e => {
+            const expenseDate = new Date(e.date);
+            return expenseDate < tripStart || expenseDate > tripEnd;
+        });
+        
+        if (expensesOutsideRange.length > 0) {
+            checks.date_ranges.status = 'fail';
+            checks.date_ranges.message = `${expensesOutsideRange.length} expense(s) outside trip date range`;
+        }
+        
+        // Calculate totals
+        const totalAmount = expenses.reduce((sum, e) => sum + parseFloat(e.amount), 0);
+        
+        const readyToSubmit = Object.values(checks).every(check => 
+            !check.required || check.status === 'pass'
+        );
+        
+        res.json({
+            success: true,
+            trip: {
+                id: trip.id,
+                trip_name: trip.trip_name,
+                start_date: trip.start_date,
+                end_date: trip.end_date,
+                status: trip.status
+            },
+            expenses_summary: {
+                count: expenses.length,
+                total_amount: totalAmount.toFixed(2)
+            },
+            validation_checks: checks,
+            ready_to_submit: readyToSubmit,
+            timestamp: new Date().toISOString()
+        });
+    });
+});
+
+// CONCUR ENHANCEMENT: Approval delegation endpoints
+app.post('/api/delegation/set', requireAuth, requireRole('supervisor'), (req, res) => {
+    const { delegate_id, start_date, end_date, reason } = req.body;
+    
+    if (!delegate_id || !start_date || !end_date) {
+        return res.status(400).json({
+            success: false,
+            error: 'delegate_id, start_date, and end_date are required'
+        });
+    }
+    
+    // Validate delegate is not the same person
+    if (delegate_id == req.user.employeeId) {
+        return res.status(400).json({
+            success: false,
+            error: 'Cannot delegate to yourself'
+        });
+    }
+    
+    // Validate delegate exists and is a supervisor
+    db.get('SELECT id, name, role FROM employees WHERE id = ? AND role = "supervisor"', 
+        [delegate_id], (err, delegate) => {
+        
+        if (err) {
+            console.error('❌ Error checking delegate:', err);
+            return res.status(500).json({ success: false, error: 'Failed to validate delegate' });
+        }
+        
+        if (!delegate) {
+            return res.status(404).json({
+                success: false,
+                error: 'Delegate not found or is not a supervisor'
+            });
+        }
+        
+        // Set delegation
+        const query = `
+            UPDATE employees 
+            SET delegate_id = ?, delegation_start_date = ?, delegation_end_date = ?, 
+                delegation_reason = ?
+            WHERE id = ?
+        `;
+        
+        db.run(query, [delegate_id, start_date, end_date, reason || '', req.user.employeeId], 
+            function(err2) {
+                if (err2) {
+                    console.error('❌ Error setting delegation:', err2);
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Failed to set delegation'
+                    });
+                }
+                
+                // Notify delegate
+                createNotification(delegate_id, 'delegation_assigned',
+                    `You have been assigned as approval delegate from ${start_date} to ${end_date}. Reason: ${reason || 'Not specified'}`);
+                
+                res.json({
+                    success: true,
+                    message: `Approval delegation set to ${delegate.name} from ${start_date} to ${end_date}`,
+                    delegate_name: delegate.name
+                });
+            });
+    });
+});
+
+app.get('/api/delegation/current', requireAuth, (req, res) => {
+    const query = `
+        SELECT e.delegate_id, e.delegation_start_date, e.delegation_end_date, 
+               e.delegation_reason, d.name as delegate_name
+        FROM employees e
+        LEFT JOIN employees d ON e.delegate_id = d.id
+        WHERE e.id = ?
+    `;
+    
+    db.get(query, [req.user.employeeId], (err, delegation) => {
+        if (err) {
+            console.error('❌ Error fetching delegation:', err);
+            return res.status(500).json({ error: 'Failed to fetch delegation info' });
+        }
+        
+        if (!delegation || !delegation.delegate_id) {
+            return res.json({
+                success: true,
+                delegation: null
+            });
+        }
+        
+        // Check if delegation is currently active
+        const today = new Date().toISOString().split('T')[0];
+        const isActive = delegation.delegation_start_date <= today && 
+                         today <= delegation.delegation_end_date;
+        
+        res.json({
+            success: true,
+            delegation: {
+                ...delegation,
+                is_active: isActive
+            }
+        });
+    });
+});
+
+// Upload receipt to existing expense
+app.post('/api/expenses/:id/receipt', requireAuth, upload.single('receipt'), (req, res) => {
+    const expenseId = req.params.id;
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    db.get(`SELECT id, employee_id FROM expenses WHERE id = ?`, [expenseId], (err, expense) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!expense) return res.status(404).json({ error: 'Expense not found' });
+        if (expense.employee_id !== req.user.employeeId) return res.status(403).json({ error: 'Access denied' });
+
+        const receiptPath = `/uploads/${req.file.filename}`;
+        let receiptData = null;
+        try { receiptData = fs.readFileSync(req.file.path); } catch (e) { console.warn('Could not read receipt for BLOB:', e.message); }
+
+        db.run(`UPDATE expenses SET receipt_photo = ?, receipt_data = ?, receipt_type = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [receiptPath, receiptData, req.file.mimetype, expenseId], (err) => {
+                if (err) return res.status(500).json({ error: 'Failed to save receipt' });
+                res.json({ success: true });
+            });
+    });
+});
+
+// Receipt preview/download endpoint
+app.get('/api/expenses/:id/receipt', requireAuth, (req, res) => {
+    const { id } = req.params;
+    
+    db.get(`
+        SELECT e.receipt_photo, e.receipt_data, e.receipt_type, e.employee_id, emp.name as employee_name 
+        FROM expenses e
+        LEFT JOIN employees emp ON e.employee_id = emp.id
+        WHERE e.id = ?
+    `, [id], (err, expense) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!expense) return res.status(404).json({ error: 'Expense not found' });
+        
+        const canView = expense.employee_id === req.user.employeeId || 
+                        req.user.role === 'admin' || 
+                        req.user.role === 'supervisor';
+        if (!canView) return res.status(403).json({ error: 'Access denied' });
+        
+        // Serve BLOB if available
+        if (expense.receipt_data && expense.receipt_type) {
+            try {
+                const buf = Buffer.isBuffer(expense.receipt_data) ? expense.receipt_data : Buffer.from(expense.receipt_data);
+                res.setHeader('Content-Type', expense.receipt_type);
+                res.setHeader('Content-Disposition', 'inline');
+                res.setHeader('Content-Length', buf.length);
+                return res.end(buf);
+            } catch (e) { console.error('❌ Error sending expense receipt:', e); return res.status(500).json({ error: 'Failed to send receipt' }); }
+        }
+        
+        if (!expense.receipt_photo) {
+            return res.status(404).json({ error: 'No receipt found for this expense' });
+        }
+        
+        res.json({
+            success: true,
+            receipt_photo: expense.receipt_photo,
+            employee_name: expense.employee_name
+        });
+    });
+});
+
+// Get employee's own expenses (with trip information)
+app.get('/api/my-expenses', requireAuth, (req, res) => {
+    const query = `
+        SELECT e.*, t.trip_name, t.destination as trip_destination, t.start_date as trip_start, t.end_date as trip_end, t.status as trip_status
+        FROM expenses e
+        LEFT JOIN trips t ON e.trip_id = t.id
+        WHERE e.employee_id = ? AND e.status != 'estimate'
+        ORDER BY e.created_at DESC
+    `;
+    
+    db.all(query, [req.user.employeeId], (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching user expenses:', err);
+            return res.status(500).json({ error: 'Failed to fetch expenses' });
+        }
+
+        res.json(rows);
+    });
+});
+
+// CONCUR ENHANCEMENT: Audit trail logging function
+function logExpenseAudit(expenseId, action, actorId, actorName, comment, previousStatus, newStatus) {
+    db.run(`
+        INSERT INTO expense_audit_log (expense_id, action, actor_id, actor_name, comment, previous_status, new_status)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [expenseId, action, actorId, actorName, comment, previousStatus, newStatus], (err) => {
+        if (err) {
+            console.error('❌ Audit log error:', err.message);
+        } else {
+
+        }
+    });
+}
+
+// Login audit logging function for security compliance
+function logLoginAttempt(email, employeeId, success, failureReason, ipAddress, userAgent) {
+    db.run(`
+        INSERT INTO login_audit_log (email, employee_id, success, failure_reason, ip_address, user_agent)
+        VALUES (?, ?, ?, ?, ?, ?)
+    `, [email, employeeId, success ? 1 : 0, failureReason, ipAddress, userAgent], (err) => {
+        if (err) {
+            console.error('❌ Login audit log error:', err.message);
+        } else {
+            const status = success ? 'SUCCESS' : 'FAILED';
+
+        }
+    });
+}
+
+// Employee audit logging function for governance compliance
+function logEmployeeAudit(employeeId, action, fieldChanged, oldValue, newValue, performedBy) {
+    db.run(`
+        INSERT INTO employee_audit_log (employee_id, action, field_changed, old_value, new_value, performed_by)
+        VALUES (?, ?, ?, ?, ?, ?)
+    `, [employeeId, action, fieldChanged, oldValue, newValue, performedBy], (err) => {
+        if (err) {
+            console.error('❌ Employee audit log error:', err.message);
+        }
+    });
+}
+
+// GET /api/audit-log endpoint (admin only) - Full system audit trail
+app.get('/api/audit-log', requireAuth, requireRole('admin'), (req, res) => {
+    const { limit = 100, offset = 0, expense_id } = req.query;
+    
+    let query = `
+        SELECT al.*, 
+               e.employee_name as expense_employee,
+               e.amount as expense_amount,
+               e.expense_type,
+               e.date as expense_date,
+               actor.name as actor_employee_name,
+               actor.role as actor_role
+        FROM expense_audit_log al
+        LEFT JOIN expenses e ON al.expense_id = e.id
+        LEFT JOIN employees actor ON al.actor_id = actor.id
+    `;
+    
+    let params = [];
+    
+    if (expense_id) {
+        query += ` WHERE al.expense_id = ?`;
+        params.push(expense_id);
+    }
+    
+    query += ` ORDER BY al.timestamp DESC LIMIT ? OFFSET ?`;
+    params.push(parseInt(limit), parseInt(offset));
+    
+    db.all(query, params, (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching audit log:', err);
+            return res.status(500).json({ error: 'Failed to fetch audit log' });
+        }
+        
+        // Get total count
+        const countQuery = expense_id ? 
+            'SELECT COUNT(*) as total FROM expense_audit_log WHERE expense_id = ?' :
+            'SELECT COUNT(*) as total FROM expense_audit_log';
+        const countParams = expense_id ? [expense_id] : [];
+        
+        db.get(countQuery, countParams, (err2, countRow) => {
+            if (err2) {
+                console.error('❌ Error fetching audit count:', err2);
+                return res.status(500).json({ error: 'Failed to fetch audit count' });
+            }
+
+            res.json({
+                success: true,
+                audit_log: rows,
+                pagination: {
+                    total: countRow.total,
+                    limit: parseInt(limit),
+                    offset: parseInt(offset),
+                    has_more: (parseInt(offset) + rows.length) < countRow.total
+                }
+            });
+        });
+    });
+});
+
+// GET /api/login-audit-log endpoint (admin only) - Login attempt audit trail
+app.get('/api/login-audit-log', requireAuth, requireRole('admin'), (req, res) => {
+    const { limit = 100, offset = 0, email, success_only, failed_only } = req.query;
+    
+    let query = `
+        SELECT lal.*, 
+               e.name as employee_name,
+               e.role as employee_role
+        FROM login_audit_log lal
+        LEFT JOIN employees e ON lal.employee_id = e.id
+    `;
+    
+    let whereConditions = [];
+    let params = [];
+    
+    if (email) {
+        whereConditions.push('lal.email LIKE ?');
+        params.push(`%${email}%`);
+    }
+    
+    if (success_only === 'true') {
+        whereConditions.push('lal.success = 1');
+    } else if (failed_only === 'true') {
+        whereConditions.push('lal.success = 0');
+    }
+    
+    if (whereConditions.length > 0) {
+        query += ' WHERE ' + whereConditions.join(' AND ');
+    }
+    
+    query += ` ORDER BY lal.timestamp DESC LIMIT ? OFFSET ?`;
+    params.push(parseInt(limit), parseInt(offset));
+    
+    db.all(query, params, (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching login audit log:', err);
+            return res.status(500).json({ error: 'Failed to fetch login audit log' });
+        }
+        
+        // Get total count
+        let countQuery = 'SELECT COUNT(*) as total FROM login_audit_log lal';
+        let countParams = [];
+        
+        if (whereConditions.length > 0) {
+            countQuery += ' WHERE ' + whereConditions.join(' AND ');
+            countParams = params.slice(0, -2); // Remove limit and offset
+        }
+        
+        db.get(countQuery, countParams, (err2, countRow) => {
+            if (err2) {
+                console.error('❌ Error fetching login audit count:', err2);
+                return res.status(500).json({ error: 'Failed to fetch login audit count' });
+            }
+
+            res.json({
+                success: true,
+                login_audit_log: rows,
+                pagination: {
+                    total: countRow.total,
+                    limit: parseInt(limit),
+                    offset: parseInt(offset),
+                    has_more: (parseInt(offset) + rows.length) < countRow.total
+                }
+            });
+        });
+    });
+});
+
+// GET /api/settings/variance — Get variance thresholds (any authenticated user)
+app.get('/api/settings/variance', requireAuth, (req, res) => {
+    db.all(`SELECT key, value FROM app_settings WHERE key IN ('variance_pct_threshold', 'variance_dollar_threshold')`, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Failed to load settings' });
+        const settings = {};
+        rows.forEach(r => { settings[r.key] = r.value; });
+        res.json({
+            variance_pct_threshold: parseFloat(settings.variance_pct_threshold || '10'),
+            variance_dollar_threshold: parseFloat(settings.variance_dollar_threshold || '100')
+        });
+    });
+});
+
+// PUT /api/settings/variance — Update variance thresholds (admin only)
+app.put('/api/settings/variance', requireAuth, requireRole('admin'), (req, res) => {
+    const { variance_pct_threshold, variance_dollar_threshold } = req.body;
+    
+    // Enhanced validation
+    if (!variance_pct_threshold || variance_pct_threshold.toString().trim() === '') {
+        return res.status(400).json({ error: 'Percentage threshold is required' });
+    }
+    if (!variance_dollar_threshold || variance_dollar_threshold.toString().trim() === '') {
+        return res.status(400).json({ error: 'Dollar threshold is required' });
+    }
+    
+    const pct = parseFloat(variance_pct_threshold);
+    const dollar = parseFloat(variance_dollar_threshold);
+    
+    if (isNaN(pct) || !isFinite(pct)) return res.status(400).json({ error: 'Percentage threshold must be a valid number' });
+    if (isNaN(dollar) || !isFinite(dollar)) return res.status(400).json({ error: 'Dollar threshold must be a valid number' });
+    if (pct <= 0 || pct > 1000) return res.status(400).json({ error: 'Percentage threshold must be between 0.1 and 1000' });
+    if (dollar <= 0 || dollar > 100000) return res.status(400).json({ error: 'Dollar threshold must be between $0.01 and $100,000' });
+    
+    // Get old values for audit
+    db.all(`SELECT key, value FROM app_settings WHERE key IN ('variance_pct_threshold', 'variance_dollar_threshold')`, [], (err, oldRows) => {
+        const oldSettings = {};
+        if (!err && oldRows) oldRows.forEach(r => { oldSettings[r.key] = r.value; });
+        
+        // Update both settings
+        db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('variance_pct_threshold', ?, ?, CURRENT_TIMESTAMP)`, [String(pct), req.user.employeeId]);
+        db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('variance_dollar_threshold', ?, ?, CURRENT_TIMESTAMP)`, [String(dollar), req.user.employeeId]);
+        
+        // Audit log
+        db.run(`INSERT INTO settings_audit_log (setting_key, old_value, new_value, changed_by) VALUES (?, ?, ?, ?)`,
+            ['variance_thresholds', 
+             `Percentage: ${oldSettings.variance_pct_threshold || '10'}%, Dollar: $${oldSettings.variance_dollar_threshold || '100'}`,
+             `Percentage: ${pct}%, Dollar: $${dollar}`,
+             req.user.employeeId]);
+        
+        res.json({ success: true, message: 'Variance thresholds updated', variance_pct_threshold: pct, variance_dollar_threshold: dollar });
+    });
+});
+
+// GET /api/settings/variance/audit — Get settings audit log (admin only)
+app.get('/api/settings/variance/audit', requireAuth, requireRole('admin'), (req, res) => {
+    db.all(`SELECT sal.*, emp.name as changed_by_name FROM settings_audit_log sal LEFT JOIN employees emp ON sal.changed_by = emp.id ORDER BY sal.changed_at DESC LIMIT 50`, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Failed to load audit log' });
+        res.json(rows || []);
+    });
+});
+
+// CONCUR ENHANCEMENT: Return expense for correction (supervisors only)
+app.post('/api/expenses/:id/return', requireAuth, (req, res) => {
+    if (req.user.role !== 'supervisor') {
+        return res.status(403).json({ 
+            error: 'Access denied. Only supervisors can return expenses for correction.' 
+        });
+    }
+    
+    const { id } = req.params;
+    const { reason, approver } = req.body;
+    
+    if (!reason || reason.trim().length === 0) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Return reason is required' 
+        });
+    }
+    
+    // First, get the expense details and check governance rules
+    db.get('SELECT employee_id, status FROM expenses WHERE id = ?', [id], (err, expense) => {
+        if (err) {
+            console.error('❌ Error fetching expense:', err);
+            return res.status(500).json({ success: false, error: 'Failed to fetch expense details' });
+        }
+        
+        if (!expense) {
+            return res.status(404).json({ success: false, error: 'Expense not found' });
+        }
+        
+        // GOVERNANCE: Check segregation of duties - supervisor cannot return own expenses
+        if (expense.employee_id === req.user.employeeId) {
+            return res.status(403).json({ 
+                error: 'Segregation of duties violation: You cannot return your own expenses' 
+            });
+        }
+        
+        // GOVERNANCE: Verify the expense belongs to supervisor's direct report
+        db.get('SELECT id FROM employees WHERE id = ? AND supervisor_id = ?', 
+            [expense.employee_id, req.user.employeeId], (err2, directReport) => {
+            
+            if (err2) {
+                console.error('❌ Error checking direct report:', err2);
+                return res.status(500).json({ success: false, error: 'Failed to verify reporting relationship' });
+            }
+            
+            if (!directReport) {
+                return res.status(403).json({ 
+                    error: 'Access denied: You can only return expenses from your direct reports' 
+                });
+            }
+            
+            // All governance checks passed - proceed with return
+            const approverName = approver || req.user.name || 'Supervisor';
+            const query = `
+                UPDATE expenses 
+                SET status = 'returned', 
+                    returned_by = ?, 
+                    returned_at = CURRENT_TIMESTAMP, 
+                    return_reason = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `;
+            
+            db.run(query, [approverName, reason.trim(), id], function(err3) {
+                if (err3) {
+                    console.error('❌ Error returning expense:', err3);
+                    return res.status(500).json({ 
+                        success: false, 
+                        error: 'Failed to return expense for correction' 
+                    });
+                }
+                
+                if (this.changes === 0) {
+                    return res.status(404).json({ 
+                        success: false, 
+                        error: 'Expense not found or already processed' 
+                    });
+                }
+                
+                // Log to audit trail
+                logExpenseAudit(id, 'returned', req.user.employeeId, approverName, 
+                    `Returned for correction: ${reason}`, expense.status, 'returned');
+
+                // Notify employee
+                createNotification(expense.employee_id, 'expense_returned',
+                    `Your expense #${id} has been returned for correction by ${approverName}. Reason: ${reason}`);
+                
+                res.json({ 
+                    success: true, 
+                    message: 'Expense returned for correction. Employee will be notified to make corrections and resubmit.' 
+                });
+            });
+        });
+    });
+});
+
+// Approve expense (governance-compliant: supervisors only, with segregation of duties)
+app.post('/api/expenses/:id/approve', requireAuth, (req, res) => {
+    // GOVERNANCE: Only supervisors can approve expenses
+    if (req.user.role !== 'supervisor') {
+        return res.status(403).json({ 
+            error: 'Access denied. Only supervisors can approve expenses. Admin role is for system management only.' 
+        });
+    }
+    
+    const { id } = req.params;
+    const { comment, approver } = req.body;
+    
+    // First, get the expense details and check governance rules
+    db.get('SELECT employee_id FROM expenses WHERE id = ?', [id], (err, expense) => {
+        if (err) {
+            console.error('❌ Error fetching expense:', err);
+            return res.status(500).json({ success: false, error: 'Failed to fetch expense details' });
+        }
+        
+        if (!expense) {
+            return res.status(404).json({ success: false, error: 'Expense not found' });
+        }
+        
+        // GOVERNANCE: Check segregation of duties - supervisor cannot approve own expenses
+        if (expense.employee_id === req.user.employeeId) {
+            return res.status(403).json({ 
+                error: 'Segregation of duties violation: You cannot approve your own expenses' 
+            });
+        }
+        
+        // GOVERNANCE: Verify the expense belongs to supervisor's direct report
+        db.get('SELECT id FROM employees WHERE id = ? AND supervisor_id = ?', 
+            [expense.employee_id, req.user.employeeId], (err2, directReport) => {
+            
+            if (err2) {
+                console.error('❌ Error checking direct report:', err2);
+                return res.status(500).json({ success: false, error: 'Failed to verify reporting relationship' });
+            }
+            
+            if (!directReport) {
+                return res.status(403).json({ 
+                    error: 'Access denied: You can only approve expenses from your direct reports' 
+                });
+            }
+            
+            // All governance checks passed - proceed with approval
+            const approverName = approver || req.user.name || 'Supervisor';
+            const query = `
+                UPDATE expenses 
+                SET status = 'approved', 
+                    approved_by = ?, 
+                    approved_at = CURRENT_TIMESTAMP, 
+                    approval_comment = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `;
+            
+            db.run(query, [approverName, comment, id], function(err3) {
+                if (err3) {
+                    console.error('❌ Error approving expense:', err3);
+                    return res.status(500).json({ 
+                        success: false, 
+                        error: 'Failed to approve expense' 
+                    });
+                }
+                
+                if (this.changes === 0) {
+                    return res.status(404).json({ 
+                        success: false, 
+                        error: 'Expense not found or already processed' 
+                    });
+                }
+                
+                // Log to audit trail
+                logExpenseAudit(id, 'approved', req.user.employeeId, approverName, 
+                    comment, expense.status, 'approved');
+
+                // Notify employee
+                createNotification(expense.employee_id, 'expense_approved',
+                    `Your expense #${id} has been approved by ${approverName}.`);
+
+                // Generate PDF for standalone (ungrouped) expenses
+                db.get(`SELECT claim_group FROM expenses WHERE id = ?`, [id], (err4, expRow) => {
+                    if (!err4 && expRow && !expRow.claim_group) {
+                        generateStandaloneExpensePDF(parseInt(id)).catch(pdfErr => {
+                            console.error('Standalone PDF generation error (non-blocking):', pdfErr.message);
+                        });
+                    }
+                });
+                
+                res.json({ 
+                    success: true, 
+                    message: 'Expense approved successfully!' 
+                });
+            });
+        });
+    });
+});
+
+// Reject expense (governance-compliant: supervisors only, with segregation of duties)
+app.post('/api/expenses/:id/reject', requireAuth, (req, res) => {
+    // GOVERNANCE: Only supervisors can reject expenses
+    if (req.user.role !== 'supervisor') {
+        return res.status(403).json({ 
+            error: 'Access denied. Only supervisors can reject expenses. Admin role is for system management only.' 
+        });
+    }
+    
+    const { id } = req.params;
+    const reason = sanitizeString(req.body.reason, 1000);
+    const approver = sanitizeString(req.body.approver, 255);
+    
+    if (!reason) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Rejection reason is required' 
+        });
+    }
+    
+    // First, get the expense details and check governance rules
+    db.get('SELECT employee_id FROM expenses WHERE id = ?', [id], (err, expense) => {
+        if (err) {
+            console.error('❌ Error fetching expense:', err);
+            return res.status(500).json({ success: false, error: 'Failed to fetch expense details' });
+        }
+        
+        if (!expense) {
+            return res.status(404).json({ success: false, error: 'Expense not found' });
+        }
+        
+        // GOVERNANCE: Check segregation of duties - supervisor cannot reject own expenses
+        if (expense.employee_id === req.user.employeeId) {
+            return res.status(403).json({ 
+                error: 'Segregation of duties violation: You cannot reject your own expenses' 
+            });
+        }
+        
+        // GOVERNANCE: Verify the expense belongs to supervisor's direct report
+        db.get('SELECT id FROM employees WHERE id = ? AND supervisor_id = ?', 
+            [expense.employee_id, req.user.employeeId], (err2, directReport) => {
+            
+            if (err2) {
+                console.error('❌ Error checking direct report:', err2);
+                return res.status(500).json({ success: false, error: 'Failed to verify reporting relationship' });
+            }
+            
+            if (!directReport) {
+                return res.status(403).json({ 
+                    error: 'Access denied: You can only reject expenses from your direct reports' 
+                });
+            }
+            
+            // All governance checks passed - proceed with rejection
+            const approverName = approver || req.user.name || 'Supervisor';
+            const query = `
+                UPDATE expenses 
+                SET status = 'rejected', 
+                    approved_by = ?, 
+                    approved_at = CURRENT_TIMESTAMP, 
+                    rejection_reason = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `;
+            
+            db.run(query, [approverName, reason, id], function(err3) {
+                if (err3) {
+                    console.error('❌ Error rejecting expense:', err3);
+                    return res.status(500).json({ 
+                        success: false, 
+                        error: 'Failed to reject expense' 
+                    });
+                }
+                
+                if (this.changes === 0) {
+                    return res.status(404).json({ 
+                        success: false, 
+                        error: 'Expense not found or already processed' 
+                    });
+                }
+                
+                // Log to audit trail
+                logExpenseAudit(id, 'rejected', req.user.employeeId, approverName, 
+                    `Rejected: ${reason}`, expense.status, 'rejected');
+
+                // Notify employee with reason
+                createNotification(expense.employee_id, 'expense_rejected',
+                    `Your expense #${id} was rejected by ${approverName}. Reason: ${reason}`);
+                
+                res.json({ 
+                    success: true, 
+                    message: 'Expense rejected successfully' 
+                });
+            });
+        });
+    });
+});
+
+// Delete expense (admin only with enhanced controls)
+app.delete('/api/expenses/:id', requireAuth, requireRole('admin'), (req, res) => {
+    const { id } = req.params;
+    const { admin_override } = req.body;
+    
+    // First get the expense to check status and details
+    db.get('SELECT * FROM expenses WHERE id = ?', [id], (err, expense) => {
+        if (err) {
+            console.error('❌ Error fetching expense for deletion:', err);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Failed to fetch expense' 
+            });
+        }
+        
+        if (!expense) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Expense not found' 
+            });
+        }
+        
+        // GOVERNANCE: Prevent deletion of approved expenses without explicit override
+        if (expense.status === 'approved' && !admin_override) {
+            return res.status(400).json({
+                success: false,
+                error: 'COMPLIANCE VIOLATION: Cannot delete approved expenses. This violates financial audit requirements. Use admin_override=true if absolutely necessary.'
+            });
+        }
+        
+        // Log the deletion to audit trail BEFORE deleting
+        logExpenseAudit(id, 'deleted', req.user.employeeId, req.user.name || 'Admin', 
+            admin_override ? 'ADMIN OVERRIDE: Force deleted approved expense' : 'Expense deleted by admin',
+            expense.status, 'deleted');
+        
+        // Delete the expense record
+        db.run('DELETE FROM expenses WHERE id = ?', [id], function(err) {
+            if (err) {
+                console.error('❌ Error deleting expense:', err);
+                return res.status(500).json({ 
+                    success: false, 
+                    error: 'Failed to delete expense' 
+                });
+            }
+            
+            // Try to delete the receipt photo file
+            if (expense.receipt_photo) {
+                const filePath = path.join(__dirname, expense.receipt_photo);
+                fs.unlink(filePath, (err) => {
+                    if (err) console.log('⚠️ Could not delete receipt file:', err.message);
+                });
+            }
+
+            res.json({ 
+                success: true, 
+                message: expense.status === 'approved' ? 
+                    'APPROVED EXPENSE DELETED - Admin override used. This action has been logged for audit.' : 
+                    'Expense deleted successfully' 
+            });
+        });
+    });
+});
+
+// Get all employees (authenticated users)
+app.get('/api/employees', requireAuth, requireRole('admin', 'supervisor'), (req, res) => {
+    const query = `
+        SELECT e.*, sup.name as supervisor_name
+        FROM employees e
+        LEFT JOIN employees sup ON e.supervisor_id = sup.id
+        ORDER BY e.name
+    `;
+    
+    db.all(query, [], (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching employees:', err);
+            return res.status(500).json({ error: 'Failed to fetch employees' });
+        }
+        
+        res.json(rows);
+    });
+});
+
+// Add new employee (admin only)
+app.post('/api/employees', requireAuth, requireRole('admin'), async (req, res) => {
+    const { name, employee_number, email, position, department, supervisor_id, cost_center_id } = req.body;
+    
+    // Validation
+    if (!name || name.trim().length === 0) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Employee name is required' 
+        });
+    }
+    
+    if (!employee_number || employee_number.trim().length === 0) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Employee number is required' 
+        });
+    }
+    
+    if (!email || !email.includes('@')) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Valid email address is required' 
+        });
+    }
+    
+    // Governance: admin cannot be a supervisor, supervisor cannot be set to report to an admin
+    if (supervisor_id) {
+        try {
+            const sup = await new Promise((resolve, reject) => {
+                db.get('SELECT id, role FROM employees WHERE id = ?', [supervisor_id], (err, row) => err ? reject(err) : resolve(row));
+            });
+            if (sup && sup.role === 'admin') {
+                return res.status(400).json({ success: false, error: '⚠️ Governance violation: An administrator cannot act as a supervisor. Assign a supervisor-role employee instead.' });
+            }
+        } catch (err) { console.error('Error checking supervisor role:', err); }
+    }
+    
+    // Create employee without password (inactive until signup is completed)
+    const query = `
+        INSERT INTO employees (name, employee_number, email, position, department, supervisor_id, cost_center_id, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+    `;
+    
+    const params = [
+        name.trim(), 
+        employee_number.trim(),
+        email.trim().toLowerCase(),
+        position ? position.trim() : null, 
+        department ? department.trim() : null, 
+        supervisor_id || null,
+        cost_center_id || null
+    ];
+    
+    db.run(query, params, function(err) {
+        if (err) {
+            console.error('❌ Error adding employee:', err);
+            if (err.message.includes('UNIQUE constraint failed')) {
+                return res.status(409).json({ 
+                    success: false, 
+                    error: 'Employee number already exists' 
+                });
+            }
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Failed to add employee' 
+            });
+        }
+        
+        const newEmployeeId = this.lastID;
+        
+        // Generate signup token
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours from now
+        
+        // Insert signup token
+        db.run(
+            'INSERT INTO signup_tokens (employee_id, token, expires_at) VALUES (?, ?, ?)',
+            [newEmployeeId, token, expiresAt.toISOString()],
+            function(tokenErr) {
+                if (tokenErr) {
+                    console.error('❌ Error creating signup token:', tokenErr);
+                    return res.status(500).json({ 
+                        success: false, 
+                        error: 'Failed to create signup token' 
+                    });
+                }
+                
+                // Log all initial field values for audit trail
+                const fieldsToLog = [
+                    { field: 'name', value: name.trim() },
+                    { field: 'employee_number', value: employee_number.trim() },
+                    { field: 'position', value: position ? position.trim() : null },
+                    { field: 'department', value: department ? department.trim() : null },
+                    { field: 'supervisor_id', value: supervisor_id || null },
+                    { field: 'cost_center_id', value: cost_center_id || null }
+                ];
+                
+                fieldsToLog.forEach(item => {
+                    if (item.value !== null && item.value !== '') {
+                        logEmployeeAudit(newEmployeeId, 'created', item.field, null, item.value, req.user.employeeId);
+                    }
+                });
+                
+                // Log the creation action
+                logEmployeeAudit(newEmployeeId, 'created', null, null, 'Employee record created', req.user.employeeId);
+                
+                // Create signup URL
+                const baseUrl = req.protocol + '://' + req.get('host');
+                const signupUrl = `${baseUrl}/signup?token=${token}`;
+                
+                res.json({ 
+                    success: true, 
+                    id: newEmployeeId,
+                    message: 'Employee added successfully!',
+                    signupUrl: signupUrl,
+                    token: token
+                });
+            }
+        );
+    });
+});
+
+// Update employee (admin only)
+app.put('/api/employees/:id', requireAuth, requireRole('admin'), async (req, res) => {
+    const { id } = req.params;
+    const { name, employee_number, position, department, supervisor_id, cost_center_id } = req.body;
+    
+    // Validation
+    if (!name || name.trim().length === 0) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Employee name is required' 
+        });
+    }
+    
+    if (!employee_number || employee_number.trim().length === 0) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Employee number is required' 
+        });
+    }
+    
+    // Governance rule: admin cannot act as supervisor
+    if (supervisor_id) {
+        try {
+            const sup = await new Promise((resolve, reject) => {
+                db.get('SELECT id, role FROM employees WHERE id = ?', [supervisor_id], (err, row) => err ? reject(err) : resolve(row));
+            });
+            if (sup && sup.role === 'admin') {
+                return res.status(400).json({ success: false, error: '⚠️ Governance violation: An administrator cannot act as a supervisor.' });
+            }
+        } catch (err) { console.error('Error checking supervisor role:', err); }
+    }
+    
+    // Governance rule: An employee cannot be their own supervisor
+    if (supervisor_id && String(supervisor_id) === String(id)) {
+        return res.status(400).json({ 
+            success: false, 
+            error: '⚠️ Governance violation: An employee cannot be their own supervisor. This violates audit and oversight requirements.' 
+        });
+    }
+    
+    // Governance rule: Prevent circular supervision chains
+    if (supervisor_id) {
+        try {
+            const chain = await new Promise((resolve, reject) => {
+                db.all(`
+                    WITH RECURSIVE chain AS (
+                        SELECT id, supervisor_id FROM employees WHERE id = ?
+                        UNION ALL
+                        SELECT e.id, e.supervisor_id FROM employees e INNER JOIN chain c ON e.id = c.supervisor_id
+                    )
+                    SELECT id FROM chain WHERE id != ?
+                `, [supervisor_id, supervisor_id], (err, rows) => err ? reject(err) : resolve(rows));
+            });
+            if (chain.some(r => String(r.id) === String(id))) {
+                return res.status(400).json({
+                    success: false,
+                    error: '⚠️ Governance violation: This assignment would create a circular supervision chain.'
+                });
+            }
+        } catch (err) {
+            console.error('Error checking supervision chain:', err);
+        }
+    }
+    
+    // First get current values to compare
+    db.get('SELECT * FROM employees WHERE id = ?', [id], (err, currentEmployee) => {
+        if (err) {
+            console.error('❌ Error fetching employee for comparison:', err);
+            return res.status(500).json({ success: false, error: 'Failed to fetch current employee data: ' + (err.message || err) });
+        }
+        
+        if (!currentEmployee) {
+            return res.status(404).json({ success: false, error: 'Employee not found' });
+        }
+        
+        const query = `
+            UPDATE employees 
+            SET name = ?, employee_number = ?, position = ?, department = ?, supervisor_id = ?, cost_center_id = ?
+            WHERE id = ?
+        `;
+        
+        const params = [
+            name.trim(), 
+            employee_number.trim(), 
+            position ? position.trim() : null, 
+            department ? department.trim() : null, 
+            supervisor_id || null,
+            cost_center_id || null,
+            id
+        ];
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('❌ Error updating employee:', err);
+                if (err.message && err.message.includes('UNIQUE constraint failed')) {
+                    return res.status(409).json({ 
+                        success: false, 
+                        error: 'Employee number already exists' 
+                    });
+                }
+                return res.status(500).json({ 
+                    success: false, 
+                    error: 'Failed to update employee: ' + (err.message || err)
+                });
+            }
+            
+            if (this.changes === 0) {
+                return res.status(404).json({ 
+                    success: false, 
+                    error: 'Employee not found' 
+                });
+            }
+            
+            // Log changes for audit trail - compare old vs new values
+            const fieldsToCheck = [
+                { field: 'name', oldValue: currentEmployee.name, newValue: name.trim() },
+                { field: 'employee_number', oldValue: currentEmployee.employee_number, newValue: employee_number.trim() },
+                { field: 'position', oldValue: currentEmployee.position, newValue: position ? position.trim() : null },
+                { field: 'department', oldValue: currentEmployee.department, newValue: department ? department.trim() : null },
+                { field: 'supervisor_id', oldValue: currentEmployee.supervisor_id, newValue: supervisor_id || null },
+                { field: 'cost_center_id', oldValue: currentEmployee.cost_center_id, newValue: cost_center_id || null }
+            ];
+            
+            let changesDetected = false;
+            fieldsToCheck.forEach(item => {
+                // Convert to string for comparison to handle null/undefined consistently
+                const oldStr = String(item.oldValue || '');
+                const newStr = String(item.newValue || '');
+                
+                if (oldStr !== newStr) {
+                    changesDetected = true;
+                    logEmployeeAudit(id, 'updated', item.field, item.oldValue, item.newValue, req.user.employeeId);
+                }
+            });
+            
+            if (changesDetected) {
+                logEmployeeAudit(id, 'updated', null, null, 'Employee record updated', req.user.employeeId);
+            }
+            
+            res.json({ 
+                success: true, 
+                message: 'Employee updated successfully!' 
+            });
+        });
+    });
+});
+
+// Delete employee (admin only)
+app.delete('/api/employees/:id', requireAuth, requireRole('admin'), (req, res) => {
+    const { id } = req.params;
+    
+    // First check if employee has expenses
+    db.get('SELECT COUNT(*) as count FROM expenses WHERE employee_name = (SELECT name FROM employees WHERE id = ?)', [id], (err, result) => {
+        if (err) {
+            console.error('❌ Error checking employee expenses:', err);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Failed to check employee expenses' 
+            });
+        }
+        
+        if (result.count > 0) {
+            return res.status(409).json({ 
+                success: false, 
+                error: `Cannot delete employee: ${result.count} expenses associated with this employee` 
+            });
+        }
+        
+        // Check if employee is a supervisor
+        db.get('SELECT COUNT(*) as count FROM employees WHERE supervisor_id = ?', [id], (err, supervisorResult) => {
+            if (err) {
+                console.error('❌ Error checking supervisor relationships:', err);
+                return res.status(500).json({ 
+                    success: false, 
+                    error: 'Failed to check supervisor relationships' 
+                });
+            }
+            
+            if (supervisorResult.count > 0) {
+                return res.status(409).json({ 
+                    success: false, 
+                    error: `Cannot delete employee: ${supervisorResult.count} employees report to this person` 
+                });
+            }
+            
+            // Get employee details before deletion for audit log
+            db.get('SELECT * FROM employees WHERE id = ?', [id], (err, employee) => {
+                if (err) {
+                    console.error('❌ Error fetching employee for deletion audit:', err);
+                    return res.status(500).json({ success: false, error: 'Failed to fetch employee data' });
+                }
+                
+                if (!employee) {
+                    return res.status(404).json({ success: false, error: 'Employee not found' });
+                }
+                
+                // Log deletion before deleting the record
+                logEmployeeAudit(id, 'deleted', 'name', employee.name, null, req.user.employeeId);
+                logEmployeeAudit(id, 'deleted', 'employee_number', employee.employee_number, null, req.user.employeeId);
+                if (employee.position) logEmployeeAudit(id, 'deleted', 'position', employee.position, null, req.user.employeeId);
+                if (employee.department) logEmployeeAudit(id, 'deleted', 'department', employee.department, null, req.user.employeeId);
+                if (employee.supervisor_id) logEmployeeAudit(id, 'deleted', 'supervisor_id', employee.supervisor_id, null, req.user.employeeId);
+                logEmployeeAudit(id, 'deleted', null, null, `Employee record deleted: ${employee.name} (${employee.employee_number})`, req.user.employeeId);
+                
+                // Now delete the employee
+                db.run('DELETE FROM employees WHERE id = ?', [id], function(err) {
+                    if (err) {
+                        console.error('❌ Error deleting employee:', err);
+                        return res.status(500).json({ 
+                            success: false, 
+                            error: 'Failed to delete employee' 
+                        });
+                    }
+                    
+                    if (this.changes === 0) {
+                        return res.status(404).json({ 
+                            success: false, 
+                            error: 'Employee not found' 
+                        });
+                    }
+                    
+                    res.json({ 
+                        success: true, 
+                        message: 'Employee deleted successfully' 
+                    });
+                });
+            });
+        });
+    });
+});
+
+// GET /api/employee-audit-log endpoint (admin only) - Employee change audit trail
+app.get('/api/employee-audit-log', requireAuth, requireRole('admin'), (req, res) => {
+    const { limit = 100, offset = 0, employee_id } = req.query;
+    
+    let query = `
+        SELECT eal.*, 
+               e.name as employee_name,
+               e.employee_number,
+               performer.name as performed_by_name,
+               performer.employee_number as performed_by_number
+        FROM employee_audit_log eal
+        LEFT JOIN employees e ON eal.employee_id = e.id
+        LEFT JOIN employees performer ON eal.performed_by = performer.id
+    `;
+    
+    let params = [];
+    
+    if (employee_id) {
+        query += ` WHERE eal.employee_id = ?`;
+        params.push(employee_id);
+    }
+    
+    query += ` ORDER BY eal.performed_at DESC LIMIT ? OFFSET ?`;
+    params.push(parseInt(limit), parseInt(offset));
+    
+    db.all(query, params, (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching employee audit log:', err);
+            return res.status(500).json({ error: 'Failed to fetch employee audit log' });
+        }
+        
+        // Get total count
+        const countQuery = employee_id ? 
+            'SELECT COUNT(*) as total FROM employee_audit_log WHERE employee_id = ?' :
+            'SELECT COUNT(*) as total FROM employee_audit_log';
+        const countParams = employee_id ? [employee_id] : [];
+        
+        db.get(countQuery, countParams, (err2, countRow) => {
+            if (err2) {
+                console.error('❌ Error fetching employee audit count:', err2);
+                return res.status(500).json({ error: 'Failed to fetch audit count' });
+            }
+
+            res.json({
+                success: true,
+                employee_audit_log: rows,
+                pagination: {
+                    total: countRow.total,
+                    limit: parseInt(limit),
+                    offset: parseInt(offset),
+                    has_more: (parseInt(offset) + rows.length) < countRow.total
+                }
+            });
+        });
+    });
+});
+
+// Get NJC rates (requires authentication)
+app.get('/api/njc-rates', requireAuth, async (req, res) => {
+    try {
+        const perDiemTypes = await njcRates.getAvailablePerDiemTypes();
+        const updateInfo = njcRates.getRateUpdateInfo();
+        
+        res.json({
+            success: true,
+            per_diem_types: perDiemTypes,
+            update_info: updateInfo,
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ Error fetching NJC rates:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch per diem rates'
+        });
+    }
+});
+
+// Get expense status for employee
+app.get('/api/expenses/employee/:name', requireAuth, (req, res) => {
+    const { name } = req.params;
+    
+    if (!name || name.trim().length === 0) {
+        return res.status(400).json({ error: 'Employee name is required' });
+    }
+    
+    // First check if employee exists
+    db.get('SELECT name FROM employees WHERE name = ?', [name], (err, employee) => {
+        if (err) {
+            console.error('❌ Error checking employee:', err);
+            return res.status(500).json({ error: 'Database error' });
+        }
+        
+        // If employee doesn't exist in directory, still return expenses but with warning
+        const query = `
+            SELECT * FROM expenses 
+            WHERE employee_name = ? 
+            ORDER BY created_at DESC 
+            LIMIT 10
+        `;
+        
+        db.all(query, [name], (err, rows) => {
+            if (err) {
+                console.error('❌ Error fetching employee expenses:', err);
+                return res.status(500).json({ error: 'Failed to fetch expenses' });
+            }
+            
+            if (rows.length === 0 && !employee) {
+                return res.status(404).json({ 
+                    error: 'No expenses found for this employee',
+                    message: 'Employee may not exist in directory'
+                });
+            }
+            
+            res.json(rows);
+        });
+    });
+});
+
+// 🏛️ NJC Per Diem Rates API Endpoints
+
+// Calculate vehicle allowance (requires authentication)
+app.post('/api/njc-rates/vehicle-allowance', requireAuth, async (req, res) => {
+    const { kilometers, expense_date } = req.body;
+    
+    if (!kilometers || isNaN(kilometers) || kilometers <= 0) {
+        return res.status(400).json({
+            success: false,
+            error: 'Valid kilometer amount required'
+        });
+    }
+    
+    try {
+        const calculation = await njcRates.calculateVehicleAllowance(parseFloat(kilometers), expense_date);
+        
+        if (!calculation) {
+            return res.status(404).json({
+                success: false,
+                error: 'Unable to calculate vehicle allowance for specified date'
+            });
+        }
+        
+        res.json({
+            success: true,
+            ...calculation
+        });
+        
+    } catch (error) {
+        console.error('❌ Error calculating vehicle allowance:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to calculate vehicle allowance'
+        });
+    }
+});
+
+// Validate per diem expense with historical rates (requires authentication)
+app.post('/api/njc-rates/validate', requireAuth, async (req, res) => {
+    const { expense_type, amount, expense_date, additional_data } = req.body;
+    
+    if (!expense_type || !amount || !expense_date) {
+        return res.status(400).json({
+            success: false,
+            error: 'expense_type, amount, and expense_date are required'
+        });
+    }
+    
+    // Validate date format
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(expense_date)) {
+        return res.status(400).json({
+            success: false,
+            error: 'Invalid expense_date format. Use YYYY-MM-DD'
+        });
+    }
+    
+    try {
+        const validation = await njcRates.validatePerDiemExpense(expense_type, amount, expense_date, additional_data);
+        
+        res.json({
+            success: true,
+            valid: validation.valid,
+            message: validation.message,
+            expense_type,
+            amount: parseFloat(amount),
+            expense_date,
+            rate_info: validation.rate_info
+        });
+        
+    } catch (error) {
+        console.error('❌ Error validating per diem expense:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to validate per diem expense'
+        });
+    }
+});
+
+// 📋 COMPREHENSIVE NJC RATES MANAGEMENT ENDPOINTS
+
+// Get all rates (current + historical) grouped by rate_type (admin only)
+app.get('/api/njc-rates/all', requireAuth, requireRole('admin'), async (req, res) => {
+    try {
+        const province = req.query.province || 'QC';
+        const allRates = await njcRates.getAllRates(province);
+        
+        res.json({
+            success: true,
+            rates: allRates,
+            province
+        });
+        
+    } catch (error) {
+        console.error('❌ Error getting all NJC rates:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to retrieve NJC rates'
+        });
+    }
+});
+
+// Get current effective rates
+app.get('/api/njc-rates/current', requireAuth, async (req, res) => {
+    try {
+        const province = req.query.province || 'QC';
+        const currentRates = await njcRates.getCurrentRates(province);
+        
+        res.json({
+            success: true,
+            rates: currentRates,
+            province,
+            as_of: new Date().toISOString().split('T')[0]
+        });
+        
+    } catch (error) {
+        console.error('❌ Error getting current NJC rates:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to retrieve current NJC rates'
+        });
+    }
+});
+
+// Get rates effective on a specific date
+app.get('/api/njc-rates/for-date', requireAuth, async (req, res) => {
+    const { date } = req.query;
+    
+    if (!date) {
+        return res.status(400).json({
+            success: false,
+            error: 'date parameter is required (YYYY-MM-DD format)'
+        });
+    }
+    
+    // Validate date format
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({
+            success: false,
+            error: 'Invalid date format. Use YYYY-MM-DD'
+        });
+    }
+    
+    try {
+        const province = req.query.province || 'QC';
+        const rates = await njcRates.getRatesForDate(date, province);
+        
+        res.json({
+            success: true,
+            rates: rates,
+            date: date,
+            province
+        });
+        
+    } catch (error) {
+        console.error('❌ Error getting NJC rates for date:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to retrieve NJC rates for specified date'
+        });
+    }
+});
+
+// Get per diem rate for specific expense type (MUST be after /current, /all, /for-date)
+app.get('/api/njc-rates/:expenseType', requireAuth, async (req, res) => {
+    const { expenseType } = req.params;
+    const { date } = req.query;
+    
+    try {
+        const rateInfo = await njcRates.getPerDiemRate(expenseType, date);
+        
+        if (!rateInfo) {
+            return res.status(404).json({
+                success: false,
+                error: 'Expense type not found in NJC per diem rates'
+            });
+        }
+        
+        res.json({
+            success: true,
+            expense_type: expenseType,
+            query_date: date || 'current',
+            ...rateInfo
+        });
+        
+    } catch (error) {
+        console.error('❌ Error fetching NJC rate:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch per diem rate'
+        });
+    }
+});
+
+// Add new rate revision (admin only)
+app.post('/api/njc-rates', requireAuth, requireRole('admin'), async (req, res) => {
+    const { rate_type, amount, effective_date, province, notes } = req.body;
+    
+    // Validate required fields
+    if (!rate_type || !amount || !effective_date) {
+        return res.status(400).json({
+            success: false,
+            error: 'rate_type, amount, and effective_date are required'
+        });
+    }
+    
+    // Validate rate type
+    const validRateTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'private_vehicle', 'vehicle', 'vehicle_km'];
+    if (!validRateTypes.includes(rate_type)) {
+        return res.status(400).json({
+            success: false,
+            error: `Invalid rate_type. Must be one of: ${validRateTypes.join(', ')}`
+        });
+    }
+    
+    // Validate amount
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0 || numAmount > 1000) {
+        return res.status(400).json({
+            success: false,
+            error: 'Amount must be a positive number between 0.01 and 1000.00'
+        });
+    }
+    
+    // Validate date format
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(effective_date)) {
+        return res.status(400).json({
+            success: false,
+            error: 'Invalid effective_date format. Use YYYY-MM-DD'
+        });
+    }
+    
+    // Ensure effective date is not in the past (unless admin override)
+    const today = new Date().toISOString().split('T')[0];
+    if (effective_date < today && !req.body.admin_override) {
+        return res.status(400).json({
+            success: false,
+            error: 'Effective date cannot be in the past. Use admin_override=true if intentional.'
+        });
+    }
+    
+    try {
+        const result = await njcRates.addNewRate(
+            rate_type,
+            numAmount,
+            effective_date,
+            province || 'QC',
+            notes || '',
+            req.user.name || 'admin'
+        );
+        
+        res.json({
+            success: true,
+            message: `New ${rate_type} rate added successfully`,
+            rate_id: result.id,
+            rate_type,
+            amount: numAmount,
+            effective_date,
+            province: province || 'QC'
+        });
+        
+    } catch (error) {
+        console.error('❌ Error adding new NJC rate:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to add new NJC rate'
+        });
+    }
+});
+
+// Update existing rate (admin only) - only if not used in approved expenses
+app.put('/api/njc-rates/:id', requireAuth, requireRole('admin'), async (req, res) => {
+    const { id } = req.params;
+    const { amount, notes } = req.body;
+    
+    if (!amount) {
+        return res.status(400).json({
+            success: false,
+            error: 'amount is required'
+        });
+    }
+    
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0 || numAmount > 1000) {
+        return res.status(400).json({
+            success: false,
+            error: 'Amount must be a positive number between 0.01 and 1000.00'
+        });
+    }
+    
+    try {
+        const db = new sqlite3.Database(path.join(__dirname, 'expenses.db'));
+        
+        // Check if rate has been used in any approved expenses (audit integrity)
+        db.get(`
+            SELECT COUNT(*) as count
+            FROM expenses e
+            JOIN njc_rates nr ON nr.rate_type = e.expense_type 
+            WHERE nr.id = ? 
+            AND e.status = 'approved'
+            AND e.date >= nr.effective_date
+            AND (nr.end_date IS NULL OR e.date <= nr.end_date)
+        `, [id], (err, row) => {
+            if (err) {
+                db.close();
+                return res.status(500).json({
+                    success: false,
+                    error: 'Database error checking rate usage'
+                });
+            }
+            
+            if (row.count > 0) {
+                db.close();
+                return res.status(400).json({
+                    success: false,
+                    error: 'Cannot modify rate that has been used in approved expenses (audit integrity)'
+                });
+            }
+            
+            // Update the rate
+            db.run(`
+                UPDATE njc_rates 
+                SET amount = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `, [numAmount, notes || '', id], function(err) {
+                db.close();
+                
+                if (err) {
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Failed to update NJC rate'
+                    });
+                }
+                
+                if (this.changes === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'NJC rate not found'
+                    });
+                }
+                
+                res.json({
+                    success: true,
+                    message: 'NJC rate updated successfully',
+                    rate_id: id,
+                    amount: numAmount
+                });
+            });
+        });
+        
+    } catch (error) {
+        console.error('❌ Error updating NJC rate:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to update NJC rate'
+        });
+    }
+});
+
+// 🧳 TRIP MANAGEMENT ENDPOINTS
+
+// Get employee's trips
+app.get('/api/trips', requireAuth, (req, res) => {
+    const query = `
+        SELECT t.*, 
+               COUNT(e.id) as expense_count,
+               SUM(e.amount) as calculated_total,
+               ta.id as auth_id
+        FROM trips t
+        LEFT JOIN expenses e ON t.id = e.trip_id
+        LEFT JOIN travel_authorizations ta ON ta.trip_id = t.id
+        WHERE t.employee_id = ?
+        GROUP BY t.id
+        ORDER BY t.created_at DESC
+    `;
+    
+    db.all(query, [req.user.employeeId], (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching trips:', err);
+            return res.status(500).json({ error: 'Failed to fetch trips' });
+        }
+        
+        res.json(rows);
+    });
+});
+
+// Create new trip
+app.post('/api/trips', requireAuth, async (req, res) => {
+    const {
+        trip_name,
+        destination,
+        purpose,
+        start_date,
+        end_date
+    } = req.body;
+    
+    // Validation
+    if (!trip_name || !start_date || !end_date) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Missing required fields: trip_name, start_date, end_date' 
+        });
+    }
+    
+    // Bug 1 Fix: Check for overlapping trips
+    try {
+        const overlap = await new Promise((resolve, reject) => {
+            db.get(
+                `SELECT id, trip_name FROM trips WHERE employee_id = ? AND status = 'draft'
+                 AND start_date <= ? AND end_date >= ?`,
+                [req.user.employeeId, end_date, start_date],
+                (err, row) => err ? reject(err) : resolve(row)
+            );
+        });
+        if (overlap) {
+            return res.status(400).json({
+                success: false,
+                error: `Trip dates overlap with existing trip "${overlap.trip_name}". Please choose different dates.`
+            });
+        }
+    } catch (err) {
+        console.error('❌ Error checking trip overlap:', err);
+        return res.status(500).json({ success: false, error: 'Failed to validate trip dates' });
+    }
+    
+    const query = `
+        INSERT INTO trips (employee_id, trip_name, destination, purpose, start_date, end_date)
+        VALUES (?, ?, ?, ?, ?, ?)
+    `;
+    
+    const params = [req.user.employeeId, trip_name, destination, purpose, start_date, end_date];
+    
+    db.run(query, params, function(err) {
+        if (err) {
+            console.error('❌ Error creating trip:', err);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Failed to create trip' 
+            });
+        }
+        
+        res.json({ 
+            success: true, 
+            id: this.lastID, 
+            message: 'Trip created successfully!' 
+        });
+    });
+});
+
+// Get trip details with expenses
+app.get('/api/trips/:id', requireAuth, (req, res) => {
+    const tripId = req.params.id;
+    
+    // First get trip details
+    const tripQuery = `
+        SELECT t.*, emp.name as employee_name
+        FROM trips t
+        JOIN employees emp ON t.employee_id = emp.id
+        WHERE t.id = ? AND t.employee_id = ?
+    `;
+    
+    db.get(tripQuery, [tripId, req.user.employeeId], (err, trip) => {
+        if (err) {
+            console.error('❌ Error fetching trip:', err);
+            return res.status(500).json({ error: 'Failed to fetch trip' });
+        }
+        
+        if (!trip) {
+            return res.status(404).json({ error: 'Trip not found' });
+        }
+        
+        // Get trip expenses
+        const expensesQuery = `
+            SELECT * FROM expenses 
+            WHERE trip_id = ? 
+            ORDER BY date ASC, created_at ASC
+        `;
+        
+        db.all(expensesQuery, [tripId], (err, expenses) => {
+            if (err) {
+                console.error('❌ Error fetching trip expenses:', err);
+                return res.status(500).json({ error: 'Failed to fetch trip expenses' });
+            }
+            
+            // Calculate total
+            const total = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+            
+            // After getting trip and expenses, also get linked AT transport data
+            const atQuery = `SELECT details FROM travel_authorizations WHERE trip_id = ? AND status = 'approved'`;
+            db.get(atQuery, [tripId], (atErr, at) => {
+                let transport = null;
+                if (!atErr && at && at.details) {
+                    try {
+                        const details = JSON.parse(at.details);
+                        transport = details.transport || null;
+                    } catch(e) {}
+                }
+                res.json({
+                    ...trip,
+                    expenses: expenses,
+                    calculated_total: total,
+                    transport: transport  // Include AT transport data
+                });
+            });
+        });
+    });
+});
+
+// GET /api/trips/:id/variance — Compare trip actuals vs AT estimates
+app.get('/api/trips/:id/variance', requireAuth, (req, res) => {
+    const tripId = req.params.id;
+    
+    // Get trip with expenses
+    db.get(`SELECT t.* FROM trips t WHERE t.id = ?`, [tripId], (err, trip) => {
+        if (err || !trip) return res.status(404).json({ error: 'Trip not found' });
+        
+        // Get linked AT
+        db.get(`SELECT * FROM travel_authorizations WHERE trip_id = ?`, [tripId], (atErr, at) => {
+            if (atErr || !at) return res.json({ trip, at: null, variance: null, message: 'No linked AT found' });
+            
+            // Get AT expenses (the authorized amounts)
+            db.all(`SELECT * FROM expenses WHERE travel_auth_id = ? ORDER BY date ASC`, [at.id], (atExpErr, atExpenses) => {
+                if (atExpErr) atExpenses = [];
+            
+            // Get trip expenses (the actual amounts)
+            db.all(`SELECT * FROM expenses WHERE trip_id = ? ORDER BY date ASC`, [tripId], (expErr, expenses) => {
+                if (expErr) expenses = [];
+                
+                // Get variance thresholds
+                db.all(`SELECT key, value FROM app_settings WHERE key IN ('variance_pct_threshold', 'variance_dollar_threshold')`, [], (sErr, settings) => {
+                    const settingsMap = {};
+                    if (settings) settings.forEach(s => { settingsMap[s.key] = s.value; });
+                    const pctThreshold = parseFloat(settingsMap.variance_pct_threshold || '10');
+                    const dollarThreshold = parseFloat(settingsMap.variance_dollar_threshold || '100');
+                    
+                    // Parse AT transport details from JSON
+                    let transportDetails = {};
+                    try {
+                        if (at.details) {
+                            const details = JSON.parse(at.details);
+                            transportDetails = details.transport || {};
+                        }
+                    } catch(e) { console.error('Error parsing AT details:', e); }
+                    
+                    // Calculate actuals by granular categories (meals split into B/L/D)
+                    const cats = ['breakfast','lunch','dinner','incidentals','hotel','kilometric','flight','train','bus','rental','other'];
+                    const actuals = {}; const actualCounts = {};
+                    const estimates = {}; const estimateCounts = {};
+                    cats.forEach(c => { actuals[c] = 0; actualCounts[c] = 0; estimates[c] = 0; estimateCounts[c] = 0; });
+                    
+                    function categorize(expType) {
+                        switch(expType) {
+                            case 'breakfast': return 'breakfast';
+                            case 'lunch': return 'lunch';
+                            case 'dinner': return 'dinner';
+                            case 'incidentals': return 'incidentals';
+                            case 'hotel': return 'hotel';
+                            case 'vehicle_km': return 'kilometric';
+                            case 'transport_flight': return 'flight';
+                            case 'transport_train': return 'train';
+                            case 'transport_bus': return 'bus';
+                            case 'transport_rental': return 'rental';
+                            default: return 'other';
+                        }
+                    }
+                    
+                    expenses.forEach(e => {
+                        const cat = categorize(e.expense_type);
+                        actuals[cat] += parseFloat(e.amount) || 0;
+                        actualCounts[cat]++;
+                    });
+                    
+                    atExpenses.forEach(e => {
+                        const cat = categorize(e.expense_type);
+                        estimates[cat] += parseFloat(e.amount) || 0;
+                        estimateCounts[cat]++;
+                    });
+                    
+                    // Calculate totals
+                    const actualTotal = Object.values(actuals).reduce((sum, val) => sum + val, 0);
+                    const estTotal = Object.values(estimates).reduce((sum, val) => sum + val, 0);
+                    
+                    // Enhanced variance calculation with status logic
+                    function calcVariance(actual, estimate, categoryName = '') {
+                        const diff = actual - estimate;
+                        const pct = estimate > 0 ? ((diff / estimate) * 100) : (actual > 0 ? 100 : 0);
+                        
+                        let status, icon, description;
+                        
+                        if (estimate === 0 && actual > 0) {
+                            // Unplanned category
+                            status = 'new';
+                            icon = '🆕';
+                            description = 'Not in AT';
+                        } else if (estimate > 0 && actual === 0) {
+                            // Category in AT but not claimed
+                            status = 'unclaimed';
+                            icon = '➖';
+                            description = 'Not claimed';
+                        } else if (actual <= estimate) {
+                            // Under or at budget
+                            status = 'green';
+                            icon = '✅';
+                            description = 'Within budget';
+                        } else if (Math.abs(pct) > pctThreshold && Math.abs(diff) > dollarThreshold) {
+                            // Over both thresholds
+                            status = 'red';
+                            icon = '🔴';
+                            description = `Over ${pctThreshold}% AND $${dollarThreshold}`;
+                        } else {
+                            // Over budget but below both thresholds
+                            status = 'yellow';
+                            icon = '⚠️';
+                            description = 'Over budget';
+                        }
+                        
+                        return { 
+                            actual, 
+                            estimate, 
+                            diff, 
+                            pct: Math.round(pct * 10) / 10, 
+                            status, 
+                            icon, 
+                            description 
+                        };
+                    }
+                    
+                    // Build variance with counts
+                    const variance = {};
+                    cats.forEach(c => {
+                        const v = calcVariance(actuals[c], estimates[c], c);
+                        v.actualCount = actualCounts[c];
+                        v.estimateCount = estimateCounts[c];
+                        variance[c] = v;
+                    });
+                    variance.total = calcVariance(actualTotal, estTotal, 'total');
+                    variance.total.actualCount = expenses.length;
+                    variance.total.estimateCount = atExpenses.length;
+                    
+                    res.json({
+                        trip: { id: trip.id, name: trip.trip_name, status: trip.status, justification: trip.justification || null },
+                        at: { id: at.id, name: at.name, status: at.status },
+                        thresholds: { pct: pctThreshold, dollar: dollarThreshold },
+                        variance
+                    });
+                });
+            });
+            }); // close atExpenses query
+        });
+    });
+});
+
+// Submit trip for approval
+// ============================================================
+// 🚗 Transport Receipt Endpoints
+// ============================================================
+
+// POST /api/trips/:id/transport-receipts — upload receipts for a transport mode
+app.post('/api/trips/:id/transport-receipts', requireAuth, upload.array('receipts', 20), (req, res) => {
+    const tripId = req.params.id;
+    const mode = req.body.mode;
+    const validModes = ['flight', 'train', 'bus', 'rental', 'taxi'];
+    const isHotelMode = mode && mode.startsWith('hotel_');
+
+    if (!mode || (!validModes.includes(mode) && !isHotelMode)) {
+        return res.status(400).json({ error: 'Invalid transport mode' });
+    }
+    if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    // Verify trip belongs to user
+    db.get(`SELECT id FROM trips WHERE id = ? AND employee_id = ?`, [tripId, req.user.employeeId], (err, trip) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!trip) return res.status(404).json({ error: 'Trip not found' });
+
+        // Delete existing receipts for this mode (replace on re-upload)
+        db.run(`DELETE FROM transport_receipts WHERE trip_id = ? AND transport_mode = ?`, [tripId, mode], (delErr) => {
+            if (delErr) console.error('Delete old transport receipts error:', delErr);
+
+            const stmt = db.prepare(`INSERT INTO transport_receipts (trip_id, transport_mode, file_data, file_name, file_type, file_size, upload_order) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+            let order = 0;
+            for (const file of req.files) {
+                let fileData = file.buffer || null;
+                if (!fileData && file.path) {
+                    try { fileData = fs.readFileSync(file.path); } catch (e) { console.warn('Could not read transport receipt:', e.message); }
+                }
+                console.log(`📎 Saving ${mode} receipt: ${file.originalname}, size=${fileData ? fileData.length : 0} bytes, path=${file.path}`);
+                stmt.run(tripId, mode, fileData, file.originalname, file.mimetype, file.size, ++order);
+            }
+            stmt.finalize((err) => {
+                if (err) { console.error('❌ Transport receipt save error:', err); return res.status(500).json({ error: 'Failed to save receipts' }); }
+                console.log(`✅ ${req.files.length} ${mode} receipt(s) saved for trip #${tripId}`);
+                res.json({ success: true, count: req.files.length });
+            });
+        });
+    });
+});
+
+// GET /api/trips/:id/transport-receipts — list receipts for a trip (optionally by mode)
+app.get('/api/trips/:id/transport-receipts', requireAuth, (req, res) => {
+    const tripId = req.params.id;
+    const mode = req.query.mode;
+    let query = `SELECT id, transport_mode, file_name, file_type, file_size, upload_order FROM transport_receipts WHERE trip_id = ?`;
+    const params = [tripId];
+    if (mode) { query += ` AND transport_mode = ?`; params.push(mode); }
+    query += ` ORDER BY transport_mode, upload_order`;
+
+    db.all(query, params, (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json(rows || []);
+    });
+});
+
+// GET /api/transport-receipts/:receiptId — download a single receipt
+app.get('/api/transport-receipts/:receiptId', requireAuth, (req, res) => {
+    db.get(`SELECT file_data, file_name, file_type FROM transport_receipts WHERE id = ?`, [req.params.receiptId], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row || !row.file_data) return res.status(404).json({ error: 'Receipt not found' });
+        try {
+            const buf = Buffer.isBuffer(row.file_data) ? row.file_data : Buffer.from(row.file_data);
+            res.setHeader('Content-Type', row.file_type || 'application/octet-stream');
+            const safeName = (row.file_name || 'receipt').replace(/[^\w.\-]/g, '_');
+            res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+            res.setHeader('Content-Length', buf.length);
+            res.end(buf);
+        } catch (e) { console.error('❌ Error sending transport receipt:', e); if (!res.headersSent) res.status(500).json({ error: 'Failed to send receipt' }); }
+    });
+});
+
+// Debug: check transport receipts for a trip
+app.get('/api/trips/:id/transport-receipts-debug', requireAuth, (req, res) => {
+    db.all(`SELECT id, transport_mode, file_name, file_type, file_size, upload_order, length(file_data) as data_length FROM transport_receipts WHERE trip_id = ?`, [req.params.id], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ trip_id: req.params.id, count: (rows || []).length, receipts: rows || [] });
+    });
+});
+
+app.post('/api/trips/:id/submit', requireAuth, (req, res) => {
+    const tripId = req.params.id;
+    
+    // Check if trip belongs to user and has expenses
+    const checkQuery = `
+        SELECT t.*, COUNT(e.id) as expense_count
+        FROM trips t
+        LEFT JOIN expenses e ON t.id = e.trip_id
+        WHERE t.id = ? AND t.employee_id = ?
+        GROUP BY t.id
+    `;
+    
+    db.get(checkQuery, [tripId, req.user.employeeId], (err, trip) => {
+        if (err) {
+            console.error('❌ Error checking trip:', err);
+            return res.status(500).json({ error: 'Failed to check trip' });
+        }
+        
+        if (!trip) {
+            return res.status(404).json({ error: 'Trip not found' });
+        }
+        
+        if (trip.status !== 'draft' && trip.status !== 'active') {
+            return res.status(400).json({ error: 'Trip has already been submitted' });
+        }
+        
+        if (trip.expense_count === 0) {
+            return res.status(400).json({ error: 'Cannot submit trip with no expenses' });
+        }
+        
+        // CRITICAL: Check for approved Travel Authorization before allowing submission
+        const checkATQuery = `
+            SELECT id, status, destination 
+            FROM travel_authorizations 
+            WHERE (trip_id = ? OR (employee_id = ? AND start_date <= ? AND end_date >= ?)) 
+            AND status = 'approved'
+            LIMIT 1
+        `;
+        
+        db.get(checkATQuery, [tripId, req.user.employeeId, trip.start_date, trip.end_date], (err, at) => {
+            if (err) {
+                console.error('❌ Error checking travel authorization:', err);
+                return res.status(500).json({ error: 'Failed to verify travel authorization' });
+            }
+            
+            if (!at) {
+                return res.status(400).json({ 
+                    error: 'An approved Authorization to Travel (AT) is required before submitting trip expenses. Please create and get approval for an AT first.',
+                    code: 'MISSING_AT'
+                });
+            }
+            
+            // Update trip status and link to AT if not already linked
+            const justification = req.body && req.body.justification ? req.body.justification : null;
+            const updateQuery = `
+                UPDATE trips 
+                SET status = 'submitted', submitted_at = CURRENT_TIMESTAMP, justification = ?
+                WHERE id = ?
+            `;
+            
+            db.run(updateQuery, [justification, tripId], function(err) {
+                if (err) {
+                    console.error('❌ Error submitting trip:', err);
+                    return res.status(500).json({ error: 'Failed to submit trip' });
+                }
+                
+                // Link AT to trip if not already linked
+                if (!at.trip_id) {
+                    db.run(`UPDATE travel_authorizations SET trip_id = ? WHERE id = ?`, [tripId, at.id]);
+                }
+                
+                
+                // FEATURE 4: Notify supervisor
+                db.get('SELECT supervisor_id FROM employees WHERE id = ?', [req.user.employeeId], (err2, emp) => {
+                    if (!err2 && emp && emp.supervisor_id) {
+                        createNotification(emp.supervisor_id, 'trip_submitted', 
+                            `Trip "${trip.trip_name || tripId}" has been submitted for your approval.`);
+                    }
+                });
+                
+                res.json({ 
+                    success: true, 
+                    message: 'Trip submitted for approval!' 
+                });
+            });
+        });
+    });
+});
+
+// 📱 Handle receipt photo upload as base64
+app.post('/api/upload-receipt', requireAuth, (req, res) => {
+    const { imageData, filename } = req.body;
+    
+    if (!imageData) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'No image data provided' 
+        });
+    }
+    
+    try {
+        // Remove data URL prefix if present
+        const base64Data = imageData.replace(/^data:image\/[a-z]+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        
+        const fileName = `receipt-${Date.now()}-${Math.round(Math.random() * 1E9)}.jpg`;
+        const filePath = path.join(uploadsDir, fileName);
+        
+        fs.writeFileSync(filePath, buffer);
+        
+        res.json({ 
+            success: true, 
+            filename: fileName,
+            path: `/uploads/${fileName}` 
+        });
+        
+    } catch (error) {
+        console.error('❌ Error uploading receipt:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to upload receipt' 
+        });
+    }
+});
+
+// 📄 OCR Receipt Scanning Endpoint
+app.post('/api/ocr/scan', requireAuth, upload.single('receipt'), async (req, res) => {
+    const Tesseract = require('tesseract.js');
+    
+    try {
+        if (!req.file) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'No image file provided' 
+            });
+        }
+
+        
+        // Run Tesseract OCR on the uploaded image
+        const { data: { text } } = await Tesseract.recognize(req.file.path, 'eng');
+
+
+        // Smart parsing logic
+        const parsedData = parseReceiptText(text);
+        
+        
+        res.json({
+            success: true,
+            vendor: parsedData.vendor || '',
+            amount: parsedData.amount || '',
+            date: parsedData.date || '',
+            rawText: text
+        });
+
+    } catch (error) {
+        console.error('❌ OCR Error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'OCR processing failed',
+            details: error.message 
+        });
+    }
+});
+
+/**
+ * Parse receipt text to extract vendor, amount, and date
+ */
+function parseReceiptText(text) {
+    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    
+    let vendor = '';
+    let amount = '';
+    let date = '';
+
+    // Extract amount - look for dollar patterns
+    const amountPatterns = [
+        /\$\s*(\d+[\.,]\d{2})/g,  // $XX.XX or $XX,XX
+        /(\d+[\.,]\d{2})\s*\$?/g,  // XX.XX$ or XX.XX
+        /total:?\s*\$?(\d+[\.,]\d{2})/gi,  // total: $XX.XX
+        /amount:?\s*\$?(\d+[\.,]\d{2})/gi  // amount: $XX.XX
+    ];
+    
+    for (const pattern of amountPatterns) {
+        const matches = text.match(pattern);
+        if (matches) {
+            // Get the largest amount found (likely the total)
+            const amounts = matches.map(match => {
+                const num = match.replace(/[^\d\.,]/g, '').replace(',', '.');
+                return parseFloat(num);
+            }).filter(num => !isNaN(num));
+            
+            if (amounts.length > 0) {
+                amount = Math.max(...amounts).toFixed(2);
+                break;
+            }
+        }
+    }
+
+    // Extract date - look for common date patterns
+    const datePatterns = [
+        /(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/g,  // MM/DD/YYYY or MM-DD-YYYY
+        /(\d{2,4}[-\/]\d{1,2}[-\/]\d{1,2})/g,  // YYYY/MM/DD or YYYY-MM-DD
+        /(\w{3}\s+\d{1,2},?\s+\d{2,4})/g,      // Jan 15, 2024 or Jan 15 2024
+        /(\d{1,2}\s+\w{3}\s+\d{2,4})/g        // 15 Jan 2024
+    ];
+    
+    for (const pattern of datePatterns) {
+        const matches = text.match(pattern);
+        if (matches && matches.length > 0) {
+            // Try to parse the first valid date
+            const dateStr = matches[0];
+            const parsedDate = new Date(dateStr);
+            if (!isNaN(parsedDate.getTime()) && parsedDate.getFullYear() > 2020) {
+                date = parsedDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+                break;
+            }
+        }
+    }
+
+    // Extract vendor - use the longest meaningful text line (likely business name)
+    const meaningfulLines = lines.filter(line => {
+        // Filter out common receipt noise
+        const noise = /^(receipt|invoice|thank you|total|subtotal|tax|date|time|\$|visa|mastercard|\d+[\.,]\d{2}|[\d\s\-\(\)]+$)/gi;
+        return line.length > 3 && line.length < 60 && !noise.test(line);
+    });
+    
+    if (meaningfulLines.length > 0) {
+        // Find the longest line that's likely a business name
+        vendor = meaningfulLines.reduce((longest, current) => 
+            current.length > longest.length ? current : longest
+        );
+        
+        // Clean up vendor name
+        vendor = vendor.replace(/[^\w\s&\-\.]/g, ' ').trim();
+    }
+
+    return { vendor, amount, date };
+}
+
+// ============================================
+// FEATURE 1: Dashboard Stats Endpoint
+// ============================================
+app.get('/api/dashboard/stats', requireAuth, (req, res) => {
+    const isAdmin = req.user.role === 'admin';
+    const userId = req.user.employeeId;
+    const whereClause = isAdmin ? '1=1' : 'e.employee_id = ?';
+    const params = isAdmin ? [] : [userId];
+
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    const query = `
+        SELECT 
+            COUNT(*) as total_count,
+            COALESCE(SUM(e.amount), 0) as total_amount,
+            COALESCE(SUM(CASE WHEN e.status = 'pending' THEN 1 ELSE 0 END), 0) as pending_count,
+            COALESCE(SUM(CASE WHEN e.date LIKE '${currentMonth}%' THEN e.amount ELSE 0 END), 0) as monthly_spend,
+            COALESCE(SUM(CASE WHEN e.status = 'draft' THEN 1 ELSE 0 END), 0) as draft_count,
+            COALESCE(SUM(CASE WHEN e.status = 'submitted' THEN 1 ELSE 0 END), 0) as submitted_count,
+            COALESCE(SUM(CASE WHEN e.status = 'approved' THEN 1 ELSE 0 END), 0) as approved_count,
+            COALESCE(SUM(CASE WHEN e.status = 'rejected' THEN 1 ELSE 0 END), 0) as rejected_count,
+            COALESCE(SUM(CASE WHEN e.expense_type IN ('breakfast','lunch','dinner') THEN e.amount ELSE 0 END), 0) as meals_amount,
+            COALESCE(SUM(CASE WHEN e.expense_type = 'vehicle_km' THEN e.amount ELSE 0 END), 0) as transport_amount,
+            COALESCE(SUM(CASE WHEN e.expense_type = 'hotel' THEN e.amount ELSE 0 END), 0) as hotel_amount,
+            COALESCE(SUM(CASE WHEN e.expense_type NOT IN ('breakfast','lunch','dinner','vehicle_km','hotel') THEN e.amount ELSE 0 END), 0) as other_amount
+        FROM expenses e
+        WHERE ${whereClause}
+    `;
+
+    db.get(query, params, (err, row) => {
+        if (err) {
+            console.error('❌ Error fetching dashboard stats:', err);
+            return res.status(500).json({ error: 'Failed to fetch stats' });
+        }
+        res.json({
+            success: true,
+            total: { count: row.total_count, amount: row.total_amount },
+            pending_count: row.pending_count,
+            monthly_spend: row.monthly_spend,
+            by_status: {
+                draft: row.draft_count,
+                submitted: row.submitted_count,
+                approved: row.approved_count,
+                rejected: row.rejected_count
+            },
+            by_type: {
+                meals: row.meals_amount,
+                transport: row.transport_amount,
+                hotel: row.hotel_amount,
+                other: row.other_amount
+            }
+        });
+    });
+});
+
+// ============================================
+// FEATURE 2: Expense Editing
+// ============================================
+app.put('/api/expenses/:id', requireAuth, (req, res) => {
+    const { id } = req.params;
+    const { expense_type, meal_name, date, location, amount, vendor, description } = req.body;
+
+    // First check ownership and status
+    db.get(`SELECT e.*, t.status as trip_status FROM expenses e LEFT JOIN trips t ON e.trip_id = t.id WHERE e.id = ?`, [id], (err, expense) => {
+        if (err) return res.status(500).json({ success: false, error: 'Database error' });
+        if (!expense) return res.status(404).json({ success: false, error: 'Expense not found' });
+        if (expense.employee_id !== req.user.employeeId && req.user.role !== 'admin') {
+            return res.status(403).json({ success: false, error: 'Not your expense' });
+        }
+        // Only allow editing draft/pending expenses whose trip is not submitted
+        if (expense.status === 'approved' || expense.status === 'rejected') {
+            return res.status(400).json({ success: false, error: 'Cannot edit approved/rejected expenses' });
+        }
+        if (expense.trip_status && expense.trip_status !== 'draft') {
+            return res.status(400).json({ success: false, error: 'Cannot edit expenses in a submitted trip' });
+        }
+
+        const query = `UPDATE expenses SET 
+            expense_type = COALESCE(?, expense_type),
+            meal_name = COALESCE(?, meal_name),
+            date = COALESCE(?, date),
+            location = COALESCE(?, location),
+            amount = COALESCE(?, amount),
+            vendor = COALESCE(?, vendor),
+            description = COALESCE(?, description),
+            updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?`;
+
+        db.run(query, [expense_type, meal_name, date, location, amount, vendor, description, id], function(err) {
+            if (err) return res.status(500).json({ success: false, error: 'Failed to update expense' });
+            res.json({ success: true, message: 'Expense updated successfully' });
+        });
+    });
+});
+
+// Employee can delete their own draft expenses (for Day Planner toggle-off)
+app.delete('/api/expenses/:id/mine', requireAuth, (req, res) => {
+    const { id } = req.params;
+    db.get(`SELECT e.*, t.status as trip_status FROM expenses e LEFT JOIN trips t ON e.trip_id = t.id WHERE e.id = ?`, [id], (err, expense) => {
+        if (err) return res.status(500).json({ success: false, error: 'Database error' });
+        if (!expense) return res.status(404).json({ success: false, error: 'Expense not found' });
+        if (expense.employee_id !== req.user.employeeId) {
+            return res.status(403).json({ success: false, error: 'Not your expense' });
+        }
+        if (expense.status === 'approved') {
+            return res.status(400).json({ success: false, error: 'Cannot delete approved expenses' });
+        }
+        if (expense.trip_status && expense.trip_status !== 'draft') {
+            return res.status(400).json({ success: false, error: 'Cannot delete expenses in a submitted trip' });
+        }
+        db.run('DELETE FROM expenses WHERE id = ?', [id], function(err) {
+            if (err) return res.status(500).json({ success: false, error: 'Failed to delete' });
+            res.json({ success: true });
+        });
+    });
+});
+
+// ============================================
+// FEATURE 3: Notifications table + endpoints
+// ============================================
+// Create notifications table on startup
+db.run(`CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    read INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (employee_id) REFERENCES employees (id)
+)`, (err) => {
+    if (err) console.error('❌ Error creating notifications table:', err.message);
+});
+
+function createNotification(employeeId, type, message) {
+    db.run('INSERT INTO notifications (employee_id, type, message) VALUES (?, ?, ?)',
+        [employeeId, type, message], (err) => {
+            if (err) console.error('❌ Notification error:', err.message);
+        });
+}
+
+// Get notifications for current user
+app.get('/api/notifications', requireAuth, (req, res) => {
+    db.all('SELECT * FROM notifications WHERE employee_id = ? ORDER BY created_at DESC LIMIT 50',
+        [req.user.employeeId], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Failed to fetch notifications' });
+            const unread = rows.filter(r => !r.read).length;
+            res.json({ notifications: rows, unread_count: unread });
+        });
+});
+
+// Mark notification as read
+app.put('/api/notifications/:id/read', requireAuth, (req, res) => {
+    db.run('UPDATE notifications SET read = 1 WHERE id = ? AND employee_id = ?',
+        [req.params.id, req.user.employeeId], function(err) {
+            if (err) return res.status(500).json({ success: false, error: 'Failed' });
+            res.json({ success: true });
+        });
+});
+
+// ============================================
+// TRAVEL AUTHORIZATION (AT) SYSTEM
+// ============================================
+
+// 1. Create Travel Authorization
+app.post('/api/travel-auth', requireAuth, async (req, res) => {
+    let {
+        name,
+        destination = '',
+        start_date,
+        end_date,
+        purpose = '',
+        est_transport = 0,
+        est_lodging = 0,
+        est_meals = 0,
+        est_other = 0,
+        details = null
+    } = req.body;
+    
+    // Sanitize text inputs
+    name = sanitizeString(name, 255);
+    destination = sanitizeString(destination, 255);
+    purpose = sanitizeString(purpose, 1000);
+    
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (start_date && !dateRegex.test(start_date)) {
+        return res.status(400).json({ success: false, error: 'Invalid start date format' });
+    }
+    if (end_date && !dateRegex.test(end_date)) {
+        return res.status(400).json({ success: false, error: 'Invalid end date format' });
+    }
+    
+    // Validate amounts
+    est_transport = parseFloat(est_transport) || 0;
+    est_lodging = parseFloat(est_lodging) || 0;
+    est_meals = parseFloat(est_meals) || 0;
+    est_other = parseFloat(est_other) || 0;
+    if ([est_transport, est_lodging, est_meals, est_other].some(a => a < 0 || a > 999999.99)) {
+        return res.status(400).json({ success: false, error: 'Invalid estimated amount' });
+    }
+    
+    // Validation
+    if (!name || !start_date || !end_date || !destination) {
+        return res.status(400).json({
+            success: false,
+            error: 'Missing required fields: name, destination, start_date, end_date'
+        });
+    }
+    
+    // Calculate total
+    const est_total = parseFloat(est_transport) + parseFloat(est_lodging) + 
+                     parseFloat(est_meals) + parseFloat(est_other);
+    
+    // Check for overlapping travel authorizations
+    try {
+        const overlap = await new Promise((resolve, reject) => {
+            db.get(
+                `SELECT id, name, start_date, end_date FROM travel_authorizations 
+                 WHERE employee_id = ? AND status NOT IN ('rejected') 
+                 AND start_date <= ? AND end_date >= ?`,
+                [req.user.employeeId, end_date, start_date],
+                (err, row) => err ? reject(err) : resolve(row)
+            );
+        });
+        if (overlap) {
+            return res.status(400).json({
+                success: false,
+                error: `Dates overlap with existing authorization "${overlap.name}" (${overlap.start_date} → ${overlap.end_date}). Please choose different dates.`
+            });
+        }
+    } catch (e) {
+        console.error('❌ Error checking overlap:', e);
+    }
+    
+    // Get supervisor (approver)
+    db.get('SELECT supervisor_id FROM employees WHERE id = ?', [req.user.employeeId], (err, employee) => {
+        if (err) {
+            console.error('❌ Error fetching supervisor:', err);
+            return res.status(500).json({ success: false, error: 'Failed to get approver' });
+        }
+        
+        if (!employee || !employee.supervisor_id) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'No supervisor assigned. Contact admin to assign a supervisor.' 
+            });
+        }
+        
+        const query = `
+            INSERT INTO travel_authorizations 
+            (employee_id, name, destination, start_date, end_date, purpose, 
+             est_transport, est_lodging, est_meals, est_other, est_total, 
+             approver_id, status, details)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+        `;
+        
+        const params = [
+            req.user.employeeId, name, destination, start_date, end_date, purpose,
+            est_transport, est_lodging, est_meals, est_other, est_total,
+            employee.supervisor_id, details
+        ];
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('❌ Error creating travel authorization:', err);
+                return res.status(500).json({ 
+                    success: false, 
+                    error: 'Failed to create travel authorization' 
+                });
+            }
+            
+            res.json({ 
+                success: true, 
+                id: this.lastID, 
+                message: 'Travel Authorization created as draft!' 
+            });
+        });
+    });
+});
+
+// 2. Get Travel Authorizations (employee sees own, supervisor sees team's, admin sees all)
+app.get('/api/travel-auth', requireAuth, (req, res) => {
+    let query, params;
+    
+    if (req.user.role === 'admin') {
+        query = `
+            SELECT ta.*, e.name as employee_name, s.name as approver_name,
+                   (SELECT COUNT(*) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expense_count,
+                   (SELECT COALESCE(SUM(ex.amount), 0) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expenses_total
+            FROM travel_authorizations ta
+            JOIN employees e ON ta.employee_id = e.id
+            LEFT JOIN employees s ON ta.approver_id = s.id
+            ORDER BY ta.created_at DESC
+        `;
+        params = [];
+    } else if (req.user.role === 'supervisor') {
+        if (req.query.view === 'team') {
+            // 🚨 GOVERNANCE FIX: Supervisor sees ONLY direct reports (not indirect/recursive)
+            query = `
+                SELECT ta.*, e.name as employee_name, s.name as approver_name,
+                       (SELECT COUNT(*) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expense_count,
+                       (SELECT COALESCE(SUM(ex.amount), 0) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expenses_total
+                FROM travel_authorizations ta
+                JOIN employees e ON ta.employee_id = e.id
+                LEFT JOIN employees s ON ta.approver_id = s.id
+                WHERE e.supervisor_id = ?
+                ORDER BY ta.created_at DESC
+            `;
+        } else {
+            // Employee dashboard — show only own auths
+            query = `
+                SELECT ta.*, e.name as employee_name, s.name as approver_name,
+                       (SELECT COUNT(*) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expense_count,
+                       (SELECT COALESCE(SUM(ex.amount), 0) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expenses_total
+                FROM travel_authorizations ta
+                JOIN employees e ON ta.employee_id = e.id
+                LEFT JOIN employees s ON ta.approver_id = s.id
+                WHERE ta.employee_id = ?
+                ORDER BY ta.created_at DESC
+            `;
+        }
+        params = [req.user.employeeId];
+    } else {
+        query = `
+            SELECT ta.*, e.name as employee_name, s.name as approver_name,
+                   (SELECT COUNT(*) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expense_count,
+                   (SELECT COALESCE(SUM(ex.amount), 0) FROM expenses ex WHERE ex.travel_auth_id = ta.id) as expenses_total
+            FROM travel_authorizations ta
+            JOIN employees e ON ta.employee_id = e.id
+            LEFT JOIN employees s ON ta.approver_id = s.id
+            WHERE ta.employee_id = ?
+            ORDER BY ta.created_at DESC
+        `;
+        params = [req.user.employeeId];
+    }
+    
+    db.all(query, params, (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching travel authorizations:', err);
+            return res.status(500).json({ error: 'Failed to fetch travel authorizations' });
+        }
+        
+        res.json(rows);
+    });
+});
+
+// 3. Get single Travel Authorization
+app.get('/api/travel-auth/:id', requireAuth, (req, res) => {
+    const query = `
+        SELECT ta.*, e.name as employee_name, s.name as approver_name
+        FROM travel_authorizations ta
+        JOIN employees e ON ta.employee_id = e.id
+        LEFT JOIN employees s ON ta.approver_id = s.id
+        WHERE ta.id = ?
+    `;
+    
+    db.get(query, [req.params.id], (err, row) => {
+        if (err) {
+            console.error('❌ Error fetching travel authorization:', err);
+            return res.status(500).json({ error: 'Failed to fetch travel authorization' });
+        }
+        
+        if (!row) {
+            return res.status(404).json({ error: 'Travel authorization not found' });
+        }
+        
+        // Check permissions
+        if (req.user.role !== 'admin' && 
+            row.employee_id !== req.user.employeeId && 
+            row.approver_id !== req.user.employeeId) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+        
+        res.json(row);
+    });
+});
+
+// 4. Approve Travel Authorization
+app.put('/api/travel-auth/:id/approve', requireAuth, requireRole('supervisor'), (req, res) => {
+    const atId = req.params.id;
+    
+    // Check if user is the approver
+    db.get('SELECT * FROM travel_authorizations WHERE id = ? AND approver_id = ?', 
+        [atId, req.user.employeeId], (err, at) => {
+        if (err) {
+            console.error('❌ Error checking AT approval rights:', err);
+            return res.status(500).json({ error: 'Database error' });
+        }
+        
+        if (!at) {
+            return res.status(404).json({ error: 'Travel authorization not found or you are not the approver' });
+        }
+        
+        if (at.status !== 'pending') {
+            return res.status(400).json({ error: 'Travel authorization is not pending' });
+        }
+        
+        // Approve the AT
+        const updateQuery = `
+            UPDATE travel_authorizations 
+            SET status = 'approved', approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `;
+        
+        db.run(updateQuery, [atId], function(err) {
+            if (err) {
+                console.error('❌ Error approving travel authorization:', err);
+                return res.status(500).json({ error: 'Failed to approve travel authorization' });
+            }
+            
+            
+            // Auto-create trip from approved authorization
+            db.run(`INSERT INTO trips (employee_id, trip_name, destination, purpose, start_date, end_date, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'active')`,
+                [at.employee_id, at.name || at.destination, at.destination || '', at.purpose || '', at.start_date, at.end_date],
+                function(tripErr) {
+                    if (tripErr) {
+                        console.error('❌ Error auto-creating trip from auth:', tripErr);
+                    } else {
+                        const tripId = this.lastID;
+                        // Link the auth to the trip
+                        db.run('UPDATE travel_authorizations SET trip_id = ? WHERE id = ?', [tripId, atId]);
+                        console.log(`✅ Auto-created trip #${tripId} from approved auth #${atId}`);
+                    }
+                }
+            );
+
+            // Notify employee
+            createNotification(at.employee_id, 'at_approved', 
+                `Your Authorization to Travel for ${at.name || at.destination} has been approved. A trip has been created automatically.`);
+            
+            res.json({ 
+                success: true, 
+                message: 'Travel Authorization approved and trip created!' 
+            });
+        });
+    });
+});
+
+// 5. Reject Travel Authorization
+app.put('/api/travel-auth/:id/reject', requireAuth, requireRole('supervisor'), (req, res) => {
+    const atId = req.params.id;
+    // CRITICAL FIX: Accept rejection reason from multiple possible body formats
+    const rejection_reason = sanitizeString(req.body.rejection_reason || req.body.reason || req.body.rejectionReason || '', 1000);
+    
+    if (!rejection_reason || rejection_reason.trim() === '') {
+        return res.status(400).json({ 
+            error: 'Rejection reason is required',
+            expected_body: { rejection_reason: 'Your reason here' }
+        });
+    }
+    
+    // Validate minimum length for governance compliance
+    if (rejection_reason.trim().length < 10) {
+        return res.status(400).json({ error: 'Rejection reason must be at least 10 characters' });
+    }
+    
+    // Check if user is the approver
+    db.get('SELECT * FROM travel_authorizations WHERE id = ? AND approver_id = ?', 
+        [atId, req.user.employeeId], (err, at) => {
+        if (err) {
+            console.error('❌ Error checking AT rejection rights:', err);
+            return res.status(500).json({ error: 'Database error' });
+        }
+        
+        if (!at) {
+            return res.status(404).json({ error: 'Travel authorization not found or you are not the approver' });
+        }
+        
+        if (at.status !== 'pending') {
+            return res.status(400).json({ error: 'Travel authorization is not pending' });
+        }
+        
+        // Reject the AT
+        const updateQuery = `
+            UPDATE travel_authorizations 
+            SET status = 'rejected', rejection_reason = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `;
+        
+        db.run(updateQuery, [rejection_reason, atId], function(err) {
+            if (err) {
+                console.error('❌ Error rejecting travel authorization:', err);
+                return res.status(500).json({ error: 'Failed to reject travel authorization' });
+            }
+            
+            
+            // Notify employee
+            createNotification(at.employee_id, 'at_rejected', 
+                `Your Authorization to Travel for ${at.destination} was rejected: ${rejection_reason}`);
+            
+            res.json({ 
+                success: true, 
+                message: 'Travel Authorization rejected.' 
+            });
+        });
+    });
+});
+
+// 6. Update Travel Authorization (for draft/rejected ATs)
+app.put('/api/travel-auth/:id', requireAuth, (req, res) => {
+    const atId = req.params.id;
+    let {
+        name,
+        destination = '',
+        start_date,
+        end_date,
+        purpose = '',
+        est_transport = 0,
+        est_lodging = 0,
+        est_meals = 0,
+        est_other = 0,
+        details = null
+    } = req.body;
+    
+    // Sanitize text inputs
+    name = sanitizeString(name, 255);
+    destination = sanitizeString(destination, 255);
+    purpose = sanitizeString(purpose, 1000);
+    
+    // Check ownership and status
+    db.get('SELECT * FROM travel_authorizations WHERE id = ? AND employee_id = ?', 
+        [atId, req.user.employeeId], (err, at) => {
+        if (err) {
+            console.error('❌ Error checking AT ownership:', err);
+            return res.status(500).json({ error: 'Database error' });
+        }
+        
+        if (!at) {
+            return res.status(404).json({ error: 'Travel authorization not found' });
+        }
+        
+        if (at.status === 'approved') {
+            return res.status(400).json({ error: 'Cannot edit approved travel authorization' });
+        }
+        
+        if (at.status === 'pending') {
+            return res.status(400).json({ error: 'Cannot edit pending travel authorization. Wait for approval or contact your supervisor.' });
+        }
+        
+        // Calculate total
+        const est_total = parseFloat(est_transport) + parseFloat(est_lodging) + 
+                         parseFloat(est_meals) + parseFloat(est_other);
+        
+        // Check for overlapping travel authorizations (exclude self)
+        if (start_date && end_date) {
+            db.get(
+                `SELECT id, name, start_date, end_date FROM travel_authorizations 
+                 WHERE employee_id = ? AND id != ? AND status NOT IN ('rejected') 
+                 AND start_date <= ? AND end_date >= ?`,
+                [req.user.employeeId, atId, end_date, start_date],
+                (err2, overlap) => {
+                    if (overlap) {
+                        return res.status(400).json({
+                            error: `Dates overlap with existing authorization "${overlap.name}" (${overlap.start_date} → ${overlap.end_date}). Please choose different dates.`
+                        });
+                    }
+                    doUpdate();
+                }
+            );
+        } else {
+            doUpdate();
+        }
+        
+        function doUpdate() {
+        // Update the AT — keep draft status if draft, otherwise set to draft for re-editing
+        const newStatus = at.status === 'draft' ? 'draft' : 'draft';
+        const updateQuery = `
+            UPDATE travel_authorizations 
+            SET name = COALESCE(?, name),
+                destination = COALESCE(?, destination),
+                start_date = COALESCE(?, start_date),
+                end_date = COALESCE(?, end_date),
+                purpose = COALESCE(?, purpose),
+                est_transport = ?,
+                est_lodging = ?,
+                est_meals = ?,
+                est_other = ?,
+                est_total = ?,
+                details = COALESCE(?, details),
+                status = '${newStatus}',
+                rejection_reason = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `;
+        
+        const params = [name, destination, start_date, end_date, purpose, 
+                       est_transport, est_lodging, est_meals, est_other, est_total, details, atId];
+        
+        db.run(updateQuery, params, function(err) {
+            if (err) {
+                console.error('❌ Error updating travel authorization:', err);
+                return res.status(500).json({ error: 'Failed to update travel authorization' });
+            }
+            
+            
+            // Update totals from expenses
+            updateAuthTotals(atId);
+            
+            res.json({ 
+                success: true, 
+                message: 'Travel Authorization updated!' 
+            });
+        });
+        } // end doUpdate
+    });
+});
+
+// 7. Link Travel Authorization to Trip
+app.post('/api/travel-auth/:id/link-trip/:tripId', requireAuth, (req, res) => {
+    const atId = req.params.id;
+    const tripId = req.params.tripId;
+    
+    // Check ownership of both AT and trip
+    Promise.all([
+        new Promise((resolve, reject) => {
+            db.get('SELECT * FROM travel_authorizations WHERE id = ? AND employee_id = ? AND status = "approved"', 
+                [atId, req.user.employeeId], (err, at) => {
+                if (err) reject(err);
+                else resolve(at);
+            });
+        }),
+        new Promise((resolve, reject) => {
+            db.get('SELECT * FROM trips WHERE id = ? AND employee_id = ?', 
+                [tripId, req.user.employeeId], (err, trip) => {
+                if (err) reject(err);
+                else resolve(trip);
+            });
+        })
+    ]).then(([at, trip]) => {
+        if (!at) {
+            return res.status(404).json({ error: 'Approved travel authorization not found' });
+        }
+        if (!trip) {
+            return res.status(404).json({ error: 'Trip not found' });
+        }
+        if (at.trip_id) {
+            return res.status(400).json({ error: 'Travel authorization is already linked to a trip' });
+        }
+        
+        // Link AT to trip
+        db.run('UPDATE travel_authorizations SET trip_id = ? WHERE id = ?', [tripId, atId], function(err) {
+            if (err) {
+                console.error('❌ Error linking AT to trip:', err);
+                return res.status(500).json({ error: 'Failed to link travel authorization to trip' });
+            }
+            
+            res.json({ 
+                success: true, 
+                message: 'Travel Authorization linked to trip successfully!' 
+            });
+        });
+    }).catch(err => {
+        console.error('❌ Error checking AT/trip ownership:', err);
+        res.status(500).json({ error: 'Database error' });
+    });
+});
+
+// ============================================
+// TRAVEL AUTH EXPENSES (Estimated Expenses)
+// ============================================
+
+// 8. Add estimated expense to travel authorization
+app.post('/api/travel-auth/:id/expenses', requireAuth, async (req, res) => {
+    const atId = req.params.id;
+    const { expense_type, date, location, amount, vendor, description, kilometers, vehicle_from, vehicle_to, hotel_checkin, hotel_checkout } = req.body;
+
+    if (!expense_type || !date || !amount) {
+        return res.status(400).json({ error: 'Missing required fields: expense_type, date, amount' });
+    }
+    
+    // CRITICAL FIX: Validate expense type for travel auth
+    const validExpenseTypes = ['breakfast', 'lunch', 'dinner', 'incidentals', 'vehicle_km', 'hotel', 'other', 'transport', 'transport_flight', 'transport_train', 'transport_bus', 'transport_rental', 'transport_taxi', 'kilometric', 'parking', 'purchase'];
+    if (!validExpenseTypes.includes(expense_type)) {
+        return res.status(400).json({ 
+            error: `Invalid expense type "${expense_type}". Valid types: ${validExpenseTypes.join(', ')}`,
+            received_body: req.body
+        });
+    }
+    
+    // Normalize "transport" to "vehicle_km" for consistency
+    if (expense_type === 'transport') {
+        expense_type = 'vehicle_km';
+    }
+
+    try {
+    // Check ownership and draft/rejected status
+    const at = await new Promise((resolve, reject) => {
+        db.get('SELECT * FROM travel_authorizations WHERE id = ? AND employee_id = ?', [atId, req.user.employeeId], (err, row) => err ? reject(err) : resolve(row));
+    });
+    if (!at) return res.status(404).json({ error: 'Travel authorization not found' });
+    if (at.status !== 'draft' && at.status !== 'rejected') {
+        return res.status(400).json({ error: 'Can only add expenses to draft or rejected authorizations' });
+    }
+
+    // Validate expense date is within authorization date range
+    if (date < at.start_date || date > at.end_date) {
+        return res.status(400).json({ error: `Expense date must be within the authorization dates (${at.start_date} to ${at.end_date})` });
+    }
+
+    // Validate hotel check-in/check-out dates are within authorization range
+    if (expense_type === 'hotel' && hotel_checkin && hotel_checkout) {
+        if (hotel_checkin < at.start_date || hotel_checkin > at.end_date) {
+            return res.status(400).json({ error: `Hotel check-in must be within travel dates (${at.start_date} to ${at.end_date})` });
+        }
+        if (hotel_checkout < at.start_date || hotel_checkout > at.end_date) {
+            return res.status(400).json({ error: `Hotel check-out must be within travel dates (${at.start_date} to ${at.end_date})` });
+        }
+    }
+
+    // Prevent duplicate per diem claims on same day
+    const perDiemTypes = ['breakfast', 'lunch', 'dinner', 'incidentals'];
+    if (perDiemTypes.includes(expense_type)) {
+        const existing = await new Promise((resolve, reject) => {
+            db.get('SELECT id FROM expenses WHERE travel_auth_id = ? AND expense_type = ? AND date = ?',
+                [atId, expense_type, date], (err2, row) => err2 ? reject(err2) : resolve(row));
+        });
+        if (existing) {
+            const names = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', incidentals: 'Incidentals' };
+            return res.status(400).json({ error: `${names[expense_type]} already claimed for ${date}. Only one per day allowed.` });
+        }
+    }
+
+    // Get employee name
+    const emp = await new Promise((resolve, reject) => {
+        db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err2, row) => err2 ? reject(err2) : resolve(row));
+    });
+
+    // Build description with vehicle/hotel details if applicable
+    let finalDesc = description || '';
+    if (expense_type === 'vehicle_km' && kilometers) {
+        finalDesc = `${vehicle_from || ''} → ${vehicle_to || ''} (${kilometers} km)${finalDesc ? ' — ' + finalDesc : ''}`;
+    }
+    if (expense_type === 'hotel' && hotel_checkin) {
+        // Ensure check-out is the day after check-in for proper hotel night calculation
+        const checkinDate = new Date(hotel_checkin + 'T12:00:00');
+        const checkoutDate = new Date(checkinDate);
+        checkoutDate.setDate(checkoutDate.getDate() + 1);
+        const checkoutStr = checkoutDate.toISOString().split('T')[0];
+        finalDesc = `Check-in: ${hotel_checkin}, Check-out: ${checkoutStr} — Night${finalDesc ? ' — ' + finalDesc : ''}`;
+    }
+
+    const mealNames = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', incidentals: 'Incidentals' };
+    const meal_name = mealNames[expense_type] || null;
+
+    await new Promise((resolve, reject) => {
+        db.run(`INSERT INTO expenses (employee_name, employee_id, travel_auth_id, expense_type, meal_name, date, location, amount, vendor, description, status, receipt_photo)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'estimate', NULL)`,
+            [emp.name, req.user.employeeId, atId, expense_type, meal_name, date, location || '', parseFloat(amount), vendor || '', finalDesc],
+            function(err) {
+                if (err) return reject(err);
+                updateAuthTotals(atId);
+                res.json({ success: true, id: this.lastID, message: 'Estimated expense added!' });
+                resolve();
+            }
+        );
+    });
+    } catch (err) {
+        console.error('❌ Error in travel auth expense:', err);
+        console.error('Request body:', req.body);
+        console.error('Full error stack:', err.stack);
+        res.status(500).json({ 
+            error: 'Internal server error',
+            details: err.message,
+            debug: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        });
+    }
+});
+
+// 9. Get expenses for a travel authorization
+app.get('/api/travel-auth/:id/expenses', requireAuth, (req, res) => {
+    const atId = req.params.id;
+
+    // Verify access
+    db.get('SELECT * FROM travel_authorizations WHERE id = ?', [atId], (err, at) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!at) return res.status(404).json({ error: 'Travel authorization not found' });
+        if (req.user.role !== 'admin' && at.employee_id !== req.user.employeeId && at.approver_id !== req.user.employeeId) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        db.all('SELECT * FROM expenses WHERE travel_auth_id = ? ORDER BY date, id', [atId], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Failed to fetch expenses' });
+            res.json(rows || []);
+        });
+    });
+});
+
+// 10. Delete estimated expense from travel authorization
+app.delete('/api/travel-auth/:id/expenses/:expenseId', requireAuth, (req, res) => {
+    const { id: atId, expenseId } = req.params;
+
+    db.get('SELECT * FROM travel_authorizations WHERE id = ? AND employee_id = ?', [atId, req.user.employeeId], (err, at) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!at) return res.status(404).json({ error: 'Travel authorization not found' });
+        if (at.status !== 'draft' && at.status !== 'rejected') {
+            return res.status(400).json({ error: 'Can only remove expenses from draft or rejected authorizations' });
+        }
+
+        db.run('DELETE FROM expenses WHERE id = ? AND travel_auth_id = ? AND employee_id = ?',
+            [expenseId, atId, req.user.employeeId], function(err) {
+                if (err) return res.status(500).json({ error: 'Failed to delete expense' });
+                if (this.changes === 0) return res.status(404).json({ error: 'Expense not found' });
+
+                updateAuthTotals(atId);
+                res.json({ success: true, message: 'Expense removed' });
+            }
+        );
+    });
+});
+
+// 11. Submit travel authorization for approval (draft → pending)
+app.put('/api/travel-auth/:id/submit', requireAuth, (req, res) => {
+    const atId = req.params.id;
+
+    db.get('SELECT * FROM travel_authorizations WHERE id = ? AND employee_id = ?', [atId, req.user.employeeId], (err, at) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!at) return res.status(404).json({ error: 'Travel authorization not found' });
+        if (at.status !== 'draft' && at.status !== 'rejected') {
+            return res.status(400).json({ error: 'Can only submit draft or rejected authorizations' });
+        }
+
+        db.run(`UPDATE travel_authorizations SET status = 'pending', rejection_reason = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [atId], function(err) {
+                if (err) return res.status(500).json({ error: 'Failed to submit' });
+
+                // Notify supervisor
+                if (at.approver_id) {
+                    createNotification(at.approver_id, 'at_pending',
+                        `New Authorization to Travel request "${at.name || at.destination}" awaits your approval.`);
+                }
+
+                res.json({ success: true, message: 'Travel Authorization submitted for approval!' });
+            }
+        );
+    });
+});
+
+// Helper: Update travel auth totals from its expenses
+function updateAuthTotals(atId) {
+    db.all('SELECT expense_type, amount FROM expenses WHERE travel_auth_id = ?', [atId], (err, expenses) => {
+        if (err) return console.error('Error updating auth totals:', err);
+
+        let est_transport = 0, est_lodging = 0, est_meals = 0, est_other = 0;
+        (expenses || []).forEach(e => {
+            const amt = parseFloat(e.amount) || 0;
+            if (e.expense_type === 'vehicle_km' || e.expense_type.startsWith('transport_')) est_transport += amt;
+            else if (e.expense_type === 'hotel') est_lodging += amt;
+            else if (['breakfast', 'lunch', 'dinner', 'incidentals'].includes(e.expense_type)) est_meals += amt;
+            else est_other += amt;
+        });
+
+        const est_total = est_transport + est_lodging + est_meals + est_other;
+        db.run(`UPDATE travel_authorizations SET est_transport = ?, est_lodging = ?, est_meals = ?, est_other = ?, est_total = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [est_transport, est_lodging, est_meals, est_other, est_total, atId]);
+    });
+}
+
+// ============================================
+// FEATURE 5: CSV Export
+// ============================================
+app.get('/api/expenses/export/csv', (req, res, next) => {
+    // Support token in query string for direct download links
+    if (req.query.token && !req.headers.authorization) {
+        req.headers.authorization = `Bearer ${req.query.token}`;
+    }
+    requireAuth(req, res, next);
+}, (req, res) => {
+    const isEmployee = req.user.role === 'employee';
+    const query = isEmployee
+        ? `SELECT e.date, e.expense_type, e.amount, t.trip_name, e.status, e.description, e.location
+           FROM expenses e LEFT JOIN trips t ON e.trip_id = t.id WHERE e.employee_id = ? ORDER BY e.date`
+        : `SELECT e.date, e.expense_type, e.amount, t.trip_name, e.status, e.description, e.location, e.employee_name
+           FROM expenses e LEFT JOIN trips t ON e.trip_id = t.id ORDER BY e.date`;
+    const params = isEmployee ? [req.user.employeeId] : [];
+
+    db.all(query, params, (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Failed to export' });
+
+        const headers = isEmployee
+            ? ['Date', 'Type', 'Amount', 'Trip', 'Status', 'Description', 'Location']
+            : ['Date', 'Type', 'Amount', 'Trip', 'Status', 'Description', 'Location', 'Employee'];
+
+        const csvRows = [headers.join(',')];
+        rows.forEach(r => {
+            const vals = [
+                r.date, r.expense_type, r.amount, r.trip_name || '', r.status,
+                `"${(r.description || '').replace(/"/g, '""')}"`,
+                `"${(r.location || '').replace(/"/g, '""')}"`
+            ];
+            if (!isEmployee) vals.push(`"${(r.employee_name || '').replace(/"/g, '""')}"`);
+            csvRows.push(vals.join(','));
+        });
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename=expenses-export.csv');
+        res.send(csvRows.join('\n'));
+    });
+});
+
+// ============================================
+// Inject notifications into trip submission flow
+// ============================================
+
+// 🚨 Error handling
+app.use((error, req, res, next) => {
+    if (error instanceof multer.MulterError) {
+        if (error.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({
+                success: false,
+                error: 'File size too large. Maximum size is 10MB.'
+            });
+        }
+        return res.status(400).json({
+            success: false,
+            error: `Upload error: ${error.message}`
+        });
+    }
+    
+    // Bug 3 Fix: Handle file filter errors (non-MulterError from fileFilter callback)
+    if (error.message && (error.message.includes('image files') || error.message.includes('Only'))) {
+        return res.status(400).json({
+            success: false,
+            error: error.message
+        });
+    }
+    
+    console.error('❌ Unhandled error:', error);
+    res.status(500).json({
+        success: false,
+        error: 'Internal server error'
+    });
+});
+
+// 💰 SAGE 300 GL MAPPING ENDPOINTS (Admin Only)
+
+// Get all GL accounts
+app.get('/api/sage/gl-accounts', requireAuth, requireRole('admin'), (req, res) => {
+    db.all(`SELECT * FROM gl_accounts ORDER BY expense_type`, (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching GL accounts:', err.message);
+            return res.status(500).json({ success: false, error: 'Database error' });
+        }
+        res.json({ success: true, data: rows });
+    });
+});
+
+// Update GL account
+app.put('/api/sage/gl-accounts/:id', requireAuth, requireRole('admin'), (req, res) => {
+    const { id } = req.params;
+    const { expense_type, gl_code, gl_name, is_active } = req.body;
+    
+    if (!expense_type || !gl_code || !gl_name) {
+        return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+    
+    db.run(`UPDATE gl_accounts SET expense_type = ?, gl_code = ?, gl_name = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [expense_type, gl_code, gl_name, is_active || 1, id], function(err) {
+            if (err) {
+                console.error('❌ Error updating GL account:', err.message);
+                return res.status(500).json({ success: false, error: 'Database error' });
+            }
+            if (this.changes === 0) {
+                return res.status(404).json({ success: false, error: 'GL account not found' });
+            }
+            res.json({ success: true, message: 'GL account updated successfully' });
+    });
+});
+
+// Add new GL account
+app.post('/api/sage/gl-accounts', requireAuth, requireRole('admin'), (req, res) => {
+    const { expense_type, gl_code, gl_name, is_active } = req.body;
+    
+    if (!expense_type || !gl_code || !gl_name) {
+        return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+    
+    db.run(`INSERT INTO gl_accounts (expense_type, gl_code, gl_name, is_active) VALUES (?, ?, ?, ?)`,
+        [expense_type, gl_code, gl_name, is_active || 1], function(err) {
+            if (err) {
+                console.error('❌ Error adding GL account:', err.message);
+                if (err.message.includes('UNIQUE constraint failed')) {
+                    return res.status(400).json({ success: false, error: 'Expense type already exists' });
+                }
+                return res.status(500).json({ success: false, error: 'Database error' });
+            }
+            res.json({ success: true, message: 'GL account added successfully', id: this.lastID });
+    });
+});
+
+// Get all cost centers
+app.get('/api/sage/cost-centers', requireAuth, requireRole('admin'), (req, res) => {
+    db.all(`SELECT * FROM department_cost_centers ORDER BY department`, (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching cost centers:', err.message);
+            return res.status(500).json({ success: false, error: 'Database error' });
+        }
+        res.json({ success: true, data: rows });
+    });
+});
+
+// Update cost center
+app.put('/api/sage/cost-centers/:id', requireAuth, requireRole('admin'), (req, res) => {
+    const { id } = req.params;
+    const { department, cost_center_code, cost_center_name, is_active } = req.body;
+    
+    if (!department || !cost_center_code || !cost_center_name) {
+        return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+    
+    db.run(`UPDATE department_cost_centers SET department = ?, cost_center_code = ?, cost_center_name = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [department, cost_center_code, cost_center_name, is_active || 1, id], function(err) {
+            if (err) {
+                console.error('❌ Error updating cost center:', err.message);
+                return res.status(500).json({ success: false, error: 'Database error' });
+            }
+            if (this.changes === 0) {
+                return res.status(404).json({ success: false, error: 'Cost center not found' });
+            }
+            res.json({ success: true, message: 'Cost center updated successfully' });
+    });
+});
+
+// Add new cost center
+app.post('/api/sage/cost-centers', requireAuth, requireRole('admin'), (req, res) => {
+    const { department, cost_center_code, cost_center_name, is_active } = req.body;
+    
+    if (!department || !cost_center_code || !cost_center_name) {
+        return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+    
+    db.run(`INSERT INTO department_cost_centers (department, cost_center_code, cost_center_name, is_active) VALUES (?, ?, ?, ?)`,
+        [department, cost_center_code, cost_center_name, is_active || 1], function(err) {
+            if (err) {
+                console.error('❌ Error adding cost center:', err.message);
+                if (err.message.includes('UNIQUE constraint failed')) {
+                    return res.status(400).json({ success: false, error: 'Department already exists' });
+                }
+                return res.status(500).json({ success: false, error: 'Database error' });
+            }
+            res.json({ success: true, message: 'Cost center added successfully', id: this.lastID });
+    });
+});
+
+// Get count of approved expenses for export confirmation
+app.get('/api/sage/export-count', requireAuth, requireRole('admin'), (req, res) => {
+    const query = `
+        SELECT COUNT(*) as count
+        FROM expenses e
+        LEFT JOIN employees emp ON e.employee_id = emp.id
+        LEFT JOIN gl_accounts gl ON e.expense_type = gl.expense_type
+        LEFT JOIN department_cost_centers dc ON emp.department = dc.department
+        WHERE e.status = 'approved' 
+        AND gl.is_active = 1 
+        AND dc.is_active = 1
+    `;
+    
+    db.get(query, (err, row) => {
+        if (err) {
+            console.error('❌ Error counting export data:', err.message);
+            return res.status(500).json({ success: false, error: 'Database error' });
+        }
+        res.json({ success: true, count: row.count });
+    });
+});
+
+// Export approved expenses as Sage 300 CSV
+app.get('/api/sage/export', requireAuth, requireRole('admin'), (req, res) => {
+    const query = `
+        SELECT 
+            e.date,
+            gl.gl_code,
+            dc.cost_center_code,
+            e.description,
+            e.amount,
+            emp.name as employee_name,
+            emp.department,
+            'EXP-' || e.id as reference,
+            e.expense_type,
+            e.vendor,
+            e.location
+        FROM expenses e
+        LEFT JOIN employees emp ON e.employee_id = emp.id
+        LEFT JOIN gl_accounts gl ON e.expense_type = gl.expense_type
+        LEFT JOIN department_cost_centers dc ON emp.department = dc.department
+        WHERE e.status = 'approved' 
+        AND gl.is_active = 1 
+        AND dc.is_active = 1
+        ORDER BY e.date DESC, emp.name
+    `;
+    
+    db.all(query, (err, rows) => {
+        if (err) {
+            console.error('❌ Error fetching export data:', err.message);
+            return res.status(500).json({ success: false, error: 'Database error' });
+        }
+        
+        // Generate CSV content
+        const csvHeader = 'Date,Account,Description,Amount,Employee,Department,Reference\n';
+        const csvRows = rows.map(row => {
+            const account = `${row.gl_code}-${row.cost_center_code}`;
+            const description = `${row.expense_type} - ${row.vendor || 'N/A'} - ${row.location || 'N/A'}`;
+            return `${row.date},"${account}","${description}",${row.amount},"${row.employee_name}","${row.department}","${row.reference}"`;
+        }).join('\n');
+        
+        const csvContent = csvHeader + csvRows;
+        
+        // Set headers for CSV download
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename="sage300_expenses_' + new Date().toISOString().split('T')[0] + '.csv"');
+        res.send(csvContent);
+    });
+});
+
+// 🔗 EMPLOYEE SIGNUP ROUTES
+
+// Serve the signup HTML page
+app.get('/signup', (req, res) => {
+    res.sendFile(path.join(__dirname, 'signup.html'));
+});
+
+// Get employee info for signup (validate token)
+app.get('/api/signup/:token', (req, res) => {
+    const { token } = req.params;
+    
+    const query = `
+        SELECT st.id, st.expires_at, st.used, e.id as employee_id, e.name, e.email
+        FROM signup_tokens st
+        JOIN employees e ON st.employee_id = e.id
+        WHERE st.token = ?
+    `;
+    
+    db.get(query, [token], (err, row) => {
+        if (err) {
+            console.error('❌ Error validating signup token:', err);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Server error validating token' 
+            });
+        }
+        
+        if (!row) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Invalid or expired signup link' 
+            });
+        }
+        
+        if (row.used) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'This signup link has already been used' 
+            });
+        }
+        
+        const now = new Date();
+        const expires = new Date(row.expires_at);
+        
+        if (now > expires) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'This signup link has expired. Contact your administrator.' 
+            });
+        }
+        
+        res.json({
+            success: true,
+            employee: {
+                name: row.name,
+                email: row.email
+            }
+        });
+    });
+});
+
+// Complete signup (set password)
+app.post('/api/signup/:token', (req, res) => {
+    const { token } = req.params;
+    const { password } = req.body;
+    
+    // Validate password
+    if (!password || password.length < 6) {
+        return res.status(400).json({
+            success: false,
+            error: 'Password must be at least 6 characters long'
+        });
+    }
+    
+    // First, validate the token again
+    const tokenQuery = `
+        SELECT st.id, st.expires_at, st.used, st.employee_id
+        FROM signup_tokens st
+        WHERE st.token = ?
+    `;
+    
+    db.get(tokenQuery, [token], (err, tokenRow) => {
+        if (err) {
+            console.error('❌ Error validating signup token:', err);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Server error validating token' 
+            });
+        }
+        
+        if (!tokenRow || tokenRow.used) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Invalid or already used signup link' 
+            });
+        }
+        
+        const now = new Date();
+        const expires = new Date(tokenRow.expires_at);
+        
+        if (now > expires) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'This signup link has expired. Contact your administrator.' 
+            });
+        }
+        
+        // Hash the password and update employee
+        const password_hash = hashPassword(password);
+        
+        db.serialize(() => {
+            db.run('BEGIN TRANSACTION');
+            
+            // Update employee with password and activate account
+            db.run(
+                'UPDATE employees SET password_hash = ?, is_active = 1 WHERE id = ?',
+                [password_hash, tokenRow.employee_id],
+                function(updateErr) {
+                    if (updateErr) {
+                        console.error('❌ Error updating employee password:', updateErr);
+                        db.run('ROLLBACK');
+                        return res.status(500).json({
+                            success: false,
+                            error: 'Failed to set password'
+                        });
+                    }
+                    
+                    // Mark token as used
+                    db.run(
+                        'UPDATE signup_tokens SET used = 1 WHERE id = ?',
+                        [tokenRow.id],
+                        function(tokenUpdateErr) {
+                            if (tokenUpdateErr) {
+                                console.error('❌ Error marking token as used:', tokenUpdateErr);
+                                db.run('ROLLBACK');
+                                return res.status(500).json({
+                                    success: false,
+                                    error: 'Failed to complete signup'
+                                });
+                            }
+                            
+                            db.run('COMMIT');
+                            
+                            
+                            res.json({
+                                success: true,
+                                message: 'Account activated successfully! You can now log in.'
+                            });
+                        }
+                    );
+                }
+            );
+        });
+    });
+});
+
+// Resend signup invite
+app.post('/api/employees/:id/resend-invite', requireAuth, requireRole('admin'), (req, res) => {
+    const employeeId = req.params.id;
+    
+    // First, check if employee exists and is inactive
+    db.get(
+        'SELECT id, name, email, password_hash, is_active FROM employees WHERE id = ?',
+        [employeeId],
+        (err, employee) => {
+            if (err) {
+                console.error('❌ Error finding employee:', err);
+                return res.status(500).json({
+                    success: false,
+                    error: 'Failed to find employee'
+                });
+            }
+            
+            if (!employee) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Employee not found'
+                });
+            }
+            
+            if (employee.password_hash && employee.is_active) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Employee has already completed account setup'
+                });
+            }
+            
+            // Generate new signup token (invalidate any existing ones)
+            const token = crypto.randomBytes(32).toString('hex');
+            const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours from now
+            
+            db.serialize(() => {
+                // Mark any existing tokens for this employee as used
+                db.run(
+                    'UPDATE signup_tokens SET used = 1 WHERE employee_id = ? AND used = 0',
+                    [employeeId],
+                    (updateErr) => {
+                        if (updateErr) {
+                            console.error('❌ Error invalidating old tokens:', updateErr);
+                        }
+                        
+                        // Insert new token
+                        db.run(
+                            'INSERT INTO signup_tokens (employee_id, token, expires_at) VALUES (?, ?, ?)',
+                            [employeeId, token, expiresAt.toISOString()],
+                            function(tokenErr) {
+                                if (tokenErr) {
+                                    console.error('❌ Error creating signup token:', tokenErr);
+                                    return res.status(500).json({
+                                        success: false,
+                                        error: 'Failed to create signup token'
+                                    });
+                                }
+                                
+                                // Create signup URL
+                                const baseUrl = req.protocol + '://' + req.get('host');
+                                const signupUrl = `${baseUrl}/signup?token=${token}`;
+                                
+                                
+                                res.json({
+                                    success: true,
+                                    message: 'Signup invite resent successfully!',
+                                    signupUrl: signupUrl,
+                                    employee: {
+                                        name: employee.name,
+                                        email: employee.email
+                                    }
+                                });
+                            }
+                        );
+                    }
+                );
+            });
+        }
+    );
+});
+
+// ============================================
+// PDF EXPENSE REPORT GENERATION
+// ============================================
+
+// Generate next reference number
+function generateRefNumber(db) {
+    return new Promise((resolve, reject) => {
+        const year = new Date().getFullYear();
+        db.run(`INSERT OR IGNORE INTO expense_report_sequence (year, last_number) VALUES (?, 0)`, [year], (err) => {
+            if (err) return reject(err);
+            db.run(`UPDATE expense_report_sequence SET last_number = last_number + 1 WHERE year = ?`, [year], function(err) {
+                if (err) return reject(err);
+                db.get(`SELECT last_number FROM expense_report_sequence WHERE year = ?`, [year], (err, row) => {
+                    if (err) return reject(err);
+                    const ref = `EXP-${year}-${String(row.last_number).padStart(5, '0')}`;
+                    resolve(ref);
+                });
+            });
+        });
+    });
+}
+
+// Generate PDF expense report
+function generateExpenseReportPDF(tripId, db) {
+    return new Promise((resolve, reject) => {
+        // ── Helper: format date for tables ("Feb 27") ──
+        function fmtDateShort(dateStr) {
+            if (!dateStr) return 'N/A';
+            const d = new Date(dateStr + (dateStr.length === 10 ? 'T12:00:00' : ''));
+            if (isNaN(d)) return String(dateStr);
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return `${months[d.getMonth()]} ${d.getDate()}`;
+        }
+        // ── Helper: format date for text ("Feb 27, 2026") ──
+        function fmtDate(dateStr) {
+            if (!dateStr) return 'N/A';
+            const d = new Date(dateStr + (dateStr.length === 10 ? 'T12:00:00' : ''));
+            if (isNaN(d)) return String(dateStr);
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+        }
+        // ── Helper: format timestamp ("Feb 27, 2026 at 2:23 PM") ──
+        function fmtTimestamp(dateStr) {
+            if (!dateStr) return 'N/A';
+            const d = new Date(dateStr);
+            if (isNaN(d)) return String(dateStr);
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            let h = d.getHours(), ampm = h >= 12 ? 'PM' : 'AM';
+            h = h % 12 || 12;
+            const min = String(d.getMinutes()).padStart(2, '0');
+            return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} at ${h}:${min} ${ampm}`;
+        }
+        // ── Helper: format dollars ──
+        function fmtDollars(val) {
+            const n = parseFloat(val || 0);
+            return '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        }
+        function fmtVariance(val) {
+            const n = parseFloat(val || 0);
+            const abs = Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            if (n >= 0) return '+$' + abs;
+            return '\u2212$' + abs; // minus sign
+        }
+        // ── Helper: convert category codes to readable names ──
+        function getCategoryLabel(expenseType, mealName) {
+            if (mealName) return mealName.charAt(0).toUpperCase() + mealName.slice(1);
+            const categoryMap = {
+                'transport_flight': 'Flight',
+                'transport_train': 'Train', 
+                'transport_bus': 'Bus',
+                'transport_rental': 'Rental Car',
+                'vehicle_km': 'Kilometric',
+                'hotel': 'Hotel',
+                'breakfast': 'Breakfast',
+                'lunch': 'Lunch', 
+                'dinner': 'Dinner',
+                'incidentals': 'Incidentals',
+                'other': 'Other'
+            };
+            return categoryMap[expenseType] || expenseType || 'Other';
+        }
+
+        const tripQuery = `
+            SELECT t.*, emp.name as employee_name, emp.email as employee_email, emp.employee_number,
+                   emp.department, emp.position,
+                   sup.name as supervisor_name, sup.email as supervisor_email
+            FROM trips t
+            JOIN employees emp ON t.employee_id = emp.id
+            LEFT JOIN employees sup ON emp.supervisor_id = sup.id
+            WHERE t.id = ?
+        `;
+
+        db.get(tripQuery, [tripId], (err, trip) => {
+            if (err || !trip) return reject(err || new Error('Trip not found'));
+
+            db.get(`SELECT * FROM travel_authorizations WHERE trip_id = ?`, [tripId], (err, at) => {
+                if (err) return reject(err);
+
+                const fetchAtExp = at ? new Promise((res, rej) => {
+                    db.all(`SELECT * FROM expenses WHERE travel_auth_id = ? ORDER BY date ASC`, [at.id], (e, rows) => e ? rej(e) : res(rows || []));
+                }) : Promise.resolve([]);
+
+                const fetchTripExp = new Promise((res, rej) => {
+                    db.all(`SELECT * FROM expenses WHERE trip_id = ? ORDER BY date ASC`, [tripId], (e, rows) => e ? rej(e) : res(rows || []));
+                });
+
+                const fetchSettings = new Promise((res, rej) => {
+                    db.all(`SELECT key, value FROM app_settings WHERE key IN ('variance_pct_threshold', 'variance_dollar_threshold')`, [], (e, rows) => {
+                        if (e) return rej(e);
+                        const s = {};
+                        (rows || []).forEach(r => { s[r.key] = r.value; });
+                        res(s);
+                    });
+                });
+
+                const fetchTransportReceipts = new Promise((res, rej) => {
+                    db.all(`SELECT id, transport_mode, file_data, file_name, file_type, file_size, upload_order FROM transport_receipts WHERE trip_id = ? ORDER BY transport_mode, upload_order`, [tripId], (e, rows) => {
+                        if (e) return rej(e);
+                        res(rows || []);
+                    });
+                });
+
+                Promise.all([fetchAtExp, fetchTripExp, fetchSettings, fetchTransportReceipts]).then(([atExpenses, tripExpenses, settings, transportReceipts]) => {
+                    console.log(`📊 PDF Gen: trip #${tripId} — ${transportReceipts.length} transport receipts, ${tripExpenses.length} expenses`);
+                    transportReceipts.forEach(r => console.log(`  📎 ${r.transport_mode}: ${r.file_name} (${r.file_type}, ${r.file_data ? r.file_data.length : 0} bytes)`));
+                    tripExpenses.filter(e => e.receipt_data).forEach(e => console.log(`  📎 expense receipt: ${e.expense_type} (${e.receipt_type}, ${e.receipt_data.length} bytes)`));
+                    const pctThreshold = parseFloat(settings.variance_pct_threshold || '10');
+                    const dollarThreshold = parseFloat(settings.variance_dollar_threshold || '100');
+                    const refNumber = trip.report_ref || 'PENDING';
+
+                    const MARGIN = 72;
+                    const doc = new PDFDocument({ size: 'LETTER', margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN } });
+                    const buffers = [];
+                    doc.on('data', chunk => buffers.push(chunk));
+                    doc.on('end', async () => {
+                        try {
+                            const reportPdf = Buffer.concat(buffers);
+                            const { PDFDocument: PDFLib, rgb, StandardFonts } = require('pdf-lib');
+                            const mergedDoc = await PDFLib.load(reportPdf);
+
+                            // Merge any PDF receipt attachments
+                            const pdfReceipts = [
+                                ...transportReceipts.filter(r => r.file_data && r.file_type === 'application/pdf'),
+                                ...tripExpenses.filter(e => e.receipt_data && e.receipt_type === 'application/pdf')
+                            ];
+                            for (const receipt of pdfReceipts) {
+                                try {
+                                    const data = receipt.file_data || receipt.receipt_data;
+                                    const srcDoc = await PDFLib.load(data);
+                                    const pages = await mergedDoc.copyPages(srcDoc, srcDoc.getPageIndices());
+                                    pages.forEach(p => mergedDoc.addPage(p));
+                                } catch (mergeErr) {
+                                    console.warn('Could not merge PDF receipt:', mergeErr.message);
+                                }
+                            }
+
+                            // Add page footers to all pages
+                            const font = await mergedDoc.embedFont(StandardFonts.Helvetica);
+                            const totalPages = mergedDoc.getPageCount();
+                            for (let i = 0; i < totalPages; i++) {
+                                const page = mergedDoc.getPage(i);
+                                const footerText = `Page ${i + 1} of ${totalPages}     Ref: ${refNumber}`;
+                                const textWidth = font.widthOfTextAtSize(footerText, 8);
+                                const { width } = page.getSize();
+                                page.drawText(footerText, {
+                                    x: (width - textWidth) / 2,
+                                    y: 52,
+                                    size: 8,
+                                    font,
+                                    color: rgb(0.4, 0.4, 0.4)
+                                });
+                            }
+
+                            const finalPdf = await mergedDoc.save();
+                            resolve(Buffer.from(finalPdf));
+                        } catch (e) {
+                            console.error('PDF post-processing error, returning raw:', e.message);
+                            resolve(Buffer.concat(buffers));
+                        }
+                    });
+
+                    const pageW = 612 - MARGIN * 2; // 468pt usable
+                    const LEFT = MARGIN;
+                    const RIGHT = 612 - MARGIN;
+                    const COLORS = { header: '#1a3a5c', green: '#28a745', orange: '#e67e22', red: '#dc3545', blue: '#007bff', grey: '#f8f9fa', body: '#000000', muted: '#666666' };
+
+                    function drawLine(y, color) {
+                        doc.save().moveTo(LEFT, y).lineTo(RIGHT, y).strokeColor(color || '#cccccc').lineWidth(0.5).stroke().restore();
+                    }
+
+                    function checkPage(y, needed) {
+                        if (y + (needed || 20) > 720) { doc.addPage(); return MARGIN; }
+                        return y;
+                    }
+
+                    // ── Helper: draw a table row with cell borders and text wrapping ──
+                    function drawTableRow(y, cols, values, opts) {
+                        opts = opts || {};
+                        let maxTextHeight = 0;
+                        
+                        // Calculate required height for text wrapping
+                        doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(opts.fontSize || 9);
+                        cols.forEach((col, i) => {
+                            const text = values[i] || '';
+                            if (text) {
+                                const textHeight = doc.heightOfString(text, { width: col.width });
+                                maxTextHeight = Math.max(maxTextHeight, textHeight);
+                            }
+                        });
+                        
+                        const rowH = Math.max(opts.rowHeight || 16, maxTextHeight + 4); // Add padding
+                        
+                        if (opts.bg) {
+                            doc.save().rect(LEFT - 4, y - 2, pageW + 8, rowH).fill(opts.bg).restore();
+                        }
+                        
+                        doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica')
+                           .fontSize(opts.fontSize || 9)
+                           .fillColor(opts.color || COLORS.body);
+                        
+                        cols.forEach((col, i) => {
+                            const text = values[i] || '';
+                            doc.text(text, col.x, y, { 
+                                width: col.width, 
+                                align: col.align || 'left',
+                                lineBreak: true
+                            });
+                        });
+                        
+                        doc.font('Helvetica');
+                        return y + rowH;
+                    }
+
+                    // Destination & Purpose: prefer AT record, fall back to trip
+                    const destination = (at && at.destination && at.destination.trim()) || (trip.destination && trip.destination.trim()) || 'Not specified';
+                    const purpose = (at && at.purpose && at.purpose.trim()) || (trip.purpose && trip.purpose.trim()) || 'Not specified';
+
+                    // Financial totals - calculate from individual expenses for accuracy  
+                    const atTotalFromExpenses = atExpenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+                    const atTotal = at ? (atTotalFromExpenses > 0 ? atTotalFromExpenses : parseFloat(at.est_total || 0)) : 0;
+                    const actualTotal = tripExpenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+                    const variance = actualTotal - atTotal;
+
+                    // ═══════════════════════════════════════════
+                    // PAGE 1 — COVER / SUMMARY
+                    // ═══════════════════════════════════════════
+                    doc.fontSize(18).fillColor(COLORS.header).font('Helvetica-Bold').text('EXPENSE REPORT', { align: 'center' });
+                    doc.moveDown(0.2);
+                    doc.fontSize(10).fillColor(COLORS.muted).font('Helvetica').text('ClaimFlow \u2014 Expense Management', { align: 'center' });
+                    doc.moveDown(0.8);
+                    drawLine(doc.y);
+                    doc.moveDown(0.5);
+
+                    // Reference & date
+                    doc.fontSize(10).fillColor(COLORS.body);
+                    doc.font('Helvetica-Bold').text('Reference: ', { continued: true }).font('Helvetica').text(refNumber);
+                    doc.font('Helvetica-Bold').text('Generated: ', { continued: true }).font('Helvetica').text(fmtTimestamp(new Date().toISOString()));
+                    doc.moveDown(0.6);
+
+                    // Employee info
+                    doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('Employee Information');
+                    doc.moveDown(0.3);
+                    doc.fontSize(10).fillColor(COLORS.body);
+                    const empInfo = [
+                        ['Name', trip.employee_name || 'N/A'],
+                        ['Employee #', trip.employee_number || 'N/A'],
+                        ['Department', trip.department || 'N/A'],
+                        ['Position', trip.position || 'N/A'],
+                    ];
+                    empInfo.forEach(([l, v]) => {
+                        doc.font('Helvetica-Bold').text(l + ': ', { continued: true }).font('Helvetica').text(v);
+                    });
+                    doc.moveDown(0.6);
+
+                    // Trip info
+                    doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('Trip Information');
+                    doc.moveDown(0.3);
+                    doc.fontSize(10).fillColor(COLORS.body);
+                    const tripInfo = [
+                        ['Trip Name', trip.trip_name || 'N/A'],
+                        ['Destination', destination],
+                        ['Travel Dates', fmtDate(trip.start_date) + ' to ' + fmtDate(trip.end_date)],
+                        ['Purpose', purpose],
+                    ];
+                    tripInfo.forEach(([l, v]) => {
+                        doc.font('Helvetica-Bold').text(l + ': ', { continued: true }).font('Helvetica').text(v);
+                    });
+                    doc.moveDown(0.6);
+
+                    // Financial summary box
+                    doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('Financial Summary');
+                    doc.moveDown(0.3);
+                    const boxY = doc.y;
+                    doc.save().rect(LEFT, boxY, pageW, 54).fill('#f0f0f0').restore();
+                    doc.fontSize(11).fillColor(COLORS.body).font('Helvetica');
+                    doc.font('Helvetica-Bold').text('Authorized: ', LEFT + 10, boxY + 8, { continued: true }).font('Helvetica').text(fmtDollars(atTotal));
+                    doc.font('Helvetica-Bold').text('Actual: ', LEFT + 10, boxY + 24, { continued: true }).font('Helvetica').text(fmtDollars(actualTotal));
+                    const vColor = variance > 0 ? COLORS.red : COLORS.green;
+                    doc.font('Helvetica-Bold').text('Variance: ', LEFT + 10, boxY + 40, { continued: true }).font('Helvetica').fillColor(vColor).text(fmtVariance(variance));
+                    doc.fillColor(COLORS.body);
+                    doc.y = boxY + 62;
+
+                    doc.moveDown(0.5);
+
+                    // Approval chain summary
+                    doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('Approval Summary');
+                    doc.moveDown(0.3);
+                    doc.fontSize(10).fillColor(COLORS.body).font('Helvetica');
+                    if (at) {
+                        doc.font('Helvetica-Bold').text('Authorization to Travel Submitted: ', { continued: true }).font('Helvetica').text(fmtTimestamp(at.created_at) + ' — by ' + (trip.employee_name || 'Employee'));
+                        if (at.approved_at) {
+                            doc.font('Helvetica-Bold').text('Authorization to Travel Approved: ', { continued: true }).font('Helvetica').text(fmtTimestamp(at.approved_at) + ' — by ' + (trip.supervisor_name || 'Supervisor'));
+                        }
+                    }
+                    if (trip.submitted_at) {
+                        doc.font('Helvetica-Bold').text('Trip Expense Submitted: ', { continued: true }).font('Helvetica').text(fmtTimestamp(trip.submitted_at) + ' — by ' + (trip.employee_name || 'Employee'));
+                    }
+                    if (trip.approved_at) {
+                        doc.font('Helvetica-Bold').text('Trip Expense Approved: ', { continued: true }).font('Helvetica').text(fmtTimestamp(trip.approved_at) + ' — by ' + (trip.approved_by || trip.supervisor_name || 'Supervisor'));
+                    }
+
+                    // ═══════════════════════════════════════════
+                    // PAGE 2 — AUTHORIZATION TO TRAVEL DETAILS
+                    // ═══════════════════════════════════════════
+                    doc.addPage();
+                    doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('AUTHORIZATION TO TRAVEL \u2014 ESTIMATED EXPENSES');
+                    doc.moveDown(0.5);
+
+                    if (at && atExpenses.length > 0) {
+                        const cols2 = [
+                            { x: LEFT, width: 65, align: 'left' },
+                            { x: LEFT + 75, width: 95, align: 'left' },
+                            { x: LEFT + 180, width: 100, align: 'left' },
+                            { x: LEFT + 290, width: 70, align: 'right' },
+                            { x: LEFT + 370, width: 98, align: 'left' },
+                        ];
+                        let tY = doc.y;
+                        tY = drawTableRow(tY, cols2, ['Date', 'Category', 'Location', 'Amount', 'Description'], { bold: true, bg: '#e8ecf1', fontSize: 9 });
+                        drawLine(tY - 1);
+
+                        let lastDate = '', rowIdx = 0;
+                        atExpenses.forEach(exp => {
+                            tY = checkPage(tY, 18);
+                            const bg = (rowIdx % 2 === 1) ? COLORS.grey : null;
+                            const dateStr = exp.date || '';
+                            const showDate = (dateStr !== lastDate) ? fmtDateShort(dateStr) : '';
+                            lastDate = dateStr;
+                            let desc = exp.description || '';
+                            // Hotel: use Check-in / Night X / Check-out pattern
+                            if (exp.expense_type === 'hotel') {
+                                // Count total hotel nights for this authorization
+                                const totalHotelNights = atExpenses.filter(e => e.expense_type === 'hotel').length;
+                                const hotelExpenses = atExpenses.filter(e => e.expense_type === 'hotel').sort((a, b) => a.date.localeCompare(b.date));
+                                const currentHotelIndex = hotelExpenses.findIndex(e => e.id === exp.id);
+                                
+                                if (totalHotelNights === 1) {
+                                    const checkinDate = new Date(exp.hotel_checkin + 'T12:00:00');
+                                    const checkoutDate = new Date(checkinDate);
+                                    checkoutDate.setDate(checkoutDate.getDate() + 1);
+                                    desc = `Check-in: ${fmtDateShort(exp.hotel_checkin)}, Check-out: ${fmtDateShort(checkoutDate.toISOString().split('T')[0])}`;
+                                } else if (currentHotelIndex === 0) {
+                                    desc = `Check-in: ${fmtDateShort(exp.hotel_checkin || exp.date)}`;
+                                } else if (currentHotelIndex === totalHotelNights - 1) {
+                                    const checkoutDate = new Date((exp.hotel_checkin || exp.date) + 'T12:00:00');
+                                    checkoutDate.setDate(checkoutDate.getDate() + 1);
+                                    desc = `Check-out: ${fmtDateShort(checkoutDate.toISOString().split('T')[0])}`;
+                                } else {
+                                    desc = `Night ${currentHotelIndex + 1} of ${totalHotelNights}`;
+                                }
+                            }
+                            // Flight: show route only, no costs
+                            if (exp.expense_type === 'transport_flight') {
+                                desc = 'Departure and Return flight';
+                            }
+                            // Kilometric - clean up any garbled characters
+                            if (exp.expense_type === 'vehicle_km' && exp.km_driven) {
+                                desc = exp.km_driven + ' km @ $' + (parseFloat(exp.km_rate || 0.68).toFixed(2)) + '/km' + (desc ? ' — ' + desc : '');
+                            }
+                            // Remove any garbled characters that might appear
+                            desc = desc.replace(/[!''""`´~^°]/g, '').replace(/\s{2,}/g, ' ').trim();
+                            tY = drawTableRow(tY, cols2, [showDate, getCategoryLabel(exp.expense_type, exp.meal_name), exp.location || '', fmtDollars(exp.amount), desc.substring(0, 80)], { bg });
+                            rowIdx++;
+                        });
+                        drawLine(tY);
+                        tY += 5;
+                        tY = drawTableRow(tY, cols2, ['', '', 'Total Estimated', fmtDollars(atTotal), ''], { bold: true, fontSize: 10 });
+                    } else {
+                        doc.fontSize(10).fillColor(COLORS.muted).text('No Authorization to Travel record linked to this trip.');
+                    }
+
+                    // ═══════════════════════════════════════════
+                    // PAGE 3 — ACTUAL EXPENSES
+                    // ═══════════════════════════════════════════
+                    doc.addPage();
+                    doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('ACTUAL TRIP EXPENSES');
+                    doc.moveDown(0.5);
+
+                    if (tripExpenses.length > 0) {
+                        const cols3 = [
+                            { x: LEFT, width: 65, align: 'left' },
+                            { x: LEFT + 75, width: 85, align: 'left' },
+                            { x: LEFT + 170, width: 70, align: 'right' },
+                            { x: LEFT + 250, width: 100, align: 'left' },
+                            { x: LEFT + 360, width: 108, align: 'left' },
+                        ];
+                        let tY = doc.y;
+                        tY = drawTableRow(tY, cols3, ['Date', 'Category', 'Amount', 'Vendor', 'Description'], { bold: true, bg: '#e8ecf1', fontSize: 9 });
+                        drawLine(tY - 1);
+
+                        let rowIdx = 0;
+                        tripExpenses.forEach(exp => {
+                            tY = checkPage(tY, 18);
+                            const bg = (rowIdx % 2 === 1) ? COLORS.grey : null;
+                            let desc = (exp.description || '')
+                                // Remove future-dated warnings - all possible variants
+                                .replace(/⚠️[\s\S]*?FUTURE[\s\S]*?EXPENSE[\s\S]*?(\|[\s\S]*?)?$/gi, '')
+                                .replace(/\|\s*[&]\s*[þÞ][\s\S]*?$/gi, '')  // Remove | & þ and everything after
+                                .replace(/[&]\s*[þÞ][\s\S]*?$/gi, '')  // Remove & þ and everything after
+                                .replace(/FUTURE[\s-]*DATED[\s\S]*?$/gi, '')  // Remove any FUTURE-DATED text
+                                .replace(/\|\s*$/, '')  // Remove trailing pipes
+                                .replace(/\s+\|\s*$/, '')  // Remove trailing pipes with spaces
+                                .trim();
+
+                            // Hotel: use Check-in / Night X / Check-out pattern
+                            if (exp.expense_type === 'hotel') {
+                                const totalHotelNights = tripExpenses.filter(e => e.expense_type === 'hotel').length;
+                                const hotelExpenses = tripExpenses.filter(e => e.expense_type === 'hotel').sort((a, b) => a.date.localeCompare(b.date));
+                                const currentHotelIndex = hotelExpenses.findIndex(e => e.id === exp.id);
+                                
+                                if (totalHotelNights === 1) {
+                                    const checkinDate = new Date(exp.date + 'T12:00:00');
+                                    const checkoutDate = new Date(checkinDate);
+                                    checkoutDate.setDate(checkoutDate.getDate() + 1);
+                                    desc = `Check-in: ${fmtDateShort(exp.date)}, Check-out: ${fmtDateShort(checkoutDate.toISOString().split('T')[0])}`;
+                                } else if (currentHotelIndex === 0) {
+                                    desc = `Check-in: ${fmtDateShort(exp.date)}`;
+                                } else if (currentHotelIndex === totalHotelNights - 1) {
+                                    const checkoutDate = new Date(exp.date + 'T12:00:00');
+                                    checkoutDate.setDate(checkoutDate.getDate() + 1);
+                                    desc = `Check-out: ${fmtDateShort(checkoutDate.toISOString().split('T')[0])}`;
+                                } else {
+                                    desc = `Night ${currentHotelIndex + 1} of ${totalHotelNights}`;
+                                }
+                            }
+
+                            // Flight: show route only, no costs
+                            if (exp.expense_type === 'transport_flight') {
+                                // Look for route information or use generic description
+                                const hasBaggage = desc.toLowerCase().includes('baggage') || (exp.amount && tripExpenses.some(e => e.expense_type === 'transport_flight' && e.description && e.description.toLowerCase().includes('baggage')));
+                                desc = hasBaggage ? 'Departure and Return flight (includes baggage)' : 'Departure and Return flight';
+                            }
+
+                            tY = drawTableRow(tY, cols3, [fmtDateShort(exp.date), getCategoryLabel(exp.expense_type, exp.meal_name), fmtDollars(exp.amount), (exp.vendor || '').substring(0, 35), desc.substring(0, 75)], { bg });
+                            rowIdx++;
+                        });
+                        drawLine(tY);
+                        tY += 5;
+                        tY = drawTableRow(tY, cols3, ['', 'Total Actual', fmtDollars(actualTotal), '', ''], { bold: true, fontSize: 10 });
+                    } else {
+                        doc.fontSize(10).fillColor(COLORS.muted).text('No expenses recorded for this trip.');
+                    }
+
+                    // ═══════════════════════════════════════════
+                    // PAGE 4 — VARIANCE
+                    // ═══════════════════════════════════════════
+                    doc.addPage();
+                    doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('VARIANCE COMPARISON');
+                    doc.moveDown(0.2);
+                    doc.fontSize(9).fillColor(COLORS.muted).font('Helvetica').text('Thresholds: >' + pctThreshold + '% AND >' + fmtDollars(dollarThreshold));
+                    doc.moveDown(0.5);
+
+                    const cats = ['breakfast','lunch','dinner','incidentals','hotel','vehicle_km','transport_flight','transport_train','transport_bus','transport_rental','other'];
+                    const catLabels = { breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', incidentals:'Incidentals', hotel:'Hotel', vehicle_km:'Kilometric', transport_flight:'Flight', transport_train:'Train', transport_bus:'Bus', transport_rental:'Rental Car', other:'Other' };
+                    const estByCat = {}, actByCat = {};
+                    cats.forEach(c => { estByCat[c] = 0; actByCat[c] = 0; });
+                    atExpenses.forEach(e => { const c = cats.includes(e.expense_type) ? e.expense_type : 'other'; estByCat[c] += parseFloat(e.amount || 0); });
+                    tripExpenses.forEach(e => { const c = cats.includes(e.expense_type) ? e.expense_type : 'other'; actByCat[c] += parseFloat(e.amount || 0); });
+
+                    const vCols = [
+                        { x: LEFT, width: 90, align: 'left' },
+                        { x: LEFT + 90, width: 75, align: 'right' },
+                        { x: LEFT + 165, width: 75, align: 'right' },
+                        { x: LEFT + 240, width: 80, align: 'right' },
+                        { x: LEFT + 320, width: 55, align: 'right' },
+                        { x: LEFT + 375, width: 93, align: 'center' },
+                    ];
+                    let vY = doc.y;
+                    vY = drawTableRow(vY, vCols, ['Category', 'Authorized', 'Actual', 'Variance', '%', 'Status'], { bold: true, bg: '#e8ecf1', fontSize: 9 });
+                    drawLine(vY - 1);
+
+                    let vRowIdx = 0;
+                    cats.forEach(cat => {
+                        const est = estByCat[cat], act = actByCat[cat];
+                        if (est === 0 && act === 0) return;
+                        vY = checkPage(vY, 18);
+                        const diff = act - est;
+                        const pct = est > 0 ? ((diff / est) * 100).toFixed(1) : (act > 0 ? '100.0' : '0.0');
+                        let statusText = 'OK', statusColor = COLORS.green;
+                        if (est === 0 && act > 0) { statusText = 'NEW'; statusColor = COLORS.blue; }
+                        else if (act > est && Math.abs(parseFloat(pct)) > pctThreshold && Math.abs(diff) > dollarThreshold) { statusText = 'OVER LIMIT'; statusColor = COLORS.red; }
+                        else if (act > est) { statusText = 'OVER'; statusColor = COLORS.orange; }
+
+                        const bg = (vRowIdx % 2 === 1) ? COLORS.grey : null;
+                        // Draw row with default color first, then status with its own color
+                        if (bg) { doc.save().rect(LEFT - 4, vY - 2, pageW + 8, 16).fill(bg).restore(); }
+                        doc.font('Helvetica').fontSize(9).fillColor(COLORS.body);
+                        const rowVals = [catLabels[cat] || cat, fmtDollars(est), fmtDollars(act), fmtVariance(diff), pct + '%'];
+                        vCols.slice(0, 5).forEach((col, i) => {
+                            doc.text(rowVals[i], col.x, vY, { width: col.width, align: col.align || 'left' });
+                        });
+                        doc.fillColor(statusColor).font('Helvetica-Bold').text(statusText, vCols[5].x, vY, { width: vCols[5].width, align: 'center' });
+                        doc.font('Helvetica').fillColor(COLORS.body);
+                        vY += 16;
+                        vRowIdx++;
+                    });
+
+                    drawLine(vY);
+                    vY += 5;
+                    const totalDiff = actualTotal - atTotal;
+                    const totalPct = atTotal > 0 ? ((totalDiff / atTotal) * 100).toFixed(1) : '0.0';
+                    vY = drawTableRow(vY, vCols, ['TOTAL', fmtDollars(atTotal), fmtDollars(actualTotal), fmtVariance(totalDiff), totalPct + '%', ''], { bold: true, fontSize: 10 });
+
+                    // Legend
+                    vY += 10;
+                    vY = checkPage(vY, 50);
+                    doc.fontSize(8).fillColor(COLORS.muted).font('Helvetica').text('Legend:', LEFT, vY);
+                    vY += 12;
+                    doc.fillColor(COLORS.green).text('OK', LEFT, vY, { continued: true }).fillColor(COLORS.muted).text(' = Within thresholds     ', { continued: true });
+                    doc.fillColor(COLORS.orange).text('OVER', { continued: true }).fillColor(COLORS.muted).text(' = Over budget     ', { continued: true });
+                    doc.fillColor(COLORS.red).text('OVER LIMIT', { continued: true }).fillColor(COLORS.muted).text(' = Exceeds thresholds     ', { continued: true });
+                    doc.fillColor(COLORS.blue).text('NEW', { continued: true }).fillColor(COLORS.muted).text(' = No authorized amount');
+
+                    // Justification
+                    if (trip.justification) {
+                        doc.moveDown(1);
+                        const jY = checkPage(doc.y, 60);
+                        doc.save().rect(LEFT, jY, pageW, 4).fill('#ffc107').restore();
+                        doc.save().rect(LEFT, jY + 4, pageW, 50).fill('#fff8e1').restore();
+                        doc.fontSize(11).fillColor('#856404').font('Helvetica-Bold').text('Employee Justification for Budget Overage:', LEFT + 8, jY + 10);
+                        doc.fontSize(10).fillColor('#333333').font('Helvetica-Oblique').text(trip.justification, LEFT + 8, jY + 26, { width: pageW - 16 });
+                    }
+
+                    // ═══════════════════════════════════════════
+                    // PAGE 5 — APPROVAL CHAIN & SIGNATURES
+                    // ═══════════════════════════════════════════
+                    doc.addPage();
+                    doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('APPROVAL CHAIN & SIGNATURES');
+                    doc.moveDown(0.8);
+
+                    const chainItems = [];
+                    chainItems.push(['Trip Created', fmtTimestamp(trip.created_at)]);
+                    if (at) {
+                        chainItems.push(['Authorization to Travel Submitted', fmtTimestamp(at.created_at) + ' by ' + (trip.employee_name || 'Employee')]);
+                        chainItems.push(['Authorization to Travel Approved', at.approved_at ? fmtTimestamp(at.approved_at) + ' by ' + (trip.supervisor_name || 'Supervisor') : 'Pending']);
+                    }
+                    chainItems.push(['Trip Expense Submitted', fmtTimestamp(trip.submitted_at) + ' by ' + (trip.employee_name || 'Employee')]);
+                    chainItems.push(['Trip Expense Approved', trip.approved_at ? fmtTimestamp(trip.approved_at) + ' by ' + (trip.approved_by || trip.supervisor_name || 'Supervisor') : 'Pending']);
+                    chainItems.push(['Report Generated', fmtTimestamp(new Date().toISOString())]);
+
+                    doc.fontSize(10).fillColor(COLORS.body).font('Helvetica');
+                    let cY = doc.y;
+                    chainItems.forEach(([label, value], idx) => {
+                        // Timeline dot
+                        doc.save().circle(LEFT + 6, cY + 5, 3).fill(COLORS.header).restore();
+                        if (idx < chainItems.length - 1) {
+                            doc.save().moveTo(LEFT + 6, cY + 10).lineTo(LEFT + 6, cY + 26).strokeColor('#cccccc').lineWidth(1).stroke().restore();
+                        }
+                        doc.font('Helvetica-Bold').fillColor(COLORS.body).text(label + ':', LEFT + 18, cY);
+                        doc.font('Helvetica').text(value, LEFT + 18, cY + 13);
+                        cY += 30;
+                    });
+
+                    cY += 30;
+                    drawLine(cY);
+                    cY += 25;
+
+                    // Signature lines
+                    doc.fontSize(10).fillColor(COLORS.body);
+                    doc.text('_________________________________', LEFT, cY);
+                    doc.text('Employee: ' + (trip.employee_name || 'N/A'), LEFT, cY + 15);
+                    doc.text('_________________________________', LEFT + 250, cY);
+                    doc.text('Supervisor: ' + (trip.supervisor_name || 'N/A'), LEFT + 250, cY + 15);
+
+                    cY += 60;
+                    doc.fontSize(8).fillColor(COLORS.muted).text(
+                        'This report was auto-generated by ClaimFlow on ' + fmtTimestamp(new Date().toISOString()) + '. Reference: ' + refNumber,
+                        LEFT, cY, { width: pageW, align: 'center' }
+                    );
+
+                    // ═══════════════════════════════════════════
+                    // PAGE 6+ — ATTACHED RECEIPTS
+                    // ═══════════════════════════════════════════
+
+                    // Group transport receipts by mode for labeling
+                    const modeLabels = {
+                        'flight': 'Flight', 'train': 'Train', 'bus': 'Bus',
+                        'rental': 'Rental Car', 'taxi': 'Taxi'
+                    };
+                    // Hotel modes are hotel_0, hotel_1, etc.
+                    function getReceiptLabel(mode) {
+                        if (mode.startsWith('hotel_')) {
+                            const idx = parseInt(mode.split('_')[1]) || 0;
+                            return `Hotel #${idx + 1}`;
+                        }
+                        return modeLabels[mode] || mode;
+                    }
+
+                    // Group receipts by mode
+                    const receiptsByMode = {};
+                    transportReceipts.forEach(r => {
+                        if (!receiptsByMode[r.transport_mode]) receiptsByMode[r.transport_mode] = [];
+                        receiptsByMode[r.transport_mode].push(r);
+                    });
+
+                    const receiptModes = Object.keys(receiptsByMode);
+                    if (receiptModes.length > 0) {
+                        for (const mode of receiptModes) {
+                            const receipts = receiptsByMode[mode];
+                            const label = getReceiptLabel(mode);
+
+                            for (let ri = 0; ri < receipts.length; ri++) {
+                                const receipt = receipts[ri];
+                                doc.addPage();
+
+                                // Header
+                                doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold')
+                                    .text(`ATTACHED RECEIPT — ${label}`, LEFT, MARGIN);
+                                if (receipts.length > 1) {
+                                    doc.fontSize(10).fillColor(COLORS.muted).font('Helvetica')
+                                        .text(`Page ${ri + 1} of ${receipts.length}`, LEFT, MARGIN + 20);
+                                }
+                                doc.fontSize(9).fillColor(COLORS.muted).font('Helvetica')
+                                    .text(`File: ${receipt.file_name || 'receipt'}`, LEFT, MARGIN + (receipts.length > 1 ? 35 : 20));
+
+                                const imgTop = MARGIN + (receipts.length > 1 ? 55 : 40);
+                                const maxImgW = pageW;
+                                const maxImgH = 720 - imgTop - 20;
+
+                                // Only embed image types
+                                if (receipt.file_data && receipt.file_type && receipt.file_type.startsWith('image/')) {
+                                    try {
+                                        // Validate image header (PNG or JPEG)
+                                        const header = receipt.file_data.slice(0, 4);
+                                        const isPNG = header[0] === 0x89 && header[1] === 0x50;
+                                        const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
+
+                                        if ((isPNG || isJPEG) && receipt.file_data.length > 100) {
+                                            doc.image(receipt.file_data, LEFT, imgTop, {
+                                                fit: [maxImgW, maxImgH],
+                                                align: 'center',
+                                                valign: 'top'
+                                            });
+                                        } else {
+                                            doc.fontSize(10).fillColor(COLORS.muted)
+                                                .text('Receipt file could not be embedded (unsupported format)', LEFT, imgTop, { align: 'center' });
+                                        }
+                                    } catch (imgErr) {
+                                        console.error('PDF receipt embed error:', imgErr.message);
+                                        doc.fontSize(10).fillColor(COLORS.muted)
+                                            .text('Receipt file could not be embedded: ' + (receipt.file_name || 'unknown'), LEFT, imgTop, { align: 'center' });
+                                    }
+                                } else {
+                                    doc.fontSize(10).fillColor(COLORS.muted)
+                                        .text(`Receipt attached: ${receipt.file_name || 'file'} (${receipt.file_type || 'unknown type'} — PDF pages appended at end of report)`, LEFT, imgTop, { align: 'center' });
+                                }
+                            }
+                        }
+                    }
+
+                    // ═══════════════════════════════════════════
+                    // INDIVIDUAL EXPENSE RECEIPTS (from receipt_data BLOB)
+                    // ═══════════════════════════════════════════
+                    // Skip hotel expenses — their receipts are already in transport_receipts (hotel_0, hotel_1, etc.)
+                    const expensesWithReceipts = tripExpenses.filter(e => e.receipt_data && e.receipt_type && e.expense_type !== 'hotel');
+                    for (const exp of expensesWithReceipts) {
+                        doc.addPage();
+                        const expLabel = getCategoryLabel(exp.expense_type, exp.meal_name);
+                        doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold')
+                            .text(`ATTACHED RECEIPT — ${expLabel}`, LEFT, MARGIN);
+                        doc.fontSize(9).fillColor(COLORS.muted).font('Helvetica')
+                            .text(`Date: ${fmtDateShort(exp.date)} · Amount: ${fmtDollars(exp.amount)}${exp.vendor ? ' · ' + exp.vendor : ''}`, LEFT, MARGIN + 20);
+
+                        const imgTop = MARGIN + 40;
+                        const maxImgW = pageW;
+                        const maxImgH = 720 - imgTop - 20;
+
+                        if (exp.receipt_type.startsWith('image/')) {
+                            try {
+                                const header = exp.receipt_data.slice(0, 4);
+                                const isPNG = header[0] === 0x89 && header[1] === 0x50;
+                                const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
+                                if ((isPNG || isJPEG) && exp.receipt_data.length > 100) {
+                                    doc.image(exp.receipt_data, LEFT, imgTop, { fit: [maxImgW, maxImgH], align: 'center', valign: 'top' });
+                                } else {
+                                    doc.fontSize(10).fillColor(COLORS.muted).text('Receipt could not be embedded (unsupported format)', LEFT, imgTop, { align: 'center' });
+                                }
+                            } catch (imgErr) {
+                                console.error('PDF expense receipt embed error:', imgErr.message);
+                                doc.fontSize(10).fillColor(COLORS.muted).text('Receipt could not be embedded', LEFT, imgTop, { align: 'center' });
+                            }
+                        } else {
+                            doc.fontSize(10).fillColor(COLORS.muted)
+                                .text(`Receipt attached: ${exp.receipt_type} (PDF pages appended at end of report)`, LEFT, imgTop, { align: 'center' });
+                        }
+                    }
+
+                    // ═══════════════════════════════════════════
+                    // ADD FOOTERS TO ALL PAGES
+                    // ═══════════════════════════════════════════
+                    // Footers added post-generation via pdf-lib (avoids PDFKit bufferPages duplication bug)
+                    doc.end();
+                }).catch(reject);
+            });
+        });
+    });
+}
+
+// Send expense report emails
+async function sendExpenseReportEmail(tripId, db) {
+    try {
+        // Get SMTP settings
+        const smtpSettings = await new Promise((resolve, reject) => {
+            db.all(`SELECT key, value FROM app_settings WHERE key IN ('smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'audit_email')`, [], (e, rows) => {
+                if (e) return reject(e);
+                const s = {};
+                (rows || []).forEach(r => { s[r.key] = r.value; });
+                resolve(s);
+            });
+        });
+
+        if (!smtpSettings.smtp_host) {
+            console.log('📧 SMTP not configured — skipping email sending for trip', tripId);
+            return;
+        }
+
+        const transporter = nodemailer.createTransport({
+            host: smtpSettings.smtp_host,
+            port: parseInt(smtpSettings.smtp_port || '587'),
+            secure: (smtpSettings.smtp_port === '465'),
+            auth: { user: smtpSettings.smtp_user, pass: smtpSettings.smtp_pass }
+        });
+
+        // Get trip data
+        const trip = await new Promise((res, rej) => {
+            db.get(`SELECT t.*, emp.name as employee_name, emp.email as employee_email,
+                           sup.name as supervisor_name, sup.email as supervisor_email
+                    FROM trips t
+                    JOIN employees emp ON t.employee_id = emp.id
+                    LEFT JOIN employees sup ON emp.supervisor_id = sup.id
+                    WHERE t.id = ?`, [tripId], (e, r) => e ? rej(e) : res(r));
+        });
+
+        if (!trip || !trip.pdf_report) return;
+
+        const recipients = [];
+        if (trip.employee_email) recipients.push({ type: 'employee', email: trip.employee_email, name: trip.employee_name });
+        if (trip.supervisor_email) recipients.push({ type: 'supervisor', email: trip.supervisor_email, name: trip.supervisor_name });
+        if (smtpSettings.audit_email) recipients.push({ type: 'audit', email: smtpSettings.audit_email, name: 'Audit/Finance' });
+
+        for (const recip of recipients) {
+            try {
+                await transporter.sendMail({
+                    from: smtpSettings.smtp_from || smtpSettings.smtp_user,
+                    to: recip.email,
+                    subject: `Expense Report ${trip.report_ref} — ${trip.trip_name}`,
+                    text: `Dear ${recip.name},\n\nPlease find attached the expense report for trip "${trip.trip_name}" (${trip.start_date} to ${trip.end_date}).\n\nReference: ${trip.report_ref}\nTotal: $${parseFloat(trip.total_amount || 0).toFixed(2)}\n\nThis is an automated message from ClaimFlow.`,
+                    attachments: [{
+                        filename: `${trip.report_ref}.pdf`,
+                        content: trip.pdf_report
+                    }]
+                });
+
+                db.run(`INSERT INTO email_log (trip_id, ref_number, recipient_type, recipient_email, subject, status) VALUES (?, ?, ?, ?, ?, 'sent')`,
+                    [tripId, trip.report_ref, recip.type, recip.email, `Expense Report ${trip.report_ref}`]);
+
+            } catch (emailErr) {
+                console.error(`❌ Failed to send email to ${recip.email}:`, emailErr.message);
+                db.run(`INSERT INTO email_log (trip_id, ref_number, recipient_type, recipient_email, subject, status, error_message) VALUES (?, ?, ?, ?, ?, 'failed', ?)`,
+                    [tripId, trip.report_ref, recip.type, recip.email, `Expense Report ${trip.report_ref}`, emailErr.message]);
+            }
+        }
+    } catch (err) {
+        console.error('❌ Email sending error:', err.message);
+    }
+}
+
+// ============================================
+// TRIP APPROVAL ENDPOINT (with PDF generation)
+// ============================================
+app.post('/api/trips/:id/approve', requireAuth, requireRole('supervisor'), (req, res) => {
+    const tripId = req.params.id;
+    const { comment } = req.body;
+
+    // Verify trip exists and is submitted, and belongs to supervisor's direct report
+    db.get(`SELECT t.*, emp.supervisor_id FROM trips t JOIN employees emp ON t.employee_id = emp.id WHERE t.id = ?`, [tripId], (err, trip) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!trip) return res.status(404).json({ error: 'Trip not found' });
+        if (trip.status !== 'submitted') return res.status(400).json({ error: 'Trip is not in submitted status' });
+        if (trip.supervisor_id !== req.user.employeeId) {
+            return res.status(403).json({ error: 'You can only approve trips from your direct reports' });
+        }
+
+        // Get supervisor name
+        db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err, sup) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            const approverName = sup ? sup.name : 'Supervisor';
+
+            // Calculate total
+            db.get(`SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE trip_id = ?`, [tripId], (err, totRow) => {
+                const totalAmount = totRow ? totRow.total : 0;
+
+                // Update trip status
+                db.run(`UPDATE trips SET status = 'approved', approved_by = ?, approved_at = CURRENT_TIMESTAMP, approval_comment = ?, total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                    [approverName, comment || '', totalAmount, tripId], function(err) {
+                        if (err) return res.status(500).json({ error: 'Failed to approve trip' });
+
+                        // Notify employee
+                        createNotification(trip.employee_id, 'trip_approved', `Your trip "${trip.trip_name}" has been approved by ${approverName}.`);
+
+                        // Return success immediately — PDF generation happens async
+                        res.json({ success: true, message: 'Trip approved successfully!' });
+
+                        // Async: Generate PDF report (non-blocking)
+                        (async () => {
+                            try {
+                                const refNumber = await generateRefNumber(db);
+                                // Store ref first so PDF can use it
+                                await new Promise((res, rej) => {
+                                    db.run(`UPDATE trips SET report_ref = ? WHERE id = ?`, [refNumber, tripId], e => e ? rej(e) : res());
+                                });
+
+                                const pdfBuffer = await generateExpenseReportPDF(tripId, db);
+                                const now = new Date().toISOString();
+
+                                await new Promise((res, rej) => {
+                                    db.run(`UPDATE trips SET pdf_report = ?, report_generated_at = ? WHERE id = ?`,
+                                        [pdfBuffer, now, tripId], e => e ? rej(e) : res());
+                                });
+
+                                console.log(`✅ PDF report generated for trip #${tripId} (${refNumber})`);
+
+                                // Send emails (best-effort)
+                                sendExpenseReportEmail(tripId, db).catch(e => console.error('❌ Email error:', e.message));
+
+                            } catch (pdfErr) {
+                                console.error(`❌ PDF generation failed for trip #${tripId}:`, pdfErr.message);
+                                // PDF failure does NOT block approval
+                            }
+                        })();
+                    });
+            });
+        });
+    });
+});
+
+// Download PDF report
+app.get('/api/trips/:id/report', (req, res, next) => {
+    if (req.query.token && !req.headers.authorization) {
+        req.headers.authorization = `Bearer ${req.query.token}`;
+    }
+    requireAuth(req, res, next);
+}, (req, res) => {
+    const tripId = req.params.id;
+    db.get(`SELECT pdf_report, report_ref FROM trips WHERE id = ?`, [tripId], (err, trip) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!trip || !trip.pdf_report) return res.status(404).json({ error: 'No PDF report found for this trip' });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${trip.report_ref || 'report'}.pdf"`);
+        try { const buf = Buffer.isBuffer(trip.pdf_report) ? trip.pdf_report : Buffer.from(trip.pdf_report); res.setHeader("Content-Length", buf.length); res.end(buf); } catch(e) { console.error("PDF send error:", e); if(!res.headersSent) res.status(500).json({error:"Failed to send PDF"}); }
+    });
+});
+
+// Regenerate PDF report for already-approved trip
+app.post('/api/trips/:id/report/regenerate', requireAuth, (req, res) => {
+    const tripId = req.params.id;
+    db.get(`SELECT * FROM trips WHERE id = ?`, [tripId], async (err, trip) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!trip) return res.status(404).json({ error: 'Trip not found' });
+        if (trip.status !== 'approved') return res.status(400).json({ error: 'Trip must be approved to generate report' });
+
+        try {
+            // Generate ref if missing
+            let refNumber = trip.report_ref;
+            if (!refNumber) {
+                refNumber = await generateRefNumber(db);
+                await new Promise((res, rej) => {
+                    db.run(`UPDATE trips SET report_ref = ? WHERE id = ?`, [refNumber, tripId], e => e ? rej(e) : res());
+                });
+            }
+
+            const pdfBuffer = await generateExpenseReportPDF(tripId, db);
+            const now = new Date().toISOString();
+
+            db.run(`UPDATE trips SET pdf_report = ?, report_generated_at = ? WHERE id = ?`,
+                [pdfBuffer, now, tripId], (err) => {
+                    if (err) return res.status(500).json({ error: 'Failed to save PDF' });
+                    res.json({ success: true, message: 'PDF report regenerated!', ref: refNumber });
+
+                    // Send emails
+                    sendExpenseReportEmail(tripId, db).catch(e => console.error('❌ Email error:', e.message));
+                });
+        } catch (pdfErr) {
+            console.error('❌ PDF regeneration error:', pdfErr);
+            res.status(500).json({ error: 'PDF generation failed: ' + pdfErr.message });
+        }
+    });
+});
+
+// Email log endpoint
+app.get('/api/admin/email-log', requireAuth, requireRole('admin'), (req, res) => {
+    const { status } = req.query;
+    let query = `SELECT * FROM email_log`;
+    let params = [];
+    if (status) { query += ` WHERE status = ?`; params.push(status); }
+    query += ` ORDER BY created_at DESC LIMIT 200`;
+    db.all(query, params, (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Failed to fetch email log' });
+        res.json(rows || []);
+    });
+});
+
+// Audit email settings endpoints
+app.get('/api/settings/audit-email', requireAuth, requireRole('admin'), (req, res) => {
+    db.get(`SELECT value FROM app_settings WHERE key = 'audit_email'`, (err, row) => {
+        res.json({ audit_email: row ? row.value : '' });
+    });
+});
+
+app.put('/api/settings/audit-email', requireAuth, requireRole('admin'), (req, res) => {
+    const { audit_email } = req.body;
+    if (audit_email && !validateEmail(audit_email)) {
+        return res.status(400).json({ error: 'Invalid email format' });
+    }
+    // Get old value for audit
+    db.get(`SELECT value FROM app_settings WHERE key = 'audit_email'`, (err, old) => {
+        db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('audit_email', ?, ?, CURRENT_TIMESTAMP)`,
+            [audit_email || '', req.user.employeeId], (err) => {
+                if (err) return res.status(500).json({ error: 'Failed to save' });
+                // Audit log
+                db.run(`INSERT INTO settings_audit_log (setting_key, old_value, new_value, changed_by) VALUES (?, ?, ?, ?)`,
+                    ['audit_email', old ? old.value : '', audit_email || '', req.user.employeeId]);
+                res.json({ success: true, message: 'Audit email updated' });
+            });
+    });
+});
+
+// SMTP settings endpoints
+app.get('/api/settings/smtp', requireAuth, requireRole('admin'), (req, res) => {
+    db.all(`SELECT key, value FROM app_settings WHERE key LIKE 'smtp_%'`, (err, rows) => {
+        const s = {};
+        (rows || []).forEach(r => { s[r.key] = r.key === 'smtp_pass' ? '••••••' : r.value; });
+        res.json(s);
+    });
+});
+
+app.put('/api/settings/smtp', requireAuth, requireRole('admin'), (req, res) => {
+    const keys = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from'];
+    const updates = [];
+    keys.forEach(key => {
+        if (req.body[key] !== undefined && req.body[key] !== '••••••') {
+            updates.push(new Promise((resolve, reject) => {
+                db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+                    [key, req.body[key], req.user.employeeId], e => e ? reject(e) : resolve());
+            }));
+        }
+    });
+    Promise.all(updates).then(() => {
+        res.json({ success: true, message: 'SMTP settings saved' });
+    }).catch(err => {
+        res.status(500).json({ error: 'Failed to save SMTP settings' });
+    });
+});
+
+// Get trip report info (for frontend — without the blob)
+app.get('/api/trips/:id/report-info', requireAuth, (req, res) => {
+    db.get(`SELECT report_ref, report_generated_at, CASE WHEN pdf_report IS NOT NULL THEN 1 ELSE 0 END as has_pdf FROM trips WHERE id = ?`, [req.params.id], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row) return res.status(404).json({ error: 'Trip not found' });
+        res.json(row);
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🚍 PUBLIC TRANSIT BENEFIT API ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Get transit settings
+app.get('/api/settings/transit', requireAuth, (req, res) => {
+    db.all(`SELECT key, value FROM app_settings WHERE key IN ('transit_monthly_max', 'transit_claim_window')`, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Failed to load transit settings' });
+        const settings = {};
+        rows.forEach(r => { settings[r.key] = r.value; });
+        res.json({
+            monthly_max: parseFloat(settings.transit_monthly_max || '100.00'),
+            claim_window: parseInt(settings.transit_claim_window || '2')
+        });
+    });
+});
+
+// Update transit settings (admin only)
+app.put('/api/settings/transit', requireAuth, requireRole('admin'), (req, res) => {
+    const { monthly_max, claim_window } = req.body;
+    
+    // Validation
+    const maxAmount = parseFloat(monthly_max);
+    const window = parseInt(claim_window);
+    
+    if (isNaN(maxAmount) || maxAmount <= 0 || maxAmount > 1000) {
+        return res.status(400).json({ error: 'Monthly maximum must be between $0.01 and $1,000.00' });
+    }
+    if (isNaN(window) || window < 0 || window > 12) {
+        return res.status(400).json({ error: 'Claim window must be between 0 and 12 months' });
+    }
+    
+    // Get old values for audit
+    db.all(`SELECT key, value FROM app_settings WHERE key IN ('transit_monthly_max', 'transit_claim_window')`, [], (err, oldRows) => {
+        const oldSettings = {};
+        if (!err && oldRows) oldRows.forEach(r => { oldSettings[r.key] = r.value; });
+        
+        // Update settings
+        db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('transit_monthly_max', ?, ?, CURRENT_TIMESTAMP)`, [String(maxAmount), req.user.employeeId]);
+        db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('transit_claim_window', ?, ?, CURRENT_TIMESTAMP)`, [String(window), req.user.employeeId]);
+        
+        // Audit log
+        db.run(`INSERT INTO settings_audit_log (setting_key, old_value, new_value, changed_by) VALUES (?, ?, ?, ?)`,
+            ['transit_settings', 
+             `Max: $${oldSettings.transit_monthly_max || '100.00'}, Window: ${oldSettings.transit_claim_window || '2'} months`,
+             `Max: $${maxAmount}, Window: ${window} months`,
+             req.user.employeeId]);
+        
+        res.json({ success: true, message: 'Transit settings updated', monthly_max: maxAmount, claim_window: window });
+    });
+});
+
+// Get eligible months and existing claims for current user
+app.get('/api/transit-claims/eligible', requireAuth, (req, res) => {
+    // Get transit settings
+    db.all(`SELECT key, value FROM app_settings WHERE key IN ('transit_monthly_max', 'transit_claim_window')`, [], (err, settingsRows) => {
+        if (err) return res.status(500).json({ error: 'Failed to load settings' });
+        
+        const settings = {};
+        settingsRows.forEach(r => { settings[r.key] = r.value; });
+        const claimWindow = parseInt(settings.transit_claim_window || '2');
+        
+        // Calculate eligible months (current month + claim_window months back)
+        const today = new Date();
+        const currentYear = today.getFullYear();
+        const currentMonth = today.getMonth() + 1; // JavaScript months are 0-based
+        
+        const eligibleMonths = [];
+        for (let i = 0; i <= claimWindow; i++) {
+            const date = new Date(currentYear, currentMonth - 1 - i, 1);
+            eligibleMonths.push({
+                month: date.getMonth() + 1,
+                year: date.getFullYear()
+            });
+        }
+        
+        // Get existing claims for eligible months
+        const monthYearPairs = eligibleMonths.map(m => `(${m.month}, ${m.year})`).join(', ');
+        db.all(`SELECT id, employee_id, claim_month, claim_year, receipt_amount, claim_amount, receipt_file, status, expense_batch_id, submitted_date, approved_date, approved_by, rejection_reason, report_ref, report_generated_at, created_at FROM transit_claims WHERE employee_id = ? AND (claim_month, claim_year) IN (${monthYearPairs}) AND status != 'rejected'`, 
+               [req.user.employeeId], (err, existingClaims) => {
+            if (err) return res.status(500).json({ error: 'Failed to load existing claims' });
+            
+            res.json({
+                eligible_months: eligibleMonths,
+                existing_claims: existingClaims || []
+            });
+        });
+    });
+});
+
+// Submit transit claims
+app.post('/api/transit-claims', requireAuth, upload.fields([
+    { name: 'receipts', maxCount: 12 } // Allow up to 12 receipts (one per month)
+]), (req, res) => {
+    const claims = JSON.parse(req.body.claims || '[]');
+    const receipts = req.files.receipts || [];
+    
+    if (!claims.length) {
+        return res.status(400).json({ error: 'No claims provided' });
+    }
+    
+    // Validate each claim
+    const errors = [];
+    claims.forEach((claim, index) => {
+        if (!claim.month || !claim.year || !claim.amount) {
+            errors.push(`Claim ${index + 1}: Missing required fields`);
+        }
+        const claimAmt = parseFloat(claim.amount);
+        if (isNaN(claimAmt) || claimAmt <= 0 || claimAmt > 999999.99) {
+            errors.push(`Claim ${index + 1}: Invalid amount`);
+        }
+        if (!receipts[index]) {
+            errors.push(`Claim ${index + 1}: Receipt required`);
+        }
+    });
+    
+    if (errors.length) {
+        return res.status(400).json({ error: errors.join('; ') });
+    }
+    
+    // Check for existing claims (prevent duplicates)
+    const monthYearPairs = claims.map(c => `(${c.month}, ${c.year})`).join(', ');
+    db.all(`SELECT claim_month, claim_year, status FROM transit_claims 
+            WHERE employee_id = ? AND (claim_month, claim_year) IN (${monthYearPairs}) AND status != 'rejected'`, 
+           [req.user.employeeId], (err, existingClaims) => {
+        
+        if (err) return res.status(500).json({ error: 'Failed to check existing claims' });
+        
+        if (existingClaims.length > 0) {
+            const conflicts = existingClaims.map(c => `${c.claim_month}/${c.claim_year} (${c.status})`).join(', ');
+            return res.status(409).json({ 
+                error: `Claims already exist for: ${conflicts}. Cannot submit duplicate claims.` 
+            });
+        }
+        
+        // Get transit settings for validation
+        db.get(`SELECT value FROM app_settings WHERE key = 'transit_monthly_max'`, (err, setting) => {
+            const monthlyMax = parseFloat(setting ? setting.value : '100.00');
+            const expenseBatchId = Date.now().toString();
+            
+            // Insert claims
+        const insertPromises = claims.map((claim, index) => {
+            return new Promise((resolve, reject) => {
+                const receiptAmount = parseFloat(claim.amount);
+                const claimAmount = Math.min(receiptAmount, monthlyMax);
+                const receiptFile = receipts[index] ? receipts[index].filename : null;
+                
+                // Read receipt file into BLOB for DB storage (survives Render deploys)
+                let receiptData = null;
+                let receiptType = null;
+                if (receipts[index]) {
+                    receiptType = receipts[index].mimetype;
+                    try { receiptData = fs.readFileSync(receipts[index].path); } catch (e) { console.warn('Could not read transit receipt for BLOB:', e.message); }
+                }
+                
+                db.run(`INSERT INTO transit_claims 
+                       (employee_id, claim_month, claim_year, receipt_amount, claim_amount, receipt_file, receipt_data, receipt_type, status, expense_batch_id, submitted_date)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, CURRENT_TIMESTAMP)`,
+                       [req.user.employeeId, claim.month, claim.year, receiptAmount, claimAmount, receiptFile, receiptData, receiptType, expenseBatchId],
+                       function(err) {
+                    if (err) reject(err);
+                    else resolve(this.lastID);
+                });
+            });
+        });
+        
+        Promise.all(insertPromises).then(claimIds => {
+            const totalAmount = claims.reduce((sum, claim) => sum + Math.min(parseFloat(claim.amount), monthlyMax), 0);
+            
+            // Notify supervisor
+            db.get(`SELECT supervisor_id FROM employees WHERE id = ?`, [req.user.employeeId], (err, emp) => {
+                if (!err && emp && emp.supervisor_id) {
+                    const monthNames = claims.map(c => {
+                        const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                        return `${mn[c.month - 1]} ${c.year}`;
+                    }).join(', ');
+                    createNotification(emp.supervisor_id, 'transit_pending',
+                        `🚍 ${req.user.name} submitted a transit benefit claim for ${monthNames} ($${totalAmount.toFixed(2)}) — awaiting your approval.`);
+                }
+            });
+            
+            res.json({ 
+                success: true, 
+                message: `${claims.length} transit claim(s) submitted for approval`,
+                claim_ids: claimIds,
+                total_amount: totalAmount,
+                expense_batch_id: expenseBatchId
+            });
+        }).catch(error => {
+            console.error('Error inserting transit claims:', error);
+            res.status(500).json({ error: 'Failed to save transit claims' });
+        });
+        });
+    });
+});
+
+// ============================================
+// TRANSIT CLAIMS — PDF GENERATION
+// ============================================
+
+function generatePTBRefNumber(db) {
+    return new Promise((resolve, reject) => {
+        const year = new Date().getFullYear();
+        db.run(`INSERT OR IGNORE INTO ptb_report_sequence (year, last_number) VALUES (?, 0)`, [year], (err) => {
+            if (err) return reject(err);
+            db.run(`UPDATE ptb_report_sequence SET last_number = last_number + 1 WHERE year = ?`, [year], function(err) {
+                if (err) return reject(err);
+                db.get(`SELECT last_number FROM ptb_report_sequence WHERE year = ?`, [year], (err, row) => {
+                    if (err) return reject(err);
+                    resolve(`PTB-${year}-${String(row.last_number).padStart(5, '0')}`);
+                });
+            });
+        });
+    });
+}
+
+function generateTransitBenefitPDF(claimIds, db) {
+    return new Promise((resolve, reject) => {
+        const PDFDocument = require('pdfkit');
+
+        function fmtDateShort(dateStr) {
+            if (!dateStr) return 'N/A';
+            const d = new Date(dateStr + (dateStr.length === 10 ? 'T12:00:00' : ''));
+            if (isNaN(d)) return String(dateStr);
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+        }
+        function fmtTimestamp(dateStr) {
+            if (!dateStr) return 'N/A';
+            const d = new Date(dateStr);
+            if (isNaN(d)) return String(dateStr);
+            const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            let h = d.getHours(), ampm = h >= 12 ? 'PM' : 'AM';
+            h = h % 12 || 12;
+            const min = String(d.getMinutes()).padStart(2, '0');
+            return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} at ${h}:${min} ${ampm}`;
+        }
+        function fmtDollars(val) {
+            const n = parseFloat(val || 0);
+            return '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        }
+
+        const idList = Array.isArray(claimIds) ? claimIds : [claimIds];
+        const placeholders = idList.map(() => '?').join(',');
+
+        pdfLog('[PDF-GEN] Querying claims:', idList);
+        db.all(`SELECT tc.*, 
+                       emp.name as employee_name, emp.email as employee_email, emp.employee_number, emp.department, emp.position,
+                       sup.name as supervisor_name, sup.email as supervisor_email
+                FROM transit_claims tc
+                JOIN employees emp ON tc.employee_id = emp.id
+                LEFT JOIN employees sup ON emp.supervisor_id = sup.id
+                WHERE tc.id IN (${placeholders})
+                ORDER BY tc.claim_year, tc.claim_month`, idList, (err, claims) => {
+            pdfLog('[PDF-GEN] Query result:', err ? 'ERROR: ' + err.message : claims ? claims.length + ' claims' : 'null');
+            if (err || !claims || claims.length === 0) return reject(err || new Error('No claims found'));
+
+            const first = claims[0];
+            const refNumber = first.report_ref || 'PENDING';
+            const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+            const MARGIN = 72;
+            const doc = new PDFDocument({ size: 'LETTER', margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN } });
+            const buffers = [];
+            const pdfReceiptBuffers = []; // PDF receipts to merge via pdf-lib after doc.end()
+            doc.on('data', chunk => buffers.push(chunk));
+            doc.on('end', async () => {
+                try {
+                    let finalBuf = Buffer.concat(buffers);
+                    pdfLog('[PDF-GEN] doc end event, buffer size:', finalBuf.length);
+                    
+                    // Post-process with pdf-lib: merge PDF receipts + add page footers
+                    const { PDFDocument: PDFLib, rgb, StandardFonts } = require('pdf-lib');
+                    const mainDoc = await PDFLib.load(finalBuf);
+
+                    // Merge any PDF receipt attachments
+                    for (const receipt of pdfReceiptBuffers) {
+                        try {
+                            const receiptDoc = await PDFLib.load(receipt.buf);
+                            const pages = await mainDoc.copyPages(receiptDoc, receiptDoc.getPageIndices());
+                            pages.forEach(p => mainDoc.addPage(p));
+                            pdfLog('[PDF-GEN] Merged PDF receipt:', receipt.label, pages.length, 'pages');
+                        } catch (mergeErr) {
+                            pdfLog('[PDF-GEN] Could not merge PDF receipt:', mergeErr.message);
+                        }
+                    }
+
+                    // Add page footers on all pages
+                    const helvetica = await mainDoc.embedFont(StandardFonts.Helvetica);
+                    const allPages = mainDoc.getPages();
+                    const totalPages = allPages.length;
+                    for (let i = 0; i < totalPages; i++) {
+                        const page = allPages[i];
+                        const footerText = `Page ${i + 1} of ${totalPages}     Ref: ${refNumber}`;
+                        const textWidth = helvetica.widthOfTextAtSize(footerText, 8);
+                        page.drawText(footerText, {
+                            x: (page.getWidth() - textWidth) / 2,
+                            y: 30,
+                            size: 8,
+                            font: helvetica,
+                            color: rgb(0.5, 0.5, 0.5)
+                        });
+                    }
+
+                    finalBuf = Buffer.from(await mainDoc.save());
+                    resolve(finalBuf);
+                } catch (postErr) {
+                    pdfLog('[PDF-GEN] Post-processing error:', postErr.message);
+                    resolve(Buffer.concat(buffers)); // Fall back to unmerged PDF
+                }
+            });
+            doc.on('error', (err) => { pdfLog('[PDF-GEN] doc error event:', err.message); reject(err); });
+
+            const pageW = 612 - MARGIN * 2;
+            const LEFT = MARGIN;
+            const RIGHT = 612 - MARGIN;
+            const COLORS = { header: '#1a3a5c', green: '#28a745', blue: '#007bff', body: '#000000', muted: '#666666' };
+
+            function drawLine(y, color) {
+                doc.save().moveTo(LEFT, y).lineTo(RIGHT, y).strokeColor(color || '#cccccc').lineWidth(0.5).stroke().restore();
+            }
+
+            // ═══════ PAGE 1 — COVER ═══════
+            doc.fontSize(18).fillColor(COLORS.header).font('Helvetica-Bold').text('PUBLIC TRANSIT BENEFIT EXPENSE REPORT', { align: 'center' });
+            doc.moveDown(0.2);
+            doc.fontSize(10).fillColor(COLORS.muted).font('Helvetica').text('ClaimFlow \u2014 Expense Management', { align: 'center' });
+            doc.moveDown(0.8);
+            drawLine(doc.y);
+            doc.moveDown(0.5);
+
+            // Reference & date
+            doc.fontSize(10).fillColor(COLORS.body);
+            doc.font('Helvetica-Bold').text('Reference: ', { continued: true }).font('Helvetica').text(refNumber);
+            doc.font('Helvetica-Bold').text('Generated: ', { continued: true }).font('Helvetica').text(fmtTimestamp(new Date().toISOString()));
+            doc.moveDown(0.8);
+
+            // Employee info
+            doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('EMPLOYEE INFORMATION');
+            doc.moveDown(0.3);
+            drawLine(doc.y); doc.moveDown(0.3);
+            doc.fontSize(10).fillColor(COLORS.body);
+            [['Name', first.employee_name], ['Employee #', first.employee_number], ['Department', first.department], ['Position', first.position]].forEach(([l, v]) => {
+                doc.font('Helvetica-Bold').text(l + ': ', { continued: true }).font('Helvetica').text(v || 'N/A');
+            });
+            doc.moveDown(0.8);
+
+            // Claim details table
+            doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('CLAIM DETAILS');
+            doc.moveDown(0.3);
+            drawLine(doc.y); doc.moveDown(0.3);
+
+            // Get transit settings for max display
+            pdfLog('[PDF-GEN] Doc created, querying settings...');
+            db.get(`SELECT value FROM app_settings WHERE key = 'transit_monthly_max'`, (err, setting) => {
+              pdfLog('[PDF-GEN] Settings callback:', err ? 'ERROR' : (setting ? setting.value : 'null'));
+              try {
+                const monthlyMax = parseFloat(setting ? setting.value : '100.00') || 100.00;
+
+                // Table header
+                const col1 = LEFT, col2 = LEFT + 170, col3 = LEFT + 310;
+                let tY = doc.y;
+                doc.save().rect(LEFT - 4, tY - 2, pageW + 8, 18).fill('#e8ecf1').restore();
+                doc.fontSize(9).font('Helvetica-Bold').fillColor(COLORS.body);
+                doc.text('Month', col1, tY, { width: 160 });
+                doc.text('Receipt Amount', col2, tY, { width: 130, align: 'right' });
+                doc.text('Claim Amount', col3, tY, { width: 130, align: 'right' });
+                tY += 20;
+                drawLine(tY - 2);
+
+                let totalReceipt = 0, totalClaim = 0;
+                claims.forEach((claim, idx) => {
+                    const bg = (idx % 2 === 1) ? '#f8f9fa' : null;
+                    if (bg) doc.save().rect(LEFT - 4, tY - 2, pageW + 8, 18).fill(bg).restore();
+
+                    const monthLabel = `${monthNames[claim.claim_month - 1]} ${claim.claim_year}`;
+                    const receiptAmt = parseFloat(claim.receipt_amount);
+                    const claimAmt = parseFloat(claim.claim_amount);
+                    const capped = receiptAmt > monthlyMax;
+
+                    doc.fontSize(9).font('Helvetica').fillColor(COLORS.body);
+                    doc.text(monthLabel, col1, tY, { width: 160 });
+                    doc.text(fmtDollars(receiptAmt), col2, tY, { width: 130, align: 'right' });
+                    doc.text(fmtDollars(claimAmt) + (capped ? ' (capped)' : ''), col3, tY, { width: 130, align: 'right' });
+                    tY += 18;
+
+                    totalReceipt += receiptAmt;
+                    totalClaim += claimAmt;
+                });
+
+                drawLine(tY);
+                tY += 5;
+                doc.fontSize(10).font('Helvetica-Bold').fillColor(COLORS.body);
+                doc.text('TOTAL', col1, tY, { width: 160 });
+                doc.text(fmtDollars(totalReceipt), col2, tY, { width: 130, align: 'right' });
+                doc.text(fmtDollars(totalClaim), col3, tY, { width: 130, align: 'right' });
+                tY += 22;
+
+                doc.fontSize(9).fillColor(COLORS.muted).font('Helvetica');
+                doc.text(`Monthly Maximum: ${fmtDollars(monthlyMax)} (admin-configured)`, LEFT, tY);
+                doc.moveDown(1.5);
+
+                // Approval section
+                const aY = doc.y;
+                doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('APPROVAL');
+                doc.moveDown(0.3);
+                drawLine(doc.y); doc.moveDown(0.3);
+                doc.fontSize(10).fillColor(COLORS.body).font('Helvetica');
+
+                doc.font('Helvetica-Bold').text('Submitted: ', { continued: true });
+                doc.font('Helvetica').text(fmtTimestamp(first.submitted_date) + ' \u2014 by ' + (first.employee_name || 'Employee'));
+
+                doc.font('Helvetica-Bold').text('Approved: ', { continued: true });
+                doc.font('Helvetica').text(fmtTimestamp(first.approved_date) + ' \u2014 by ' + (first.supervisor_name || 'Supervisor'));
+
+                doc.moveDown(2);
+
+                // Signature lines
+                const sigY = doc.y;
+                doc.fontSize(10).fillColor(COLORS.body);
+                doc.text('_________________________________', LEFT, sigY);
+                doc.text('Employee: ' + (first.employee_name || 'N/A'), LEFT, sigY + 15);
+                doc.text('Date: _______________', LEFT, sigY + 28);
+                doc.text('_________________________________', LEFT + 250, sigY);
+                doc.text('Supervisor: ' + (first.supervisor_name || 'N/A'), LEFT + 250, sigY + 15);
+                doc.text('Date: _______________', LEFT + 250, sigY + 28);
+
+                doc.moveDown(3);
+                doc.fontSize(8).fillColor(COLORS.muted).text(
+                    'This report was auto-generated by ClaimFlow on ' + fmtTimestamp(new Date().toISOString()) + '. Reference: ' + refNumber,
+                    LEFT, doc.y, { width: pageW, align: 'center' }
+                );
+
+                // ═══════ PAGE 2+ — RECEIPT IMAGES ═══════
+                // ═══════ Embed receipt images, queue PDF receipts for post-merge ═══════
+                claims.forEach(claim => {
+                    // Prefer BLOB data from DB, fall back to file on disk
+                    let receiptBuf = null;
+                    let receiptMime = claim.receipt_type || '';
+                    
+                    if (claim.receipt_data) {
+                        receiptBuf = Buffer.isBuffer(claim.receipt_data) ? claim.receipt_data : Buffer.from(claim.receipt_data);
+                        pdfLog('[PDF-GEN] Using BLOB receipt data for', claim.receipt_file, receiptBuf.length + 'b');
+                    } else if (claim.receipt_file) {
+                        const receiptPath = path.join(__dirname, 'uploads', claim.receipt_file);
+                        if (fs.existsSync(receiptPath)) {
+                            try { receiptBuf = fs.readFileSync(receiptPath); } catch (e) { pdfLog('[PDF-GEN] Could not read receipt file:', e.message); }
+                            const ext = path.extname(claim.receipt_file).toLowerCase();
+                            if (['.jpg', '.jpeg'].includes(ext)) receiptMime = 'image/jpeg';
+                            else if (ext === '.png') receiptMime = 'image/png';
+                            else if (ext === '.pdf') receiptMime = 'application/pdf';
+                        }
+                    }
+                    
+                    if (!receiptBuf || receiptBuf.length < 50) return;
+                    
+                    // Check if this is a PDF receipt — defer to pdf-lib post-processing
+                    if (receiptMime === 'application/pdf' || (receiptBuf[0] === 0x25 && receiptBuf[1] === 0x50 && receiptBuf[2] === 0x44 && receiptBuf[3] === 0x46)) {
+                        pdfLog('[PDF-GEN] PDF receipt queued for pdf-lib merge:', claim.receipt_file);
+                        pdfReceiptBuffers.push({ buf: receiptBuf, label: `${monthNames[claim.claim_month - 1]} ${claim.claim_year}` });
+                        return;
+                    }
+                    
+                    // Image receipt — embed inline with PDFKit
+                    const header = receiptBuf.slice(0, 4);
+                    const isPNG = header[0] === 0x89 && header[1] === 0x50;
+                    const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
+                    
+                    if (isPNG || isJPEG) {
+                        doc.addPage();
+                        doc.fontSize(14).fillColor(COLORS.header).font('Helvetica-Bold').text('ATTACHED RECEIPT', { align: 'center' });
+                        doc.moveDown(0.3);
+                        doc.fontSize(10).fillColor(COLORS.muted).font('Helvetica').text(
+                            `${monthNames[claim.claim_month - 1]} ${claim.claim_year} \u2014 ${fmtDollars(claim.receipt_amount)}`, { align: 'center' }
+                        );
+                        doc.moveDown(0.5);
+                        try {
+                            doc.image(receiptBuf, LEFT, doc.y, { fit: [pageW, 580], align: 'center' });
+                            pdfLog('[PDF-GEN] Embedded image receipt:', claim.receipt_file);
+                        } catch (imgErr) {
+                            pdfLog('[PDF-GEN] Image embed error:', imgErr.message);
+                            doc.fontSize(10).fillColor(COLORS.muted).text('Receipt could not be embedded', { align: 'center' });
+                        }
+                    } else {
+                        pdfLog('[PDF-GEN] Unknown image format, skipping:', claim.receipt_file);
+                    }
+                });
+
+                // Footers added post-generation via pdf-lib (avoids PDFKit bufferPages ghost page bug)
+                pdfLog('[PDF-GEN] Calling doc.end()...');
+                doc.end();
+              } catch (innerErr) {
+                pdfLog('[ERROR] PDF inner:', innerErr.message, innerErr.stack); pdfDebug.lastError = innerErr.stack;
+                reject(innerErr);
+              }
+            });
+        });
+    });
+}
+
+// ============================================
+// TRANSIT CLAIMS — SUPERVISOR APPROVAL
+// ============================================
+
+// Get pending transit claims for supervisor
+app.get('/api/transit-claims/pending', requireAuth, requireRole('supervisor'), (req, res) => {
+    db.all(`SELECT tc.id, tc.employee_id, tc.claim_month, tc.claim_year, tc.receipt_amount, tc.claim_amount,
+                   tc.receipt_file, tc.status, tc.expense_batch_id, tc.submitted_date, tc.report_ref, tc.report_generated_at,
+                   (CASE WHEN tc.receipt_data IS NOT NULL THEN 1 ELSE 0 END) as has_receipt,
+                   e.name as employee_name, e.department, e.employee_number
+            FROM transit_claims tc
+            JOIN employees e ON tc.employee_id = e.id
+            WHERE e.supervisor_id = ? AND tc.status = 'pending'
+            ORDER BY tc.submitted_date DESC`,
+           [req.user.employeeId], (err, claims) => {
+        if (err) return res.status(500).json({ error: 'Failed to load pending claims' });
+        res.json({ claims: claims || [] });
+    });
+});
+
+// Supervisor transit claims history (approved + rejected) — audit trail
+app.get('/api/transit-claims/supervisor-history', requireAuth, requireRole('supervisor'), (req, res) => {
+    db.all(`SELECT tc.id, tc.claim_month, tc.claim_year, tc.receipt_amount, tc.claim_amount, 
+                   tc.status, tc.submitted_date, tc.approved_date, tc.approved_by, tc.rejection_reason,
+                   tc.report_ref, tc.report_generated_at, tc.receipt_file,
+                   (CASE WHEN tc.receipt_data IS NOT NULL THEN 1 ELSE 0 END) as has_receipt,
+                   e.name as employee_name, e.department, e.employee_number,
+                   approver.name as approver_name
+            FROM transit_claims tc
+            JOIN employees e ON tc.employee_id = e.id
+            LEFT JOIN employees approver ON tc.approved_by = approver.id
+            WHERE e.supervisor_id = ? AND tc.status IN ('approved', 'rejected')
+            ORDER BY tc.approved_date DESC, tc.submitted_date DESC
+            LIMIT 50`,
+           [req.user.employeeId], (err, claims) => {
+        if (err) return res.status(500).json({ error: 'Failed to load transit history' });
+        res.json({ claims: claims || [] });
+    });
+});
+
+// Approve transit claim
+app.post('/api/transit-claims/:id/approve', requireAuth, requireRole('supervisor'), (req, res) => {
+    const claimId = req.params.id;
+    
+    // Verify this claim belongs to a direct report
+    db.get(`SELECT tc.*, e.name as employee_name, e.supervisor_id, tc.employee_id
+            FROM transit_claims tc
+            JOIN employees e ON tc.employee_id = e.id
+            WHERE tc.id = ? AND tc.status = 'pending'`, [claimId], (err, claim) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!claim) return res.status(404).json({ error: 'Claim not found or not pending' });
+        if (claim.supervisor_id !== req.user.employeeId) {
+            return res.status(403).json({ error: 'You can only approve claims from your direct reports' });
+        }
+        
+        // Look up supervisor name
+        db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err2, supervisor) => {
+        const supervisorName = (supervisor && supervisor.name) || 'your supervisor';
+        
+        db.run(`UPDATE transit_claims SET status = 'approved', approved_by = ?, approved_date = CURRENT_TIMESTAMP WHERE id = ?`,
+               [req.user.employeeId, claimId], function(err) {
+            if (err) return res.status(500).json({ error: 'Failed to approve claim' });
+            
+            const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            createNotification(claim.employee_id, 'transit_approved',
+                `✅ Your transit benefit for ${mn[claim.claim_month - 1]} ${claim.claim_year} ($${claim.claim_amount}) has been approved by ${supervisorName}.`);
+            
+            // Return success immediately — PDF generation happens async
+            res.json({ success: true, message: 'Transit claim approved' });
+            
+            // Async: Generate PDF and email
+            (async () => {
+                try {
+                    pdfLog('[PDF] Starting async PDF generation for claim', claimId);
+                    // Find all claims in the same batch (multi-month submissions)
+                    const batchClaims = await new Promise((res, rej) => {
+                        if (claim.expense_batch_id) {
+                            db.all(`SELECT id FROM transit_claims WHERE expense_batch_id = ? AND status = 'approved'`,
+                                [claim.expense_batch_id], (e, rows) => e ? rej(e) : res(rows || []));
+                        } else {
+                            res([{ id: claimId }]);
+                        }
+                    });
+                    const claimIdsForPDF = batchClaims.map(c => c.id);
+                    
+                    pdfLog('[PDF] Batch claims:', claimIdsForPDF);
+                    // Generate PTB reference
+                    const refNumber = await generatePTBRefNumber(db);
+                    
+                    // Store ref on all claims in batch
+                    for (const cid of claimIdsForPDF) {
+                        await new Promise((res, rej) => {
+                            db.run(`UPDATE transit_claims SET report_ref = ? WHERE id = ?`, [refNumber, cid], e => e ? rej(e) : res());
+                        });
+                    }
+                    
+                    pdfLog('[PDF] Ref number:', refNumber, '- now generating PDF...');
+                    // Generate PDF
+                    const pdfBuffer = await generateTransitBenefitPDF(claimIdsForPDF, db);
+                    
+                    pdfLog('[PDF] Generated buffer:', pdfBuffer ? pdfBuffer.length + ' bytes' : 'NULL');
+                    if (pdfBuffer) {
+                        // Store PDF on first claim
+                        await new Promise((res, rej) => {
+                            db.run(`UPDATE transit_claims SET pdf_report = ?, report_generated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                                [pdfBuffer, claimIdsForPDF[0]], e => e ? rej(e) : res());
+                        });
+                        console.log(`✅ Transit PDF generated: ${refNumber} (${claimIdsForPDF.length} claims)`);
+                        
+                        // Send emails (reuse SMTP settings from trip approval)
+                        try {
+                            const smtpSettings = await new Promise((res, rej) => {
+                                db.all(`SELECT key, value FROM app_settings WHERE key IN ('smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'audit_email')`, [], (e, rows) => {
+                                    if (e) return rej(e);
+                                    const s = {};
+                                    (rows || []).forEach(r => { s[r.key] = r.value; });
+                                    res(s);
+                                });
+                            });
+                            
+                            if (smtpSettings.smtp_host) {
+                                const nodemailer = require('nodemailer');
+                                const transporter = nodemailer.createTransport({
+                                    host: smtpSettings.smtp_host,
+                                    port: parseInt(smtpSettings.smtp_port || '587'),
+                                    secure: (smtpSettings.smtp_port === '465'),
+                                    auth: { user: smtpSettings.smtp_user, pass: smtpSettings.smtp_pass }
+                                });
+                                
+                                const recipients = [];
+                                if (claim.employee_email) recipients.push({ email: claim.employee_email, name: claim.employee_name });
+                                
+                                // Get supervisor email
+                                const sup = await new Promise((res, rej) => {
+                                    db.get(`SELECT email, name FROM employees WHERE id = ?`, [req.user.employeeId], (e, r) => e ? rej(e) : res(r));
+                                });
+                                if (sup && sup.email) recipients.push({ email: sup.email, name: sup.name });
+                                if (smtpSettings.audit_email) recipients.push({ email: smtpSettings.audit_email, name: 'Audit/Finance' });
+                                
+                                for (const recip of recipients) {
+                                    try {
+                                        await transporter.sendMail({
+                                            from: smtpSettings.smtp_from || smtpSettings.smtp_user,
+                                            to: recip.email,
+                                            subject: `Transit Benefit Report ${refNumber} — ${claim.employee_name}`,
+                                            text: `Dear ${recip.name},\n\nPlease find attached the transit benefit expense report for ${claim.employee_name}.\n\nReference: ${refNumber}\n\nThis is an automated message from ClaimFlow.`,
+                                            attachments: [{ filename: `${refNumber}.pdf`, content: pdfBuffer }]
+                                        });
+                                    } catch (emailErr) {
+                                        console.error(`❌ Email to ${recip.email} failed:`, emailErr.message);
+                                    }
+                                }
+                            }
+                        } catch (emailErr) {
+                            console.error('❌ Email sending error:', emailErr.message);
+                        }
+                    }
+                } catch (pdfErr) {
+                    pdfLog('[ERROR] PDF gen:', pdfErr.message, pdfErr.stack); pdfDebug.lastError = pdfErr.stack;
+                }
+            })().catch(err => console.error('❌ Transit PDF async error:', err));
+        });
+        }); // end supervisor name lookup
+    });
+});
+
+// Debug: PDF generation status
+app.get('/api/transit-claims/pdf-debug', requireAuth, (req, res) => {
+    res.json(pdfDebug);
+});
+
+// Download transit claim PDF
+// Full transit claim history for current employee (excludes PDF blob)
+app.get('/api/transit-claims/history', requireAuth, (req, res) => {
+    db.all(`SELECT id, employee_id, claim_month, claim_year, receipt_amount, claim_amount, receipt_file, status, expense_batch_id, submitted_date, approved_date, approved_by, rejection_reason, report_ref, report_generated_at, created_at 
+            FROM transit_claims WHERE employee_id = ? ORDER BY claim_year DESC, claim_month DESC`,
+           [req.user.employeeId], (err, claims) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ claims: claims || [] });
+    });
+});
+
+// Generate PDF retroactively for an approved claim that doesn't have one
+app.post('/api/transit-claims/:id/generate-pdf', requireAuth, async (req, res) => {
+    try {
+        const claimId = req.params.id;
+        const claim = await new Promise((resolve, reject) => {
+            db.get(`SELECT tc.*, e.name as employee_name FROM transit_claims tc JOIN employees e ON tc.employee_id = e.id WHERE tc.id = ? AND tc.status = 'approved'`, 
+                   [claimId], (err, row) => err ? reject(err) : resolve(row));
+        });
+        
+        if (!claim) return res.status(404).json({ error: 'Approved claim not found' });
+        if (claim.employee_id !== req.user.employeeId) return res.status(403).json({ error: 'Not your claim' });
+        if (claim.pdf_report) return res.json({ success: true, message: 'PDF already exists', report_ref: claim.report_ref });
+        
+        // Find all claims in same batch
+        let claimIdsForPDF = [claimId];
+        if (claim.expense_batch_id) {
+            const batchClaims = await new Promise((resolve, reject) => {
+                db.all(`SELECT id FROM transit_claims WHERE expense_batch_id = ? AND status = 'approved'`,
+                    [claim.expense_batch_id], (e, rows) => e ? reject(e) : resolve(rows || []));
+            });
+            claimIdsForPDF = batchClaims.map(c => c.id);
+        }
+        
+        const refNumber = await generatePTBRefNumber(db);
+        for (const cid of claimIdsForPDF) {
+            await new Promise((resolve, reject) => {
+                db.run(`UPDATE transit_claims SET report_ref = ? WHERE id = ?`, [refNumber, cid], e => e ? reject(e) : resolve());
+            });
+        }
+        
+        const pdfBuffer = await generateTransitBenefitPDF(claimIdsForPDF, db);
+        for (const cid of claimIdsForPDF) {
+            await new Promise((resolve, reject) => {
+                db.run(`UPDATE transit_claims SET pdf_report = ?, report_generated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                    [pdfBuffer, cid], e => e ? reject(e) : resolve());
+            });
+        }
+        
+        res.json({ success: true, report_ref: refNumber });
+    } catch (err) {
+        console.error('❌ Retroactive PDF generation error:', err.message);
+        res.status(500).json({ error: 'Failed to generate PDF' });
+    }
+});
+
+// GET /api/transit-claims/:id/receipt — serve transit receipt file with auth
+app.get('/api/transit-claims/:id/receipt', (req, res, next) => {
+    if (!req.headers.authorization && req.query.auth) {
+        req.headers.authorization = 'Bearer ' + req.query.auth;
+    }
+    next();
+}, requireAuth, (req, res) => {
+    const claimId = parseInt(req.params.id);
+    if (isNaN(claimId) || claimId <= 0) return res.status(400).json({ error: 'Invalid claim ID' });
+    db.get(`SELECT receipt_file, receipt_data, receipt_type FROM transit_claims WHERE id = ?`, [claimId], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row) return res.status(404).json({ error: 'No receipt found' });
+        
+        // Prefer BLOB data (survives deploys), fall back to file on disk
+        if (row.receipt_data) {
+            try {
+                const buf = Buffer.isBuffer(row.receipt_data) ? row.receipt_data : Buffer.from(row.receipt_data);
+                res.setHeader('Content-Type', row.receipt_type || 'application/octet-stream');
+                const safeName = (row.receipt_file || 'receipt').replace(/[^\w.\-]/g, '_');
+                res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+                res.setHeader('Content-Length', buf.length);
+                return res.end(buf);
+            } catch (e) { console.error('❌ Error sending transit receipt BLOB:', e); }
+        }
+        
+        // Fallback: serve from file
+        if (!row.receipt_file) return res.status(404).json({ error: 'No receipt found' });
+        const filePath = path.join(__dirname, 'uploads', row.receipt_file);
+        if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Receipt file not found' });
+        
+        const ext = path.extname(row.receipt_file).toLowerCase();
+        const mimeTypes = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf' };
+        res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
+        const safeFileName = (row.receipt_file || 'receipt').replace(/[^\w.\-]/g, '_');
+        res.setHeader('Content-Disposition', `inline; filename="${safeFileName}"`);
+        res.sendFile(filePath);
+    });
+});
+
+app.get('/api/transit-claims/:id/pdf', (req, res, next) => {
+    // Support auth via query param for direct browser downloads
+    if (!req.headers.authorization && req.query.auth) {
+        req.headers.authorization = 'Bearer ' + req.query.auth;
+    }
+    next();
+}, requireAuth, (req, res) => {
+    db.get(`SELECT tc.pdf_report, tc.report_ref, tc.employee_id FROM transit_claims tc WHERE tc.id = ?`, [req.params.id], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row || !row.pdf_report) return res.status(404).json({ error: 'PDF not found' });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${row.report_ref || 'transit-report'}.pdf"`);
+        try { const buf = Buffer.isBuffer(row.pdf_report) ? row.pdf_report : Buffer.from(row.pdf_report); res.setHeader("Content-Length", buf.length); res.end(buf); } catch(e) { console.error("PDF send error:", e); if(!res.headersSent) res.status(500).json({error:"Failed to send PDF"}); }
+    });
+});
+
+// Reject transit claim
+app.post('/api/transit-claims/:id/reject', requireAuth, requireRole('supervisor'), (req, res) => {
+    const claimId = req.params.id;
+    const reason = sanitizeString(req.body.reason, 1000);
+    
+    db.get(`SELECT tc.*, e.name as employee_name, e.supervisor_id, tc.employee_id
+            FROM transit_claims tc
+            JOIN employees e ON tc.employee_id = e.id
+            WHERE tc.id = ? AND tc.status = 'pending'`, [claimId], (err, claim) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!claim) return res.status(404).json({ error: 'Claim not found or not pending' });
+        if (claim.supervisor_id !== req.user.employeeId) {
+            return res.status(403).json({ error: 'You can only reject claims from your direct reports' });
+        }
+        
+        // Look up supervisor name
+        db.get('SELECT name FROM employees WHERE id = ?', [req.user.employeeId], (err2, supervisor) => {
+        const supervisorName = (supervisor && supervisor.name) || 'your supervisor';
+        
+        db.run(`UPDATE transit_claims SET status = 'rejected', rejection_reason = ?, approved_by = ?, approved_date = CURRENT_TIMESTAMP WHERE id = ?`,
+               [reason || 'No reason provided', req.user.employeeId, claimId], function(err) {
+            if (err) return res.status(500).json({ error: 'Failed to reject claim' });
+            
+            const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            createNotification(claim.employee_id, 'transit_rejected',
+                `❌ Your transit benefit for ${mn[claim.claim_month - 1]} ${claim.claim_year} was rejected by ${supervisorName}. Reason: ${reason || 'Not specified'}`);
+            
+            res.json({ success: true, message: 'Transit claim rejected' });
+        });
+        }); // end supervisor name lookup
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 📱 PHONE BENEFIT ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════
+
+const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+// GET /api/settings/phone — get phone benefit settings
+app.get('/api/settings/phone', requireAuth, (req, res) => {
+    db.all(`SELECT key, value FROM app_settings WHERE key IN ('phone_monthly_max', 'phone_claim_window')`, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        const settings = {};
+        rows.forEach(r => settings[r.key] = r.value);
+        res.json({
+            monthly_max: parseFloat(settings.phone_monthly_max || '100.00'),
+            claim_window: parseInt(settings.phone_claim_window || '2')
+        });
+    });
+});
+
+// PUT /api/settings/phone — update phone benefit settings (admin only)
+app.put('/api/settings/phone', requireAuth, requireRole('admin'), (req, res) => {
+    const { monthly_max, claim_window } = req.body;
+    
+    const maxAmount = parseFloat(monthly_max);
+    const windowVal = parseInt(claim_window);
+    if (isNaN(maxAmount) || maxAmount <= 0 || maxAmount > 1000) {
+        return res.status(400).json({ error: 'Monthly maximum must be between $0.01 and $1,000.00' });
+    }
+    if (isNaN(windowVal) || windowVal < 0 || windowVal > 12) {
+        return res.status(400).json({ error: 'Claim window must be between 0 and 12 months' });
+    }
+    
+    // Get old values for audit
+    db.all(`SELECT key, value FROM app_settings WHERE key IN ('phone_monthly_max', 'phone_claim_window')`, [], (err, oldRows) => {
+        const oldSettings = {};
+        if (oldRows) oldRows.forEach(r => oldSettings[r.key] = r.value);
+        
+        db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('phone_monthly_max', ?, ?, CURRENT_TIMESTAMP)`, [String(maxAmount), req.user.employeeId]);
+        db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('phone_claim_window', ?, ?, CURRENT_TIMESTAMP)`, [String(windowVal), req.user.employeeId]);
+        
+        // Audit log
+        db.run(`INSERT INTO settings_audit_log (setting_key, old_value, new_value, changed_by) VALUES (?, ?, ?, ?)`,
+            ['phone_benefit_settings',
+             `Max: $${oldSettings.phone_monthly_max || '100.00'}, Window: ${oldSettings.phone_claim_window || '2'} months`,
+             `Max: $${maxAmount.toFixed(2)}, Window: ${windowVal} months`,
+             req.user.employeeId]);
+        
+        res.json({ success: true, message: 'Phone benefit settings updated' });
+    });
+});
+
+// GET /api/phone-claims/eligible — eligible months + existing claims
+app.get('/api/phone-claims/eligible', requireAuth, (req, res) => {
+    db.get(`SELECT value FROM app_settings WHERE key = 'phone_claim_window'`, (err, windowSetting) => {
+        const window = parseInt(windowSetting?.value || '2');
+        const now = new Date();
+        const eligible = [];
+        for (let i = 0; i <= window; i++) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            eligible.push({ month: d.getMonth() + 1, year: d.getFullYear() });
+        }
+        
+        const monthYearPairs = eligible.map(e => `(${e.month}, ${e.year})`).join(',');
+        db.all(`SELECT id, claim_month, claim_year, plan_receipt_amount, plan_claim_amount, device_receipt_amount, device_claim_amount, total_claim_amount, status, submitted_date, approved_date, rejection_reason, report_ref, report_generated_at, created_at
+                FROM phone_claims WHERE employee_id = ? AND (claim_month, claim_year) IN (${monthYearPairs}) AND status != 'rejected'`,
+            [req.user.employeeId], (err2, existing) => {
+                if (err2) return res.status(500).json({ error: 'Database error' });
+                res.json({ eligible, existing: existing || [] });
+            });
+    });
+});
+
+// GET /api/phone-claims/history — full history for employee
+app.get('/api/phone-claims/history', requireAuth, (req, res) => {
+    db.all(`SELECT id, claim_month, claim_year, plan_receipt_amount, plan_claim_amount, device_receipt_amount, device_claim_amount, total_claim_amount, status, submitted_date, approved_date, approved_by, rejection_reason, report_ref, report_generated_at, created_at
+            FROM phone_claims WHERE employee_id = ? ORDER BY claim_year DESC, claim_month DESC`,
+        [req.user.employeeId], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            res.json(rows || []);
+        });
+});
+
+// POST /api/phone-claims — submit phone benefit claim(s)
+app.post('/api/phone-claims', requireAuth, upload.array('receipts', 30), (req, res) => {
+    try {
+        const claims = JSON.parse(req.body.claims || '[]');
+        if (!claims.length) return res.status(400).json({ error: 'No claims provided' });
+        
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({ error: 'At least one receipt is required' });
+        }
+        
+        // Get settings
+        db.get(`SELECT value FROM app_settings WHERE key = 'phone_monthly_max'`, (err, maxSetting) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            const monthlyMax = parseFloat(maxSetting ? maxSetting.value : '100.00');
+            
+            const batchId = `PHB-${Date.now()}`;
+            let completed = 0;
+            let errors = [];
+            const insertedIds = [];
+            
+            // Files are tagged with fieldname index pattern: receipts
+            // We need to match files to claims using the fileIndex in claim data
+            const files = req.files || [];
+            
+            function processNextClaim(idx) {
+                if (idx >= claims.length) {
+                    if (errors.length > 0) {
+                        return res.status(400).json({ error: errors.join('; ') });
+                    }
+                    return res.json({ success: true, message: `${claims.length} phone claim(s) submitted`, ids: insertedIds, batch_id: batchId });
+                }
+                
+                const c = claims[idx];
+                if (!c.month || !c.year) {
+                    errors.push(`Claim ${idx + 1}: missing month/year`);
+                    return processNextClaim(idx + 1);
+                }
+                
+                const planReceipt = parseFloat(c.plan_receipt || 0);
+                const deviceReceipt = parseFloat(c.device_receipt || 0);
+                const receiptTotal = planReceipt + deviceReceipt;
+                // Cap combined total to monthly max, then proportionally split
+                let planClaim = planReceipt;
+                let deviceClaim = deviceReceipt;
+                if (receiptTotal > monthlyMax && receiptTotal > 0) {
+                    const ratio = monthlyMax / receiptTotal;
+                    planClaim = Math.round(planReceipt * ratio * 100) / 100;
+                    deviceClaim = Math.round(deviceReceipt * ratio * 100) / 100;
+                    // Ensure total exactly equals max (fix rounding)
+                    const diff = monthlyMax - (planClaim + deviceClaim);
+                    if (diff !== 0) planClaim = Math.round((planClaim + diff) * 100) / 100;
+                }
+                const totalClaim = planClaim + deviceClaim;
+                
+                if (planReceipt <= 0) {
+                    errors.push(`Claim ${idx + 1}: Phone plan amount is required`);
+                    return processNextClaim(idx + 1);
+                }
+                
+                // Check for duplicate month
+                db.get(`SELECT id, status FROM phone_claims WHERE employee_id = ? AND claim_month = ? AND claim_year = ? AND status != 'rejected'`,
+                    [req.user.employeeId, c.month, c.year], (err2, existing) => {
+                        if (existing) {
+                            errors.push(`${monthNames[c.month - 1]} ${c.year} already claimed (${existing.status})`);
+                            return processNextClaim(idx + 1);
+                        }
+                        
+                        db.run(`INSERT INTO phone_claims (employee_id, claim_month, claim_year, plan_receipt_amount, plan_claim_amount, device_receipt_amount, device_claim_amount, total_claim_amount, status, submitted_date, expense_batch_id)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP, ?)`,
+                            [req.user.employeeId, c.month, c.year, planReceipt, planClaim, deviceReceipt, deviceClaim, totalClaim, batchId],
+                            function(err3) {
+                                if (err3) {
+                                    errors.push(`${monthNames[c.month - 1]} ${c.year}: database error`);
+                                    return processNextClaim(idx + 1);
+                                }
+                                const claimId = this.lastID;
+                                insertedIds.push(claimId);
+                                
+                                // Save receipt files for this claim
+                                const claimFiles = files.filter(f => {
+                                    // Files tagged with claim index in originalname prefix or fieldname
+                                    // We expect the frontend to tag files with claim index
+                                    const tag = f.originalname.match(/^claim(\d+)_/);
+                                    return tag ? parseInt(tag[1]) === idx : (claims.length === 1);
+                                });
+                                
+                                if (claimFiles.length === 0 && claims.length === 1) {
+                                    // All files belong to single claim
+                                    savePhoneReceipts(claimId, files, () => processNextClaim(idx + 1));
+                                } else if (claimFiles.length > 0) {
+                                    savePhoneReceipts(claimId, claimFiles, () => processNextClaim(idx + 1));
+                                } else {
+                                    processNextClaim(idx + 1);
+                                }
+                            });
+                    });
+            }
+            
+            processNextClaim(0);
+        });
+    } catch (e) {
+        console.error('❌ Phone claim submit error:', e);
+        res.status(500).json({ error: 'Failed to submit phone claims' });
+    }
+});
+
+function savePhoneReceipts(claimId, files, callback) {
+    if (!files || files.length === 0) return callback();
+    let saved = 0;
+    files.forEach((file, order) => {
+        const cleanName = file.originalname.replace(/^claim\d+_/, '');
+        // Read file from disk since multer uses diskStorage (file.buffer is undefined)
+        let fileData = file.buffer || null;
+        if (!fileData && file.path) {
+            try { fileData = fs.readFileSync(file.path); } catch (e) { console.warn('Could not read phone receipt file:', e.message); }
+        }
+        db.run(`INSERT INTO phone_claim_receipts (phone_claim_id, file_data, file_name, file_type, file_size, upload_order)
+                VALUES (?, ?, ?, ?, ?, ?)`,
+            [claimId, fileData, cleanName, file.mimetype, file.size, order],
+            (err) => {
+                if (err) console.error('❌ Error saving phone receipt:', err);
+                saved++;
+                if (saved === files.length) callback();
+            });
+    });
+}
+
+// GET /api/phone-claims/pending — supervisor view
+app.get('/api/phone-claims/pending', requireAuth, requireRole('supervisor'), (req, res) => {
+    db.all(`SELECT pc.*, e.name as employee_name, e.employee_number, e.department, e.position,
+                   (SELECT COUNT(*) FROM phone_claim_receipts WHERE phone_claim_id = pc.id) as receipt_count
+            FROM phone_claims pc
+            JOIN employees e ON pc.employee_id = e.id
+            WHERE pc.status = 'pending' AND pc.employee_id IN (
+                SELECT id FROM employees WHERE supervisor_id = ?
+            )
+            ORDER BY pc.submitted_date ASC`,
+        [req.user.employeeId], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            res.json(rows || []);
+        });
+});
+
+// GET /api/phone-claims/supervisor-history — supervisor audit trail
+app.get('/api/phone-claims/supervisor-history', requireAuth, requireRole('supervisor'), (req, res) => {
+    db.all(`SELECT pc.id, pc.employee_id, pc.claim_month, pc.claim_year, pc.plan_receipt_amount, pc.device_receipt_amount,
+                   pc.plan_claim_amount, pc.device_claim_amount, pc.total_claim_amount, pc.status,
+                   pc.submitted_date, pc.approved_date, pc.approved_by, pc.rejection_reason, pc.report_ref, pc.report_generated_at,
+                   (SELECT COUNT(*) FROM phone_claim_receipts WHERE phone_claim_id = pc.id) as receipt_count,
+                   e.name as employee_name, e.employee_number, e.department
+            FROM phone_claims pc
+            JOIN employees e ON pc.employee_id = e.id
+            WHERE pc.status IN ('approved', 'rejected') AND pc.approved_by = ?
+            ORDER BY pc.approved_date DESC LIMIT 50`,
+        [req.user.employeeId], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            res.json(rows || []);
+        });
+});
+
+// GET /api/phone-claims/:id/receipts — get receipt file list (no blobs)
+app.get('/api/phone-claims/:id/receipts', requireAuth, (req, res) => {
+    db.all(`SELECT id, file_name, file_type, file_size, upload_order FROM phone_claim_receipts WHERE phone_claim_id = ? ORDER BY upload_order`,
+        [req.params.id], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            res.json(rows || []);
+        });
+});
+
+// GET /api/phone-claims/receipt/:receiptId — download a single receipt file
+app.get('/api/phone-claims/receipt/:receiptId', (req, res, next) => {
+    if (req.query.auth && !req.headers.authorization) {
+        req.headers.authorization = `Bearer ${req.query.auth}`;
+    }
+    requireAuth(req, res, next);
+}, (req, res) => {
+    db.get(`SELECT file_data, file_name, file_type FROM phone_claim_receipts WHERE id = ?`, [req.params.receiptId], (err, row) => {
+        if (err) { console.error('❌ Phone receipt DB error:', err); return res.status(500).json({ error: 'Database error' }); }
+        if (!row || !row.file_data) return res.status(404).json({ error: 'Receipt not found' });
+        try {
+            console.log(`[PHONE-RECEIPT] id=${req.params.receiptId} dataType=${typeof row.file_data} isBuffer=${Buffer.isBuffer(row.file_data)} dataLen=${row.file_data?.length || 'N/A'} constructor=${row.file_data?.constructor?.name}`);
+            let buf;
+            if (Buffer.isBuffer(row.file_data)) {
+                buf = row.file_data;
+            } else if (row.file_data instanceof Uint8Array) {
+                buf = Buffer.from(row.file_data);
+            } else if (typeof row.file_data === 'string') {
+                buf = Buffer.from(row.file_data, 'binary');
+            } else {
+                buf = Buffer.from(row.file_data);
+            }
+            console.log(`[PHONE-RECEIPT] bufLen=${buf.length}`);
+            res.setHeader('Content-Type', row.file_type || 'application/octet-stream');
+            const safeName = (row.file_name || 'receipt').replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '');
+            res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+            res.setHeader('Content-Length', buf.length);
+            res.end(buf);
+        } catch (e) {
+            console.error('❌ Error sending phone receipt:', e.message, e.stack);
+            if (!res.headersSent) res.status(500).json({ error: 'Failed to send receipt' });
+        }
+    });
+});
+
+// POST /api/phone-claims/:id/approve — supervisor approve
+app.post('/api/phone-claims/:id/approve', requireAuth, requireRole('supervisor'), (req, res) => {
+    const claimId = req.params.id;
+    db.get(`SELECT pc.*, e.name as employee_name FROM phone_claims pc JOIN employees e ON pc.employee_id = e.id WHERE pc.id = ?`, [claimId], (err, claim) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!claim) return res.status(404).json({ error: 'Claim not found' });
+        if (claim.status !== 'pending') return res.status(400).json({ error: 'Claim is not pending' });
+        
+        // Get supervisor name
+        db.get(`SELECT name FROM employees WHERE id = ?`, [req.user.employeeId], (err2, sup) => {
+            const supervisorName = sup?.name || 'Supervisor';
+            
+            db.run(`UPDATE phone_claims SET status = 'approved', approved_by = ?, approved_date = CURRENT_TIMESTAMP WHERE id = ?`,
+                [req.user.employeeId, claimId], (err3) => {
+                    if (err3) return res.status(500).json({ error: 'Database error' });
+                    
+                    createNotification(claim.employee_id, 'phone_approved',
+                        `✅ Your phone benefit for ${monthNames[claim.claim_month - 1]} ${claim.claim_year} ($${claim.total_claim_amount}) has been approved by ${supervisorName}.`);
+                    
+                    res.json({ success: true, message: 'Phone claim approved' });
+                    
+                    // Async PDF generation
+                    (async () => {
+                        try {
+                            await generatePhonePDF(claimId);
+                            console.log(`✅ Phone PDF generated for claim ${claimId}`);
+                        } catch (e) {
+                            console.error(`❌ Phone PDF generation error for claim ${claimId}:`, e);
+                        }
+                    })();
+                });
+        });
+    });
+});
+
+// POST /api/phone-claims/:id/reject — supervisor reject
+app.post('/api/phone-claims/:id/reject', requireAuth, requireRole('supervisor'), (req, res) => {
+    const claimId = req.params.id;
+    const reason = sanitizeString(req.body.reason, 1000);
+    
+    db.get(`SELECT pc.*, e.name as employee_name FROM phone_claims pc JOIN employees e ON pc.employee_id = e.id WHERE pc.id = ?`, [claimId], (err, claim) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!claim) return res.status(404).json({ error: 'Claim not found' });
+        if (claim.status !== 'pending') return res.status(400).json({ error: 'Claim is not pending' });
+        
+        db.get(`SELECT name FROM employees WHERE id = ?`, [req.user.employeeId], (err2, sup) => {
+            const supervisorName = sup?.name || 'Supervisor';
+            
+            // Delete the rejected claim so the month is unlocked (UNIQUE constraint allows resubmission)
+            db.run(`DELETE FROM phone_claims WHERE id = ?`, [claimId], (err3) => {
+                if (err3) return res.status(500).json({ error: 'Database error' });
+                
+                createNotification(claim.employee_id, 'phone_rejected',
+                    `❌ Your phone benefit for ${monthNames[claim.claim_month - 1]} ${claim.claim_year} was rejected by ${supervisorName}. Reason: ${reason || 'Not specified'}`);
+                
+                res.json({ success: true, message: 'Phone claim rejected' });
+            });
+        });
+    });
+});
+
+// GET /api/phone-claims/:id/pdf — download PDF
+app.get('/api/phone-claims/:id/pdf', (req, res, next) => {
+    if (req.query.auth && !req.headers.authorization) {
+        req.headers.authorization = `Bearer ${req.query.auth}`;
+    }
+    requireAuth(req, res, next);
+}, (req, res) => {
+    db.get(`SELECT pdf_report, report_ref FROM phone_claims WHERE id = ?`, [req.params.id], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row || !row.pdf_report) return res.status(404).json({ error: 'No PDF report found' });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${row.report_ref || 'phone-benefit'}.pdf"`);
+        try { const buf = Buffer.isBuffer(row.pdf_report) ? row.pdf_report : Buffer.from(row.pdf_report); res.setHeader("Content-Length", buf.length); res.end(buf); } catch(e) { console.error("PDF send error:", e); if(!res.headersSent) res.status(500).json({error:"Failed to send PDF"}); }
+    });
+});
+
+// POST /api/phone-claims/:id/generate-pdf — retroactive PDF generation
+app.post('/api/phone-claims/:id/generate-pdf', requireAuth, async (req, res) => {
+    try {
+        const claim = await new Promise((resolve, reject) => {
+            db.get(`SELECT * FROM phone_claims WHERE id = ? AND status = 'approved'`, [req.params.id], (err, row) => {
+                if (err) return reject(err);
+                resolve(row);
+            });
+        });
+        if (!claim) return res.status(404).json({ error: 'Approved claim not found' });
+        await generatePhonePDF(claim.id);
+        res.json({ success: true, message: 'PDF generated' });
+    } catch (e) {
+        console.error('❌ Phone PDF retroactive generation error:', e);
+        res.status(500).json({ error: 'PDF generation failed' });
+    }
+});
+
+// 📱 Phone Benefit PDF Generation
+async function generatePhonePDF(claimId) {
+    const PDFDocument = require('pdfkit');
+    
+    const claim = await new Promise((resolve, reject) => {
+        db.get(`SELECT pc.*, e.name as employee_name, e.employee_number, e.department, e.position
+                FROM phone_claims pc JOIN employees e ON pc.employee_id = e.id WHERE pc.id = ?`, [claimId], (err, row) => {
+            if (err) return reject(err);
+            resolve(row);
+        });
+    });
+    if (!claim) throw new Error('Claim not found');
+    
+    const supervisor = await new Promise((resolve, reject) => {
+        db.get(`SELECT name FROM employees WHERE id = ?`, [claim.approved_by], (err, row) => {
+            if (err) return reject(err);
+            resolve(row);
+        });
+    });
+    
+    const receipts = await new Promise((resolve, reject) => {
+        db.all(`SELECT * FROM phone_claim_receipts WHERE phone_claim_id = ? ORDER BY upload_order`, [claimId], (err, rows) => {
+            if (err) return reject(err);
+            resolve(rows || []);
+        });
+    });
+    
+    // Generate ref number
+    let refNumber = claim.report_ref;
+    if (!refNumber) {
+        refNumber = await new Promise((resolve, reject) => {
+            db.run(`INSERT OR IGNORE INTO phb_report_sequence (year, last_number) VALUES (?, 0)`, [claim.claim_year]);
+            db.run(`UPDATE phb_report_sequence SET last_number = last_number + 1 WHERE year = ?`, [claim.claim_year], function(err) {
+                if (err) return reject(err);
+                db.get(`SELECT last_number FROM phb_report_sequence WHERE year = ?`, [claim.claim_year], (err2, row) => {
+                    if (err2) return reject(err2);
+                    resolve(`PHB-${claim.claim_year}-${String(row.last_number).padStart(5, '0')}`);
+                });
+            });
+        });
+        await new Promise((resolve, reject) => {
+            db.run(`UPDATE phone_claims SET report_ref = ? WHERE id = ?`, [refNumber, claimId], e => e ? reject(e) : resolve());
+        });
+    }
+    
+    // Get settings at time of approval
+    const settings = await new Promise((resolve, reject) => {
+        db.all(`SELECT key, value FROM app_settings WHERE key IN ('phone_plan_max', 'phone_device_max')`, [], (err, rows) => {
+            if (err) return reject(err);
+            const s = {};
+            (rows || []).forEach(r => s[r.key] = r.value);
+            resolve({ planMax: parseFloat(s.phone_plan_max || '50'), deviceMax: parseFloat(s.phone_device_max || '50') });
+        });
+    });
+    
+    const pdfReceiptBuffersOuter = [];
+    return new Promise((resolve, reject) => {
+        const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
+        const chunks = [];
+        doc.on('data', c => chunks.push(c));
+        doc.on('end', () => {
+            resolve(Buffer.concat(chunks));
+        });
+        doc.on('error', reject);
+        
+        const monthStr = `${monthNames[claim.claim_month - 1]} ${claim.claim_year}`;
+        const planCapped = claim.plan_receipt_amount > settings.planMax;
+        const deviceCapped = claim.device_receipt_amount > settings.deviceMax;
+        
+        // Header
+        doc.rect(0, 0, doc.page.width, 80).fill('#1a237e');
+        doc.fontSize(22).fillColor('#ffffff').text('PHONE BENEFIT EXPENSE REPORT', 50, 25);
+        doc.fontSize(10).text('ClaimFlow — Expense Management', 50, 52);
+        
+        // Reference bar
+        doc.rect(0, 80, doc.page.width, 30).fill('#e8eaf6');
+        doc.fontSize(10).fillColor('#1a237e').text(`Reference: ${refNumber}`, 50, 88);
+        doc.text(`Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`, 350, 88);
+        
+        let y = 130;
+        
+        // Employee Info
+        doc.fontSize(12).fillColor('#1a237e').text('EMPLOYEE INFORMATION', 50, y);
+        y += 5;
+        doc.moveTo(50, y + 15).lineTo(562, y + 15).strokeColor('#1a237e').lineWidth(1).stroke();
+        y += 25;
+        doc.fontSize(10).fillColor('#333');
+        const empInfo = [
+            ['Name', claim.employee_name],
+            ['Employee #', claim.employee_number || 'N/A'],
+            ['Department', claim.department || 'N/A'],
+            ['Position', claim.position || 'N/A']
+        ];
+        empInfo.forEach(([label, value]) => {
+            doc.font('Helvetica-Bold').text(`${label}:`, 50, y, { continued: true }).font('Helvetica').text(`  ${value}`);
+            y += 18;
+        });
+        
+        y += 15;
+        
+        // Claim Details
+        doc.fontSize(12).fillColor('#1a237e').text('CLAIM DETAILS', 50, y);
+        y += 5;
+        doc.moveTo(50, y + 15).lineTo(562, y + 15).strokeColor('#1a237e').lineWidth(1).stroke();
+        y += 25;
+        doc.fontSize(10).fillColor('#333');
+        doc.font('Helvetica-Bold').text('Month:', 50, y, { continued: true }).font('Helvetica').text(`  ${monthStr}`);
+        y += 25;
+        
+        // Table
+        const tableX = 50;
+        const colWidths = [150, 150, 160];
+        const headers = ['Component', 'Receipt Amount', 'Claim Amount'];
+        
+        // Header row
+        doc.rect(tableX, y, 460, 22).fill('#1a237e');
+        doc.fontSize(9).fillColor('#ffffff');
+        let tx = tableX;
+        headers.forEach((h, i) => {
+            doc.text(h, tx + 8, y + 6, { width: colWidths[i] - 16 });
+            tx += colWidths[i];
+        });
+        y += 22;
+        
+        // Plan row
+        doc.rect(tableX, y, 460, 20).fill('#f5f5f5');
+        doc.fillColor('#333').fontSize(9);
+        doc.text('Phone Plan', tableX + 8, y + 5);
+        doc.text(`$${parseFloat(claim.plan_receipt_amount).toFixed(2)}`, tableX + colWidths[0] + 8, y + 5);
+        doc.text(`$${parseFloat(claim.plan_claim_amount).toFixed(2)}${planCapped ? ' (capped)' : ''}`, tableX + colWidths[0] + colWidths[1] + 8, y + 5);
+        y += 20;
+        
+        // Device row
+        doc.rect(tableX, y, 460, 20).fill('#ffffff');
+        doc.fillColor('#333');
+        doc.text('Phone Device', tableX + 8, y + 5);
+        doc.text(`$${parseFloat(claim.device_receipt_amount).toFixed(2)}`, tableX + colWidths[0] + 8, y + 5);
+        doc.text(`$${parseFloat(claim.device_claim_amount).toFixed(2)}${deviceCapped ? ' (capped)' : ''}`, tableX + colWidths[0] + colWidths[1] + 8, y + 5);
+        y += 20;
+        
+        // Total row
+        doc.rect(tableX, y, 460, 22).fill('#e8f5e9');
+        doc.font('Helvetica-Bold').fillColor('#1b5e20');
+        doc.text('TOTAL', tableX + 8, y + 6);
+        doc.text(`$${(parseFloat(claim.plan_receipt_amount) + parseFloat(claim.device_receipt_amount)).toFixed(2)}`, tableX + colWidths[0] + 8, y + 6);
+        doc.text(`$${parseFloat(claim.total_claim_amount).toFixed(2)}`, tableX + colWidths[0] + colWidths[1] + 8, y + 6);
+        y += 30;
+        
+        doc.font('Helvetica').fontSize(9).fillColor('#666');
+        doc.text(`Monthly Maximums: Plan $${settings.planMax.toFixed(2)}, Device $${settings.deviceMax.toFixed(2)}`, 50, y);
+        y += 30;
+        
+        // Approval section
+        doc.fontSize(12).fillColor('#1a237e').text('APPROVAL', 50, y);
+        y += 5;
+        doc.moveTo(50, y + 15).lineTo(562, y + 15).strokeColor('#1a237e').lineWidth(1).stroke();
+        y += 25;
+        doc.fontSize(10).fillColor('#333');
+        
+        if (claim.submitted_date) {
+            const sd = new Date(claim.submitted_date);
+            doc.text(`Submitted: ${sd.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} — by ${claim.employee_name}`, 50, y);
+            y += 18;
+        }
+        if (claim.approved_date && supervisor) {
+            const ad = new Date(claim.approved_date);
+            doc.text(`Approved: ${ad.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} — by ${supervisor.name}`, 50, y);
+            y += 18;
+        }
+        
+        y += 20;
+        // Signature lines
+        doc.fontSize(9).fillColor('#333');
+        doc.moveTo(50, y + 15).lineTo(250, y + 15).strokeColor('#999').lineWidth(0.5).stroke();
+        doc.text(`Employee: ${claim.employee_name}`, 50, y + 20);
+        doc.text('Date: _______________', 50, y + 35);
+        
+        doc.moveTo(312, y + 15).lineTo(512, y + 15).strokeColor('#999').lineWidth(0.5).stroke();
+        doc.text(`Supervisor: ${supervisor?.name || 'N/A'}`, 312, y + 20);
+        doc.text('Date: _______________', 312, y + 35);
+        
+        // Receipt pages — collect PDF receipts for post-merge via pdf-lib
+        if (receipts.length > 0) {
+            const imageReceipts = receipts.filter(r => r.file_data && r.file_type && r.file_type.startsWith('image/'));
+            const pdfReceipts = receipts.filter(r => r.file_data && r.file_type && r.file_type === 'application/pdf');
+            const hasImages = imageReceipts.length > 0;
+            const hasPdfs = pdfReceipts.length > 0;
+            
+            if (hasImages) {
+                doc.addPage();
+                doc.fontSize(12).fillColor('#1a237e').text(`ATTACHED RECEIPTS`, 50, 50);
+                doc.moveTo(50, 70).lineTo(562, 70).strokeColor('#1a237e').lineWidth(1).stroke();
+                let ry = 85;
+                for (const receipt of imageReceipts) {
+                    try {
+                        const buf = Buffer.isBuffer(receipt.file_data) ? receipt.file_data : Buffer.from(receipt.file_data);
+                        if (buf.length > 50) {
+                            const header = buf.slice(0, 4);
+                            const isPNG = header[0] === 0x89 && header[1] === 0x50;
+                            const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
+                            if (isPNG || isJPEG) {
+                                if (ry > 500) { doc.addPage(); ry = 50; }
+                                doc.fontSize(9).fillColor('#666').text(`${receipt.file_name}`, 50, ry);
+                                ry += 15;
+                                doc.image(buf, 50, ry, { fit: [500, 400] });
+                                ry += 420;
+                            }
+                        }
+                    } catch (imgErr) {
+                        console.error('❌ Error embedding phone receipt image:', imgErr);
+                    }
+                }
+            }
+            
+            // Queue PDF receipts for pdf-lib merge
+            for (const receipt of pdfReceipts) {
+                try {
+                    const buf = Buffer.isBuffer(receipt.file_data) ? receipt.file_data : Buffer.from(receipt.file_data);
+                    if (buf.length > 10) {
+                        pdfReceiptBuffersOuter.push(buf);
+                    }
+                } catch (e) {
+                    console.error('❌ Error preparing PDF receipt for merge:', e);
+                }
+            }
+        }
+        
+        // Page numbers + PDF receipt merging via pdf-lib post-processing
+        doc.end();
+    }).then(async (pdfBuf) => {
+        const { PDFDocument: PDFLibDoc, rgb, StandardFonts } = require('pdf-lib');
+        const pdfDoc = await PDFLibDoc.load(pdfBuf);
+        
+        // Merge PDF receipt attachments
+        for (const receiptBuf of pdfReceiptBuffersOuter) {
+            try {
+                const receiptPdf = await PDFLibDoc.load(receiptBuf);
+                const copiedPages = await pdfDoc.copyPages(receiptPdf, receiptPdf.getPageIndices());
+                copiedPages.forEach(page => pdfDoc.addPage(page));
+            } catch (mergeErr) {
+                console.error('❌ Error merging PDF receipt into phone report:', mergeErr);
+            }
+        }
+        
+        // Add page numbers
+        const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        const pages = pdfDoc.getPages();
+        const totalPages = pages.length;
+        for (let i = 0; i < totalPages; i++) {
+            const page = pages[i];
+            const { width } = page.getSize();
+            const text = `Page ${i + 1} of ${totalPages}`;
+            const textWidth = font.widthOfTextAtSize(text, 8);
+            page.drawText(text, { x: (width - textWidth) / 2, y: 20, size: 8, font, color: rgb(0.6, 0.6, 0.6) });
+        }
+        const finalBuf = Buffer.from(await pdfDoc.save());
+        return new Promise((resolve, reject) => {
+            db.run(`UPDATE phone_claims SET pdf_report = ?, report_generated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                [finalBuf, claimId], (err) => {
+                    if (err) return reject(err);
+                    resolve(finalBuf);
+                });
+        });
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 💪 HEALTH & WELLNESS ACCOUNT (HWA) ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/settings/hwa — get HWA settings
+app.get('/api/settings/hwa', requireAuth, (req, res) => {
+    db.get(`SELECT value FROM app_settings WHERE key = 'hwa_annual_max'`, (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ annual_max: parseFloat(row ? row.value : '500.00') });
+    });
+});
+
+// PUT /api/settings/hwa — update HWA settings (admin only)
+app.put('/api/settings/hwa', requireAuth, requireRole('admin'), (req, res) => {
+    const { annual_max } = req.body;
+    const maxAmount = parseFloat(annual_max);
+    if (isNaN(maxAmount) || maxAmount <= 0 || maxAmount > 10000) {
+        return res.status(400).json({ error: 'Annual maximum must be between $0.01 and $10,000.00' });
+    }
+    
+    db.get(`SELECT value FROM app_settings WHERE key = 'hwa_annual_max'`, (err, oldRow) => {
+        const oldValue = oldRow ? oldRow.value : '500.00';
+        
+        db.run(`INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES ('hwa_annual_max', ?, ?, CURRENT_TIMESTAMP)`,
+            [String(maxAmount.toFixed(2)), req.user.employeeId]);
+        
+        db.run(`INSERT INTO settings_audit_log (setting_key, old_value, new_value, changed_by) VALUES (?, ?, ?, ?)`,
+            ['hwa_settings', `Annual Max: $${oldValue}`, `Annual Max: $${maxAmount.toFixed(2)}`, req.user.employeeId]);
+        
+        res.json({ success: true, message: 'HWA settings updated' });
+    });
+});
+
+// GET /api/hwa-claims/balance — get employee's remaining balance
+app.get('/api/hwa-claims/balance', requireAuth, (req, res) => {
+    const year = new Date().getFullYear();
+    db.get(`SELECT value FROM app_settings WHERE key = 'hwa_annual_max'`, (err, maxRow) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        const annualMax = parseFloat(maxRow ? maxRow.value : '500.00');
+        
+        db.get(`SELECT COALESCE(SUM(claim_amount), 0) as used FROM hwa_claims WHERE employee_id = ? AND claim_year = ? AND status IN ('pending', 'approved')`,
+            [req.user.employeeId, year], (err2, usedRow) => {
+                if (err2) return res.status(500).json({ error: 'Database error' });
+                const used = usedRow ? usedRow.used : 0;
+                res.json({ annual_max: annualMax, used: used, remaining: annualMax - used, year: year });
+            });
+    });
+});
+
+// GET /api/hwa-claims/history — employee's claims for current year
+app.get('/api/hwa-claims/history', requireAuth, (req, res) => {
+    const year = new Date().getFullYear();
+    db.all(`SELECT id, employee_id, claim_year, receipt_amount, claim_amount, vendor, description, status, submitted_date, approved_date, approved_by, rejection_reason, report_ref, report_generated_at, created_at FROM hwa_claims WHERE employee_id = ? AND claim_year = ? ORDER BY created_at DESC`,
+        [req.user.employeeId, year], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            res.json(rows || []);
+        });
+});
+
+// POST /api/hwa-claims — submit HWA claim
+app.post('/api/hwa-claims', requireAuth, upload.array('receipts', 10), (req, res) => {
+    try {
+        const { amount, vendor, description } = req.body;
+        const claimAmount = parseFloat(amount);
+        
+        if (isNaN(claimAmount) || claimAmount <= 0) {
+            return res.status(400).json({ error: 'Amount must be greater than $0' });
+        }
+        
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({ error: 'At least one receipt is required' });
+        }
+        
+        const year = new Date().getFullYear();
+        
+        // Check remaining balance
+        db.get(`SELECT value FROM app_settings WHERE key = 'hwa_annual_max'`, (err, maxRow) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            const annualMax = parseFloat(maxRow ? maxRow.value : '500.00');
+            
+            db.get(`SELECT COALESCE(SUM(claim_amount), 0) as used FROM hwa_claims WHERE employee_id = ? AND claim_year = ? AND status IN ('pending', 'approved')`,
+                [req.user.employeeId, year], (err2, usedRow) => {
+                    if (err2) return res.status(500).json({ error: 'Database error' });
+                    const used = usedRow ? usedRow.used : 0;
+                    const remaining = annualMax - used;
+                    
+                    if (claimAmount > remaining) {
+                        return res.status(400).json({ error: `Amount exceeds remaining balance of $${remaining.toFixed(2)}` });
+                    }
+                    
+                    // Insert claim
+                    db.run(`INSERT INTO hwa_claims (employee_id, claim_year, receipt_amount, claim_amount, vendor, description, status, submitted_date)
+                            VALUES (?, ?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP)`,
+                        [req.user.employeeId, year, claimAmount, claimAmount, sanitizeString(vendor, 255), sanitizeString(description, 1000)],
+                        function(err3) {
+                            if (err3) return res.status(500).json({ error: 'Failed to submit claim' });
+                            const claimId = this.lastID;
+                            
+                            // Save receipts
+                            const files = req.files;
+                            let saved = 0;
+                            files.forEach((file, order) => {
+                                let fileData = null;
+                                try { fileData = fs.readFileSync(file.path); } catch (e) { console.warn('Could not read HWA receipt:', e.message); }
+                                db.run(`INSERT INTO hwa_claim_receipts (claim_id, file_data, file_name, file_type, file_size, upload_order)
+                                        VALUES (?, ?, ?, ?, ?, ?)`,
+                                    [claimId, fileData, file.originalname, file.mimetype, file.size, order],
+                                    (err4) => {
+                                        if (err4) console.error('❌ Error saving HWA receipt:', err4);
+                                        saved++;
+                                        if (saved === files.length) {
+                                            // Notify supervisor
+                                            db.get(`SELECT supervisor_id FROM employees WHERE id = ?`, [req.user.employeeId], (err5, emp) => {
+                                                if (emp && emp.supervisor_id) {
+                                                    createNotification(emp.supervisor_id, 'hwa_claim_submitted',
+                                                        `💪 New Health & Wellness claim ($${claimAmount.toFixed(2)}) submitted for your approval.`);
+                                                }
+                                            });
+                                            res.json({ success: true, id: claimId, message: `✅ HWA claim of $${claimAmount.toFixed(2)} submitted for approval` });
+                                        }
+                                    });
+                            });
+                        });
+                });
+        });
+    } catch (e) {
+        console.error('❌ HWA claim submit error:', e);
+        res.status(500).json({ error: 'Failed to submit HWA claim' });
+    }
+});
+
+// GET /api/hwa-claims/pending — supervisor pending claims
+app.get('/api/hwa-claims/pending', requireAuth, requireRole('supervisor'), (req, res) => {
+    db.all(`SELECT hc.*, e.name as employee_name, e.employee_number, e.department,
+                   (SELECT COUNT(*) FROM hwa_claim_receipts WHERE claim_id = hc.id) as receipt_count
+            FROM hwa_claims hc
+            JOIN employees e ON hc.employee_id = e.id
+            WHERE hc.status = 'pending' AND hc.employee_id IN (
+                SELECT id FROM employees WHERE supervisor_id = ?
+            )
+            ORDER BY hc.submitted_date ASC`,
+        [req.user.employeeId], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            res.json(rows || []);
+        });
+});
+
+// POST /api/hwa-claims/:id/approve — supervisor approve
+app.post('/api/hwa-claims/:id/approve', requireAuth, requireRole('supervisor'), (req, res) => {
+    const claimId = req.params.id;
+    db.get(`SELECT hc.*, e.name as employee_name FROM hwa_claims hc JOIN employees e ON hc.employee_id = e.id WHERE hc.id = ?`, [claimId], (err, claim) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!claim) return res.status(404).json({ error: 'Claim not found' });
+        if (claim.status !== 'pending') return res.status(400).json({ error: 'Claim is not pending' });
+        
+        db.get(`SELECT name FROM employees WHERE id = ?`, [req.user.employeeId], (err2, sup) => {
+            const supervisorName = sup?.name || 'Supervisor';
+            
+            db.run(`UPDATE hwa_claims SET status = 'approved', approved_by = ?, approved_date = CURRENT_TIMESTAMP WHERE id = ?`,
+                [req.user.employeeId, claimId], (err3) => {
+                    if (err3) return res.status(500).json({ error: 'Database error' });
+                    
+                    createNotification(claim.employee_id, 'hwa_approved',
+                        `Your Health & Wellness claim ($${claim.claim_amount}) has been approved by ${supervisorName}.`);
+                    
+                    // Generate PDF async
+                    (async () => {
+                        try {
+                            await generateHwaPDF(claimId);
+                            console.log(`HWA PDF generated for claim ${claimId}`);
+                        } catch (pdfErr) {
+                            console.error('HWA PDF generation error:', pdfErr);
+                        }
+                    })();
+                    
+                    res.json({ success: true, message: 'HWA claim approved' });
+                });
+        });
+    });
+});
+
+// POST /api/hwa-claims/:id/reject — supervisor reject (DELETE to allow resubmission)
+app.post('/api/hwa-claims/:id/reject', requireAuth, requireRole('supervisor'), (req, res) => {
+    const claimId = req.params.id;
+    const reason = sanitizeString(req.body.reason, 1000);
+    
+    db.get(`SELECT hc.*, e.name as employee_name FROM hwa_claims hc JOIN employees e ON hc.employee_id = e.id WHERE hc.id = ?`, [claimId], (err, claim) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!claim) return res.status(404).json({ error: 'Claim not found' });
+        if (claim.status !== 'pending') return res.status(400).json({ error: 'Claim is not pending' });
+        
+        db.get(`SELECT name FROM employees WHERE id = ?`, [req.user.employeeId], (err2, sup) => {
+            const supervisorName = sup?.name || 'Supervisor';
+            
+            db.run(`DELETE FROM hwa_claims WHERE id = ?`, [claimId], (err3) => {
+                if (err3) return res.status(500).json({ error: 'Database error' });
+                
+                createNotification(claim.employee_id, 'hwa_rejected',
+                    `❌ Your Health & Wellness claim ($${claim.claim_amount}) was rejected by ${supervisorName}. Reason: ${reason || 'Not specified'}`);
+                
+                res.json({ success: true, message: 'HWA claim rejected' });
+            });
+        });
+    });
+});
+
+// GET /api/hwa-claims/supervisor-history — supervisor audit trail
+app.get('/api/hwa-claims/supervisor-history', requireAuth, requireRole('supervisor'), (req, res) => {
+    db.all(`SELECT hc.id, hc.employee_id, hc.claim_year, hc.receipt_amount, hc.claim_amount, hc.vendor, hc.description, hc.status, hc.submitted_date, hc.approved_date, hc.approved_by, hc.rejection_reason, hc.report_ref, hc.report_generated_at, hc.created_at,
+                   (SELECT COUNT(*) FROM hwa_claim_receipts WHERE claim_id = hc.id) as receipt_count,
+                   e.name as employee_name, e.employee_number, e.department
+            FROM hwa_claims hc
+            JOIN employees e ON hc.employee_id = e.id
+            WHERE hc.status IN ('approved', 'rejected') AND hc.approved_by = ?
+            ORDER BY hc.approved_date DESC LIMIT 50`,
+        [req.user.employeeId], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            res.json(rows || []);
+        });
+});
+
+// GET /api/hwa-claims/:id/receipts — list receipts for a claim
+app.get('/api/hwa-claims/:id/receipts', requireAuth, (req, res) => {
+    db.all(`SELECT id, file_name, file_type, file_size, upload_order FROM hwa_claim_receipts WHERE claim_id = ? ORDER BY upload_order`,
+        [req.params.id], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            res.json(rows || []);
+        });
+});
+
+// GET /api/hwa-claims/receipt/:receiptId — download single receipt
+app.get('/api/hwa-claims/receipt/:receiptId', (req, res, next) => {
+    if (req.query.auth && !req.headers.authorization) {
+        req.headers.authorization = `Bearer ${req.query.auth}`;
+    }
+    requireAuth(req, res, next);
+}, (req, res) => {
+    db.get(`SELECT file_data, file_name, file_type FROM hwa_claim_receipts WHERE id = ?`, [req.params.receiptId], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row || !row.file_data) return res.status(404).json({ error: 'Receipt not found' });
+        try {
+            const buf = Buffer.isBuffer(row.file_data) ? row.file_data : Buffer.from(row.file_data);
+            res.setHeader('Content-Type', row.file_type || 'application/octet-stream');
+            const safeName = (row.file_name || 'receipt').replace(/[^\w.\-]/g, '_');
+            res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+            res.setHeader('Content-Length', buf.length);
+            res.end(buf);
+        } catch (e) {
+            console.error('❌ Error sending HWA receipt:', e);
+            if (!res.headersSent) res.status(500).json({ error: 'Failed to send receipt' });
+        }
+    });
+});
+
+// GET /api/hwa-claims/:id/pdf — download HWA PDF
+app.get('/api/hwa-claims/:id/pdf', (req, res, next) => {
+    if (req.query.auth && !req.headers.authorization) {
+        req.headers.authorization = `Bearer ${req.query.auth}`;
+    }
+    requireAuth(req, res, next);
+}, (req, res) => {
+    db.get(`SELECT pdf_report, report_ref FROM hwa_claims WHERE id = ?`, [req.params.id], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row || !row.pdf_report) return res.status(404).json({ error: 'No PDF report found' });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${row.report_ref || 'hwa-claim'}.pdf"`);
+        try { const buf = Buffer.isBuffer(row.pdf_report) ? row.pdf_report : Buffer.from(row.pdf_report); res.setHeader("Content-Length", buf.length); res.end(buf); } catch(e) { console.error("PDF send error:", e); if(!res.headersSent) res.status(500).json({error:"Failed to send PDF"}); }
+    });
+});
+
+// POST /api/hwa-claims/:id/generate-pdf — retroactive PDF generation
+app.post('/api/hwa-claims/:id/generate-pdf', requireAuth, async (req, res) => {
+    try {
+        const claim = await new Promise((resolve, reject) => {
+            db.get(`SELECT * FROM hwa_claims WHERE id = ? AND status = 'approved'`, [req.params.id], (err, row) => {
+                if (err) return reject(err);
+                resolve(row);
+            });
+        });
+        if (!claim) return res.status(404).json({ error: 'Approved claim not found' });
+        await generateHwaPDF(claim.id);
+        res.json({ success: true, message: 'PDF generated' });
+    } catch (e) {
+        console.error('HWA PDF retroactive generation error:', e);
+        res.status(500).json({ error: 'PDF generation failed' });
+    }
+});
+
+// Health & Wellness Account PDF Generation
+async function generateHwaPDF(claimId) {
+    const PDFDocument = require('pdfkit');
+    const { PDFDocument: PDFLib, rgb, StandardFonts } = require('pdf-lib');
+    
+    const claim = await new Promise((resolve, reject) => {
+        db.get(`SELECT hc.*, e.name as employee_name, e.employee_number, e.department, e.position
+                FROM hwa_claims hc JOIN employees e ON hc.employee_id = e.id WHERE hc.id = ?`, [claimId], (err, row) => {
+            if (err) return reject(err);
+            resolve(row);
+        });
+    });
+    if (!claim) throw new Error('Claim not found');
+    
+    const supervisor = await new Promise((resolve, reject) => {
+        db.get(`SELECT name FROM employees WHERE id = ?`, [claim.approved_by], (err, row) => {
+            if (err) return reject(err);
+            resolve(row);
+        });
+    });
+    
+    const receipts = await new Promise((resolve, reject) => {
+        db.all(`SELECT * FROM hwa_claim_receipts WHERE claim_id = ? ORDER BY upload_order`, [claimId], (err, rows) => {
+            if (err) return reject(err);
+            resolve(rows || []);
+        });
+    });
+    
+    // Generate ref number
+    let refNumber = claim.report_ref;
+    if (!refNumber) {
+        refNumber = await new Promise((resolve, reject) => {
+            db.run(`INSERT OR IGNORE INTO hwa_report_sequence (year, last_number) VALUES (?, 0)`, [claim.claim_year]);
+            db.run(`UPDATE hwa_report_sequence SET last_number = last_number + 1 WHERE year = ?`, [claim.claim_year], function(err) {
+                if (err) return reject(err);
+                db.get(`SELECT last_number FROM hwa_report_sequence WHERE year = ?`, [claim.claim_year], (err2, row) => {
+                    if (err2) return reject(err2);
+                    resolve(`HWA-${claim.claim_year}-${String(row.last_number).padStart(5, '0')}`);
+                });
+            });
+        });
+        await new Promise((resolve, reject) => {
+            db.run(`UPDATE hwa_claims SET report_ref = ? WHERE id = ?`, [refNumber, claimId], e => e ? reject(e) : resolve());
+        });
+    }
+    
+    // Get annual balance info
+    const balanceInfo = await new Promise((resolve, reject) => {
+        db.get(`SELECT value FROM app_settings WHERE key = 'hwa_annual_max'`, (err, maxRow) => {
+            if (err) return reject(err);
+            const annualMax = parseFloat(maxRow ? maxRow.value : '500.00');
+            db.get(`SELECT COALESCE(SUM(claim_amount), 0) as used FROM hwa_claims WHERE employee_id = ? AND claim_year = ? AND status = 'approved'`,
+                [claim.employee_id, claim.claim_year], (err2, usedRow) => {
+                    if (err2) return reject(err2);
+                    resolve({ annualMax, used: usedRow ? usedRow.used : 0 });
+                });
+        });
+    });
+    
+    // Generate PDF with PDFKit (no bufferPages)
+    const pdfBuffer = await new Promise((resolve, reject) => {
+        const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
+        const chunks = [];
+        doc.on('data', c => chunks.push(c));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+        doc.on('error', reject);
+        
+        // Header
+        doc.rect(0, 0, doc.page.width, 80).fill('#1b5e20');
+        doc.fontSize(22).fillColor('#ffffff').text('HEALTH & WELLNESS ACCOUNT', 50, 20);
+        doc.fontSize(12).text('Claim Report', 50, 47);
+        doc.fontSize(10).text('ClaimFlow -- Expense Management', 50, 62);
+        
+        // Reference bar
+        doc.rect(0, 80, doc.page.width, 30).fill('#e8f5e9');
+        doc.fontSize(10).fillColor('#1b5e20').text(`Reference: ${refNumber}`, 50, 88);
+        doc.text(`Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`, 350, 88);
+        
+        let y = 130;
+        
+        // Employee Info
+        doc.fontSize(12).fillColor('#1b5e20').text('EMPLOYEE INFORMATION', 50, y);
+        y += 5;
+        doc.moveTo(50, y + 15).lineTo(562, y + 15).strokeColor('#1b5e20').lineWidth(1).stroke();
+        y += 25;
+        doc.fontSize(10).fillColor('#333');
+        const empInfo = [
+            ['Name', claim.employee_name],
+            ['Employee #', claim.employee_number || 'N/A'],
+            ['Department', claim.department || 'N/A'],
+            ['Position', claim.position || 'N/A']
+        ];
+        empInfo.forEach(([label, value]) => {
+            doc.font('Helvetica-Bold').text(`${label}:`, 50, y, { continued: true }).font('Helvetica').text(`  ${value}`);
+            y += 18;
+        });
+        
+        y += 15;
+        
+        // Claim Details
+        doc.fontSize(12).fillColor('#1b5e20').text('CLAIM DETAILS', 50, y);
+        y += 5;
+        doc.moveTo(50, y + 15).lineTo(562, y + 15).strokeColor('#1b5e20').lineWidth(1).stroke();
+        y += 25;
+        doc.fontSize(10).fillColor('#333');
+        
+        const details = [
+            ['Vendor', claim.vendor || 'N/A'],
+            ['Description', claim.description || 'N/A'],
+            ['Amount', `$${parseFloat(claim.claim_amount).toFixed(2)}`],
+            ['Year', String(claim.claim_year)]
+        ];
+        details.forEach(([label, value]) => {
+            doc.font('Helvetica-Bold').text(`${label}:`, 50, y, { continued: true }).font('Helvetica').text(`  ${value}`);
+            y += 18;
+        });
+        
+        y += 15;
+        
+        // Annual Balance
+        doc.fontSize(12).fillColor('#1b5e20').text('ANNUAL BALANCE', 50, y);
+        y += 5;
+        doc.moveTo(50, y + 15).lineTo(562, y + 15).strokeColor('#1b5e20').lineWidth(1).stroke();
+        y += 25;
+        doc.fontSize(10).fillColor('#333');
+        
+        const remaining = balanceInfo.annualMax - balanceInfo.used;
+        const balanceDetails = [
+            ['Annual Maximum', `$${balanceInfo.annualMax.toFixed(2)}`],
+            ['Total Used', `$${balanceInfo.used.toFixed(2)}`],
+            ['Remaining', `$${remaining.toFixed(2)}`]
+        ];
+        balanceDetails.forEach(([label, value]) => {
+            doc.font('Helvetica-Bold').text(`${label}:`, 50, y, { continued: true }).font('Helvetica').text(`  ${value}`);
+            y += 18;
+        });
+        
+        y += 15;
+        
+        // Approval section
+        doc.fontSize(12).fillColor('#1b5e20').text('APPROVAL', 50, y);
+        y += 5;
+        doc.moveTo(50, y + 15).lineTo(562, y + 15).strokeColor('#1b5e20').lineWidth(1).stroke();
+        y += 25;
+        doc.fontSize(10).fillColor('#333');
+        
+        if (claim.submitted_date) {
+            const sd = new Date(claim.submitted_date);
+            doc.text(`Submitted: ${sd.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} -- by ${claim.employee_name}`, 50, y);
+            y += 18;
+        }
+        if (claim.approved_date && supervisor) {
+            const ad = new Date(claim.approved_date);
+            doc.text(`Approved: ${ad.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} -- by ${supervisor.name}`, 50, y);
+            y += 18;
+        }
+        
+        y += 20;
+        // Signature lines
+        doc.fontSize(9).fillColor('#333');
+        doc.moveTo(50, y + 15).lineTo(250, y + 15).strokeColor('#999').lineWidth(0.5).stroke();
+        doc.text(`Employee: ${claim.employee_name}`, 50, y + 20);
+        doc.text('Date: _______________', 50, y + 35);
+        
+        doc.moveTo(312, y + 15).lineTo(512, y + 15).strokeColor('#999').lineWidth(0.5).stroke();
+        doc.text(`Supervisor: ${supervisor?.name || 'N/A'}`, 312, y + 20);
+        doc.text('Date: _______________', 312, y + 35);
+        
+        // Receipt pages (embedded via PDFKit for images)
+        if (receipts.length > 0) {
+            doc.addPage();
+            doc.fontSize(12).fillColor('#1b5e20').text(`ATTACHED RECEIPTS (${receipts.length} file${receipts.length > 1 ? 's' : ''})`, 50, 50);
+            doc.moveTo(50, 70).lineTo(562, 70).strokeColor('#1b5e20').lineWidth(1).stroke();
+            
+            let ry = 85;
+            for (const receipt of receipts) {
+                if (receipt.file_data && receipt.file_type && receipt.file_type.startsWith('image/')) {
+                    try {
+                        const buf = Buffer.from(receipt.file_data);
+                        if (buf.length > 50) {
+                            const header = buf.slice(0, 4);
+                            const isPNG = header[0] === 0x89 && header[1] === 0x50;
+                            const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
+                            if (isPNG || isJPEG) {
+                                if (ry > 500) { doc.addPage(); ry = 50; }
+                                doc.fontSize(9).fillColor('#666').text(`Receipt ${receipt.upload_order + 1}: ${receipt.file_name}`, 50, ry);
+                                ry += 15;
+                                doc.image(buf, 50, ry, { fit: [500, 400] });
+                                ry += 420;
+                            }
+                        }
+                    } catch (imgErr) {
+                        console.error('Error embedding HWA receipt image:', imgErr);
+                    }
+                } else {
+                    if (ry > 650) { doc.addPage(); ry = 50; }
+                    doc.fontSize(9).fillColor('#666').text(`Receipt ${receipt.upload_order + 1}: ${receipt.file_name} (${receipt.file_type})`, 50, ry);
+                    ry += 20;
+                }
+            }
+        }
+        
+        doc.end();
+    });
+    
+    // Post-process with pdf-lib for footers
+    const pdfDoc = await PDFLib.load(pdfBuffer);
+    
+    // Append PDF receipts via pdf-lib
+    for (const receipt of receipts) {
+        if (receipt.file_data && receipt.file_type && receipt.file_type.includes('pdf')) {
+            try {
+                const receiptPdf = await PDFLib.load(receipt.file_data);
+                const pages = await pdfDoc.copyPages(receiptPdf, receiptPdf.getPageIndices());
+                pages.forEach(p => pdfDoc.addPage(p));
+            } catch (e) {
+                console.error('Error appending PDF receipt:', e.message);
+            }
+        }
+    }
+    
+    // Add footers to all pages
+    const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const pageCount = pdfDoc.getPageCount();
+    for (let i = 0; i < pageCount; i++) {
+        const page = pdfDoc.getPage(i);
+        page.drawText(`Page ${i + 1} of ${pageCount} | ${refNumber} | Generated ${new Date().toISOString().split('T')[0]}`, {
+            x: 50, y: 20, size: 8, font: helvetica, color: rgb(0.5, 0.5, 0.5)
+        });
+    }
+    
+    const finalPdf = Buffer.from(await pdfDoc.save());
+    
+    // Store PDF
+    await new Promise((resolve, reject) => {
+        db.run(`UPDATE hwa_claims SET pdf_report = ?, report_generated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [finalPdf, claimId], (err) => {
+                if (err) return reject(err);
+                resolve();
+            });
+    });
+    
+    return finalPdf;
+}
+
+// 🚀 Start server
+app.listen(port, () => {
+    console.log('💼 CLAIMFLOW - FULL SYSTEM');
+    console.log('==========================================');
+    console.log(`🚀 Server running at: http://localhost:${port}`);
+    console.log(`👥 Admin dashboard: http://localhost:${port}/admin`);
+    console.log('📱 Mobile-optimized expense submission');
+    console.log('💰 NJC compliant meal rates');
+    console.log('📊 Complete admin dashboard with approvals');
+    console.log('📷 Receipt photo upload and management');
+    console.log('🗄️ SQLite database with full persistence');
+    console.log('');
+    console.log('✅ Features: Employee directory, approval workflow, role-based access');
+    console.log('⏹️  Press Ctrl+C to stop');
+    console.log('==========================================');
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+    console.log('\\n💼 Shutting down expense tracker server...');
+    
+    db.close((err) => {
+        if (err) {
+            console.error('❌ Error closing database:', err.message);
+        } else {
+            console.log('✅ Database connection closed');
+        }
+        
+        console.log('✅ Server stopped');
+        process.exit(0);
+    });
+});
