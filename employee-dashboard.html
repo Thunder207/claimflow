@@ -3,16 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#667eea">
+    <meta name="theme-color" content="#0D9488">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Employee Dashboard - ClaimFlow</title>
+    <title>💰 Payback — Employee Dashboard</title>
     <script src="/translations.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
     <!--
     ╔══════════════════════════════════════════════════════════════╗
-    ║                 CLAIMFLOW                   ║
+    ║                  PAYBACK                    ║
     ║                    Employee Dashboard                        ║
     ╠══════════════════════════════════════════════════════════════╣
     ║ Purpose: Main interface for employees to submit expenses     ║
@@ -29,8 +30,8 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Segoe UI Emoji', sans-serif;
-            background: linear-gradient(135deg, #4a90e2 0%, #357abd 50%, #1e3c72 100%);
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0D9488 0%, #0D6B63 50%, #0A4F4A 100%);
             min-height: 100vh;
             padding: 20px;
             position: relative;
@@ -79,7 +80,7 @@
         }
 
         .header {
-            background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #3949ab 100%);
+            background: linear-gradient(135deg, #0A4F4A 0%, #0D6B63 50%, #0F766E 100%);
             color: white;
             padding: 25px 30px;
             border-radius: 16px;
@@ -129,12 +130,12 @@
 
         /* Consistent button colors - matching status badges */
         .btn-primary {
-            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            background: linear-gradient(135deg, #0D9488 0%, #0F766E 100%);
             color: white;
             box-shadow: 0 2px 6px rgba(59, 130, 246, 0.25);
         }
         .btn-success {
-            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            background: linear-gradient(135deg, #10B981 0%, #059669 100%);
             color: white;
             box-shadow: 0 2px 6px rgba(34, 197, 94, 0.25);
         }
@@ -220,9 +221,9 @@
         }
 
         .nav-tab.active {
-            background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
+            background: linear-gradient(135deg, #0D9488 0%, #0D6B63 100%);
             color: white;
-            border-color: #4a90e2;
+            border-color: #0D9488;
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(74, 144, 226, 0.4), 0 2px 8px rgba(0,0,0,0.1);
             position: relative;
@@ -245,7 +246,7 @@
         }
 
         .nav-tab:hover {
-            border-color: #667eea;
+            border-color: #0D9488;
             transform: translateY(-1px);
         }
 
@@ -275,7 +276,7 @@
             text-align: center;
             box-shadow: 0 4px 20px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.1);
             border: none;
-            border-left: 4px solid #4a90e2;
+            border-left: 4px solid #0D9488;
             transition: transform 0.3s ease, box-shadow 0.3s ease;
             position: relative;
             overflow: hidden;
@@ -288,7 +289,7 @@
             left: 0;
             right: 0;
             height: 2px;
-            background: linear-gradient(90deg, #4a90e2, #357abd, #1e3c72);
+            background: linear-gradient(90deg, #0D9488, #0D6B63, #0A4F4A);
         }
 
         .stat-card:hover {
@@ -342,7 +343,7 @@
 
         input:focus, select:focus, textarea:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #0D9488;
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
             transform: translateY(-1px);
         }
@@ -352,7 +353,7 @@
             padding: 28px;
             border-radius: 16px;
             margin-bottom: 25px;
-            border: 1px solid #e3f2fd;
+            border: 1px solid #F0FDFA;
             box-shadow: 0 6px 25px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.05);
             position: relative;
             overflow: hidden;
@@ -365,7 +366,7 @@
             left: 0;
             right: 0;
             height: 3px;
-            background: linear-gradient(90deg, #4a90e2, #357abd);
+            background: linear-gradient(90deg, #0D9488, #0D6B63);
         }
 
         .photo-section {
@@ -380,7 +381,7 @@
         }
 
         .photo-section:hover {
-            border-color: #667eea;
+            border-color: #0D9488;
             background: linear-gradient(135deg, #f8f9ff 0%, #e8f4fd 100%);
         }
 
@@ -431,7 +432,7 @@
 
         /* Consistent status colors across all screens */
         .status-approved {
-            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            background: linear-gradient(135deg, #10B981 0%, #059669 100%);
             color: white;
             box-shadow: 0 2px 6px rgba(34, 197, 94, 0.25);
         }
@@ -451,7 +452,7 @@
             box-shadow: 0 2px 6px rgba(251, 191, 36, 0.25);
         }
         .status-submitted {
-            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            background: linear-gradient(135deg, #0D9488 0%, #0F766E 100%);
             color: white;
             box-shadow: 0 2px 6px rgba(59, 130, 246, 0.25);
         }
@@ -505,7 +506,7 @@
             width: 32px;
             height: 32px;
             border: 3px solid #e5e7eb;
-            border-top: 3px solid #3b82f6;
+            border-top: 3px solid #0D9488;
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
@@ -567,7 +568,7 @@
             gap: 8px;
         }
         .toast-success {
-            background: linear-gradient(135deg, #22c55e, #16a34a);
+            background: linear-gradient(135deg, #10B981, #059669);
         }
         .toast-error {
             background: linear-gradient(135deg, #ef4444, #dc2626);
@@ -576,7 +577,7 @@
             background: linear-gradient(135deg, #f97316, #ea580c);
         }
         .toast-info {
-            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            background: linear-gradient(135deg, #0D9488, #0F766E);
         }
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
@@ -863,7 +864,7 @@
         </div>
 
         <div class="stats">
-            <div class="stat-card" style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-left: 4px solid #2196f3;">
+            <div class="stat-card" style="background: linear-gradient(135deg, #F0FDFA 0%, #CCFBF1 100%); border-left: 4px solid #0D9488;">
                 <div class="stat-value" id="total-expenses">-</div>
                 <div class="stat-label" data-i18n="my_expenses">📊 Total Expenses</div>
                 <div class="stat-sublabel" id="expenses-this-month" style="font-size: 11px; color: #666; margin-top: 4px;">This month</div>
@@ -893,7 +894,7 @@
         </div>
 
         <div id="expenses-tab" class="tab-content active">
-            <div style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 15px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #2196f3;">
+            <div style="background: linear-gradient(135deg, #F0FDFA 0%, #CCFBF1 100%); padding: 15px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #0D9488;">
                 <div style="font-size: 13px; color: #0d47a1; line-height: 1.5;">
                     <strong>📋 Standalone Expenses</strong> - for items not tied to a business trip.
                     Add expenses to your draft, review, then submit all at once for approval.
@@ -1100,7 +1101,7 @@
             <div id="sa-draft-section" style="margin-top: 30px; display: none;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h3 style="color: #2c3e50; margin: 0;">📝 <span data-i18n="draft_expenses">Draft Expenses</span> (<span id="sa-draft-count">0</span>)</h3>
-                    <span id="sa-draft-total" style="font-size: 18px; font-weight: bold; color: #2196f3;">$0.00</span>
+                    <span id="sa-draft-total" style="font-size: 18px; font-weight: bold; color: #0D9488;">$0.00</span>
                 </div>
                 <div id="sa-draft-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
                 <div style="margin-top: 20px; display: flex; gap: 12px;">
@@ -1123,7 +1124,7 @@
             <!-- TRIP SELECTOR - FIRST THING USER SEES -->
             <div style="margin-bottom: 20px;">
                 <h3 style="margin-bottom: 15px; color: #2c3e50;">🧳 Select Business Trip</h3>
-                <select id="trip-select" name="trip_id" style="margin-bottom: 10px; width: 100%; padding: 10px; font-size: 15px; border-radius: 8px; border: 2px solid #2196f3;" onchange="handleTripSelection()">
+                <select id="trip-select" name="trip_id" style="margin-bottom: 10px; width: 100%; padding: 10px; font-size: 15px; border-radius: 8px; border: 2px solid #0D9488;" onchange="handleTripSelection()">
                     <option value="" data-i18n="select_trip">-- Select a trip --</option>
                 </select>
                 <div id="trip-info" style="margin-top: 10px; padding: 10px; border-radius: 8px; display: none;"></div>
@@ -1439,7 +1440,7 @@
             <div id="ta-expense-section" style="display: none;">
 
                 <!-- Day Planner Header -->
-                <div id="dp-header" style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #17a2b8;">
+                <div id="dp-header" style="background: linear-gradient(135deg, #F0FDFA 0%, #CCFBF1 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #17a2b8;">
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                         <div>
                             <h4 style="color: #0d47a1; margin: 0 0 4px 0;" id="dp-trip-name">✈️ Trip Name</h4>
@@ -1680,7 +1681,7 @@
 
             <!-- Status Filter Bar -->
             <div id="history-filters" style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;">
-                <button class="filter-btn active" onclick="filterExpenses('all')" style="padding: 8px 16px; border-radius: 20px; border: 2px solid #667eea; background: #667eea; color: white; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 44px; transition: all 0.2s;">All</button>
+                <button class="filter-btn active" onclick="filterExpenses('all')" style="padding: 8px 16px; border-radius: 20px; border: 2px solid #0D9488; background: #0D9488; color: white; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 44px; transition: all 0.2s;">All</button>
                 <button class="filter-btn" onclick="filterExpenses('pending')" style="padding: 8px 16px; border-radius: 20px; border: 2px solid #f0ad4e; background: white; color: #f0ad4e; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 44px; transition: all 0.2s;">⏳ Pending</button>
                 <button class="filter-btn" onclick="filterExpenses('approved')" style="padding: 8px 16px; border-radius: 20px; border: 2px solid #27ae60; background: white; color: #27ae60; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 44px; transition: all 0.2s;">✅ Approved</button>
                 <button class="filter-btn" onclick="filterExpenses('rejected')" style="padding: 8px 16px; border-radius: 20px; border: 2px solid #dc3545; background: white; color: #dc3545; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 44px; transition: all 0.2s;">❌ Rejected</button>
@@ -2378,7 +2379,7 @@
 
             if (draftIndividualExpenses.length === 0) {
                 draftList.innerHTML = `
-                    <div style="text-align: center; padding: 30px; color: #6c757d; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; border: 1px dashed #0ea5e9;">
+                    <div style="text-align: center; padding: 30px; color: #6c757d; background: linear-gradient(135deg, #F0FDFA 0%, #F0FDFA 100%); border-radius: 8px; border: 1px dashed #0ea5e9;">
                         <div style="font-size: 32px; margin-bottom: 10px;">📝</div>
                         <p style="margin-bottom: 15px; font-size: 15px;"><strong>Ready to add your expenses?</strong></p>
                         <p style="font-size: 13px; color: #8e9aaf;">Fill out the form above to add expenses to your draft.</p>
@@ -2392,7 +2393,7 @@
             const total = draftIndividualExpenses.reduce((sum, exp) => sum + exp.amount, 0);
 
             let html = `
-                <div style="background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid #007bff; box-shadow: 0 4px 8px rgba(0,123,255,0.2);">
+                <div style="background: linear-gradient(135deg, #F0FDFA 0%, #CCFBF1 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid #007bff; box-shadow: 0 4px 8px rgba(0,123,255,0.2);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                         <div>
                             <h4 style="margin: 0; color: #004085;">💰 Individual Expense Batch</h4>
@@ -3806,7 +3807,7 @@
                 const statusColors = { approved: '#28a745', pending: '#ffc107', rejected: '#dc3545' };
                 const statusIcons = { approved: '✅', pending: '⏳', rejected: '❌' };
                 const pdfBtn = (h.status === 'approved' && h.report_generated_at)
-                    ? `<button onclick="downloadPhonePDF(${h.id})" style="background:#667eea;color:white;border:none;padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer;">📄 PDF</button>`
+                    ? `<button onclick="downloadPhonePDF(${h.id})" style="background:#0D9488;color:white;border:none;padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer;">📄 PDF</button>`
                     : (h.status === 'approved' ? `<button onclick="generatePhonePDF(${h.id}, this)" style="background:#ffc107;color:#212529;border:none;padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer;">📄 Generate</button>` : '');
                 return `
                     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:white;border-radius:8px;border-left:3px solid ${statusColors[h.status] || '#ccc'};">
@@ -3837,7 +3838,7 @@
                 });
                 if (resp.ok) {
                     btn.textContent = '📄 PDF';
-                    btn.style.background = '#667eea';
+                    btn.style.background = '#0D9488';
                     btn.style.color = 'white';
                     btn.disabled = false;
                     btn.onclick = () => downloadPhonePDF(claimId);
@@ -4254,7 +4255,7 @@
                         🏛️ <strong>Official NJC Rate:</strong> ${rateText}${dateDisplay}<br>
                         <small style="opacity: 0.8;">${rateData.description || 'Government of Canada rate'}</small>
                     `;
-                    display.style.background = 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)';
+                    display.style.background = 'linear-gradient(135deg, #F0FDFA 0%, #CCFBF1 100%)';
                     display.style.color = '#0d47a1';
 
                     // Handle different expense types
@@ -4274,8 +4275,8 @@
                         // Fixed per diem rates - LOCK THE FIELD AND HIDE VENDOR
                         amountField.value = rateData.rate.toFixed(2);
                     amountField.readOnly = true;
-                    amountField.style.backgroundColor = '#e3f2fd';
-                    amountField.style.border = '2px solid #2196f3';
+                    amountField.style.backgroundColor = '#F0FDFA';
+                    amountField.style.border = '2px solid #0D9488';
                     amountField.style.fontWeight = 'bold';
                     amountField.style.color = '#0d47a1';
                     amountField.style.cursor = 'not-allowed';
@@ -5782,7 +5783,7 @@
                     <div style="text-align: center; padding: 40px; color: #6c757d;">
                         <div style="font-size: 48px; margin-bottom: 15px;">🔍</div>
                         <p>No ${status} expenses found.</p>
-                        <button onclick="filterExpenses('all')" class="btn" style="margin-top: 15px; background: #667eea; color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer;">Show All Expenses</button>
+                        <button onclick="filterExpenses('all')" class="btn" style="margin-top: 15px; background: #0D9488; color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer;">Show All Expenses</button>
                     </div>
                 `;
             }
@@ -5979,7 +5980,7 @@
                         <p style="margin-bottom: 25px; font-size: 16px;">Try a different filter or submit your first expense.</p>
                         <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
                             <button class="btn btn-primary" onclick="showTab('expenses')" style="padding: 12px 24px; font-size: 15px;">📋 Add Expense</button>
-                            <button class="btn btn-light" onclick="showTab('submit')" style="padding: 12px 24px; font-size: 15px; color: #4a90e2; border: 2px solid #4a90e2;">🧳 Create Trip</button>
+                            <button class="btn btn-light" onclick="showTab('submit')" style="padding: 12px 24px; font-size: 15px; color: #0D9488; border: 2px solid #0D9488;">🧳 Create Trip</button>
                         </div>
                     </div>`;
                 return;
@@ -6032,7 +6033,7 @@
 
             // === SECTION 1: TRIPS ===
             if (sortedTrips.length > 0) {
-                html += `<div style="margin-bottom:8px;padding:8px 0;border-bottom:2px solid #667eea;"><strong style="color:#667eea;font-size:14px;text-transform:uppercase;letter-spacing:1px;">Trips</strong></div>`;
+                html += `<div style="margin-bottom:8px;padding:8px 0;border-bottom:2px solid #0D9488;"><strong style="color:#0D9488;font-size:14px;text-transform:uppercase;letter-spacing:1px;">Trips</strong></div>`;
                 for (const [tripName, trip] of sortedTrips) {
                     const tripTotal = trip.expenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
                     const tripStatuses = [...new Set(trip.expenses.map(e => e.status))];
@@ -6045,7 +6046,7 @@
 
                     html += `
                     <div style="margin-bottom:16px;">
-                        <div onclick="toggleTripExpenses('${tripId}')" style="background:linear-gradient(135deg,#f0f4ff 0%,#e8ecf8 100%);padding:15px 20px;border-radius:12px;border-left:4px solid #667eea;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" role="button" aria-expanded="false">
+                        <div onclick="toggleTripExpenses('${tripId}')" style="background:linear-gradient(135deg,#f0f4ff 0%,#e8ecf8 100%);padding:15px 20px;border-radius:12px;border-left:4px solid #0D9488;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" role="button" aria-expanded="false">
                             <div>
                                 <strong style="font-size:16px;color:#2c3e50;">
                                     <span id="${tripId}-arrow" style="display:inline-block;transition:transform 0.2s;margin-right:4px;">▶</span>
@@ -6056,7 +6057,7 @@
                                 </div>
                             </div>
                             <div style="display:flex;align-items:center;gap:8px;">
-                                ${trip.status === 'approved' && trip.tripId ? `<button onclick="event.stopPropagation();downloadTripPDF(${trip.tripId})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>` : ''}
+                                ${trip.status === 'approved' && trip.tripId ? `<button onclick="event.stopPropagation();downloadTripPDF(${trip.tripId})" style="background:#0D9488;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>` : ''}
                                 ${statusBadge(overallStatus)}
                             </div>
                         </div>
@@ -6079,7 +6080,7 @@
                                         const receiptCell = noReceiptNeeded
                                             ? '<span style="color:#999;">N/A</span>'
                                             : hasReceipt
-                                                ? `<span onclick="viewExpenseReceipt(${e.id})" style="color:#2196f3;text-decoration:underline;cursor:pointer;">📎 View</span>`
+                                                ? `<span onclick="viewExpenseReceipt(${e.id})" style="color:#0D9488;text-decoration:underline;cursor:pointer;">📎 View</span>`
                                                 : '<span style="color:#dc3545;">⚠️ Missing</span>';
                                         const details = e.vendor ? sanitizeForDisplay(e.vendor) : (sanitizeForDisplay(e.description || ''));
                                         return `
@@ -6116,18 +6117,18 @@
                         label = 'Phone Benefit';
                         borderColor = '#7c4dff';
                         if (b.has_pdf && b.status === 'approved') {
-                            pdfBtn = `<button onclick="event.stopPropagation();downloadPhonePDF(${b._phoneId})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`;
+                            pdfBtn = `<button onclick="event.stopPropagation();downloadPhonePDF(${b._phoneId})" style="background:#0D9488;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`;
                         }
                     } else if (b._isHwa) {
                         icon = '💪';
                         label = 'Health & Wellness';
                         borderColor = '#10b981';
                         if (b.has_pdf && b.status === 'approved') {
-                            pdfBtn = `<button onclick="event.stopPropagation();downloadHwaPDF(${b._hwaId})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`;
+                            pdfBtn = `<button onclick="event.stopPropagation();downloadHwaPDF(${b._hwaId})" style="background:#0D9488;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`;
                         }
                     } else if (b._isTransit) {
                         if (b.has_pdf && b.status === 'approved') {
-                            pdfBtn = `<button onclick="event.stopPropagation();downloadTransitPDF(${b._transitId})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`;
+                            pdfBtn = `<button onclick="event.stopPropagation();downloadTransitPDF(${b._transitId})" style="background:#0D9488;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`;
                         }
                     }
                     
@@ -6171,12 +6172,12 @@
                     const statuses = [...new Set(exps.map(e => e.status))];
                     const allApproved = statuses.length === 1 && statuses[0] === 'approved';
                     const overallStatus = allApproved ? 'approved' : statuses.includes('pending') ? 'pending' : statuses[0];
-                    const pdfBtn = allApproved ? `<button onclick="event.stopPropagation();downloadClaimPDF('${cgId}')" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>` : '';
+                    const pdfBtn = allApproved ? `<button onclick="event.stopPropagation();downloadClaimPDF('${cgId}')" style="background:#0D9488;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>` : '';
                     const cardId = 'claim-' + cgId.replace(/[^a-zA-Z0-9]/g, '-');
                     const empName = exps[0].employee_name || '';
                     html += `
                     <div style="margin-bottom:12px;">
-                        <div onclick="toggleTripExpenses('${cardId}')" style="background:linear-gradient(135deg,#f8f9ff 0%,#eef1f8 100%);padding:14px 18px;border-radius:12px;border-left:4px solid #4a90e2;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" role="button" aria-expanded="false">
+                        <div onclick="toggleTripExpenses('${cardId}')" style="background:linear-gradient(135deg,#f8f9ff 0%,#eef1f8 100%);padding:14px 18px;border-radius:12px;border-left:4px solid #0D9488;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" role="button" aria-expanded="false">
                             <div>
                                 <strong style="font-size:15px;color:#1e293b;">
                                     <span id="${cardId}-arrow" style="display:inline-block;transition:transform 0.2s;margin-right:4px;">▶</span>
@@ -6210,7 +6211,7 @@
                                         const receiptCell = isKm
                                             ? '<span style="color:#999;">N/A</span>'
                                             : hasReceipt
-                                                ? `<span onclick="viewExpenseReceipt(${e.id})" style="color:#2196f3;text-decoration:underline;cursor:pointer;">📎 View</span>`
+                                                ? `<span onclick="viewExpenseReceipt(${e.id})" style="color:#0D9488;text-decoration:underline;cursor:pointer;">📎 View</span>`
                                                 : '<span style="color:#dc3545;">⚠️ Missing</span>';
                                         const details = isKm && kmMatch ? `${kmMatch[1]} km` : (e.vendor ? sanitizeForDisplay(e.vendor) : '');
                                         const label = capitalize(e.category || e.expense_type || '');
@@ -6244,13 +6245,13 @@
                     const receiptCell = isKm
                         ? '<span style="color:#999;font-size:12px;">N/A</span>'
                         : hasReceipt
-                            ? `<span onclick="viewExpenseReceipt(${exp.id})" style="color:#2196f3;font-size:12px;text-decoration:underline;cursor:pointer;">📎 View</span>`
+                            ? `<span onclick="viewExpenseReceipt(${exp.id})" style="color:#0D9488;font-size:12px;text-decoration:underline;cursor:pointer;">📎 View</span>`
                             : '<span style="color:#dc3545;font-size:12px;">⚠️ Missing</span>';
                     const label = capitalize(exp.category || exp.meal_name || exp.expense_type || '');
                     let pdfBtn = '';
                     if (exp.status === 'approved') {
                         if (exp.report_generated_at) {
-                            pdfBtn = `<button onclick="event.stopPropagation();downloadExpensePDF(${exp.id})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`;
+                            pdfBtn = `<button onclick="event.stopPropagation();downloadExpensePDF(${exp.id})" style="background:#0D9488;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`;
                         } else {
                             pdfBtn = `<button onclick="event.stopPropagation();generateExpensePDF(${exp.id},this)" style="background:#f0ad4e;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 Generate</button>`;
                         }
@@ -6278,7 +6279,7 @@
 
             // If all sections empty after filtering
             if (sortedTrips.length === 0 && benefits.length === 0 && standalone.length === 0) {
-                container.innerHTML = `<div style="text-align:center;padding:40px;color:#6c757d;"><div style="font-size:48px;margin-bottom:15px;">🔍</div><p>No expenses match this filter.</p><button onclick="filterExpenses('all')" class="btn" style="margin-top:15px;background:#667eea;color:white;padding:10px 20px;border:none;border-radius:8px;cursor:pointer;">Show All Expenses</button></div>`;
+                container.innerHTML = `<div style="text-align:center;padding:40px;color:#6c757d;"><div style="font-size:48px;margin-bottom:15px;">🔍</div><p>No expenses match this filter.</p><button onclick="filterExpenses('all')" class="btn" style="margin-top:15px;background:#0D9488;color:white;padding:10px 20px;border:none;border-radius:8px;cursor:pointer;">Show All Expenses</button></div>`;
                 return;
             }
 
@@ -6324,7 +6325,7 @@
             // Transit claim rendering
             if (expense._isTransit) {
                 const pdfBtn = expense.has_pdf 
-                    ? `<button onclick="downloadTransitPDF(${expense._transitId})" style="background:#667eea;color:white;border:none;padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600;margin-top:6px;">📄 Download PDF</button>`
+                    ? `<button onclick="downloadTransitPDF(${expense._transitId})" style="background:#0D9488;color:white;border:none;padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600;margin-top:6px;">📄 Download PDF</button>`
                     : '';
                 return `
                     <div class="expense-item" style="margin: 0; border-radius: 0; border-top: 1px solid #eee; border-left: 3px solid #17a2b8;">
@@ -6352,7 +6353,7 @@
             // HWA claim rendering
             if (expense._isHwa) {
                 const pdfBtn = expense.has_pdf 
-                    ? `<button onclick="downloadHwaPDF(${expense._hwaId})" style="background:#667eea;color:white;border:none;padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600;margin-top:6px;">📄 Download PDF</button>`
+                    ? `<button onclick="downloadHwaPDF(${expense._hwaId})" style="background:#0D9488;color:white;border:none;padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600;margin-top:6px;">📄 Download PDF</button>`
                     : '';
                 return `
                     <div class="expense-item" style="margin: 0; border-radius: 0; border-top: 1px solid #eee; border-left: 3px solid #10b981;">
@@ -7695,7 +7696,7 @@
             const idx = container.children.length;
             const div = document.createElement('div');
             div.className = 'claim-line-item';
-            div.style.cssText = 'padding: 14px; background: #f8f9fa; border-radius: 10px; border-left: 4px solid #4a90e2;';
+            div.style.cssText = 'padding: 14px; background: #f8f9fa; border-radius: 10px; border-left: 4px solid #0D9488;';
             div.innerHTML = `
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; align-items: end;">
                     <div class="form-group" style="margin-bottom:0;">
@@ -8040,7 +8041,7 @@
                     }).join('');
 
                     return `
-                        <div style="padding: 14px 16px; background: #f8f9fa; border-radius: 10px; border-left: 4px solid #4a90e2;">
+                        <div style="padding: 14px 16px; background: #f8f9fa; border-radius: 10px; border-left: 4px solid #0D9488;">
                             <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                                 <div style="flex: 1;">
                                     <div style="font-weight: 700; color: #2c3e50; font-size: 15px; margin-bottom: 8px;">
@@ -8063,7 +8064,7 @@
                     `;
                 } else {
                     return `
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #2196f3;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #0D9488;">
                             <div><strong>${d.category}</strong> - $${d.amount.toFixed(2)}<br><small style="color: #6c757d;">${d.date} · ${sanitizeForDisplay(d.vendor)}${sanitizeForDisplay(d.description) ? ' · ' + d.description : ''}</small></div>
                             <button onclick="removeStandaloneDraft(${i})" style="background: #dc3545; color: white; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px;">✕</button>
                         </div>
@@ -10601,7 +10602,7 @@
                 const alertColor = alert.type === 'success' ? '#155724' : alert.type === 'warning' ? '#856404' : '#721c24';
 
                 container.innerHTML = `
-                    <div style="background: white; border-radius: 12px; padding: 16px; border: 2px solid #667eea; margin-bottom: 20px;">
+                    <div style="background: white; border-radius: 12px; padding: 16px; border: 2px solid #0D9488; margin-bottom: 20px;">
                         <h4 style="color: #2c3e50; margin-bottom: 12px; font-size: 16px;">📊 Budget Comparison (Your expenses vs Travel Authorization)</h4>
                         
                         <div style="background: ${alertClass}; color: ${alertColor}; padding: 12px; border-radius: 8px; margin-bottom: 12px; font-weight: 600;">
