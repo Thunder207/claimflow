@@ -5968,7 +5968,7 @@
             return `<span style="background:${s.bg};color:${s.color};padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap;">${s.text}</span>`;
         }
 
-        // Display expenses in 3 sections: Trips, Benefits, Standalone
+        // Display expenses in 3 sections: Benefits, Trips, Standalone Claims
         function displayExpenses(expenses) {
             const container = document.getElementById('expenses-container');
 
@@ -5988,7 +5988,7 @@
 
             // === SPLIT INTO 3 CATEGORIES ===
             const trips = {};       // trip_name → { expenses[], start, end, status, destination }
-            const benefits = [];    // transit claims, phone benefits
+            const benefits = [];    // transit claims, phone benefits, health & wellness
             const standalone = [];  // everything else
 
             expenses.forEach(exp => {
@@ -6031,85 +6031,13 @@
 
             let html = '';
 
-            // === SECTION 1: TRIPS ===
-            if (sortedTrips.length > 0) {
-                html += `<div style="margin-bottom:8px;padding:8px 0;border-bottom:2px solid #0D9488;"><strong style="color:#0D9488;font-size:14px;text-transform:uppercase;letter-spacing:1px;">Trips</strong></div>`;
-                for (const [tripName, trip] of sortedTrips) {
-                    const tripTotal = trip.expenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
-                    const tripStatuses = [...new Set(trip.expenses.map(e => e.status))];
-                    const overallStatus = trip.status || (tripStatuses.length === 1 ? tripStatuses[0] : 'mixed');
-                    const tripId = 'trip-' + tripName.replace(/[^a-zA-Z0-9]/g, '-');
-                    const dateRange = trip.start && trip.end ? `${fmtDate(trip.start)} – ${fmtDate(trip.end, true)}` : '';
-
-                    // Sort trip expenses by date
-                    trip.expenses.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
-
-                    html += `
-                    <div style="margin-bottom:16px;">
-                        <div onclick="toggleTripExpenses('${tripId}')" style="background:linear-gradient(135deg,#f0f4ff 0%,#e8ecf8 100%);padding:15px 20px;border-radius:12px;border-left:4px solid #0D9488;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" role="button" aria-expanded="false">
-                            <div>
-                                <strong style="font-size:16px;color:#2c3e50;">
-                                    <span id="${tripId}-arrow" style="display:inline-block;transition:transform 0.2s;margin-right:4px;">▶</span>
-                                    🧳 ${capitalize(tripName)}
-                                </strong>
-                                <div style="font-size:13px;color:#666;margin-top:4px;">
-                                    ${dateRange ? `${dateRange} · ` : ''}${trip.expenses.length} expense${trip.expenses.length > 1 ? 's' : ''} · <strong style="color:#27ae60;">$${tripTotal.toFixed(2)}</strong>
-                                </div>
-                            </div>
-                            <div style="display:flex;align-items:center;gap:8px;">
-                                ${trip.status === 'approved' && trip.tripId ? `<button onclick="event.stopPropagation();downloadTripPDF(${trip.tripId})" style="background:#0D9488;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>` : ''}
-                                ${statusBadge(overallStatus)}
-                            </div>
-                        </div>
-                        <div id="${tripId}" style="display:none;border-radius:0 0 12px 12px;overflow:hidden;background:#fff;border:1px solid #e2e8f0;border-top:none;">
-                            <table style="width:100%;border-collapse:collapse;font-size:13px;">
-                                <thead>
-                                    <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
-                                        <th style="padding:10px 12px;text-align:left;color:#64748b;font-weight:600;">Category</th>
-                                        <th style="padding:10px 12px;text-align:right;color:#64748b;font-weight:600;">Amount</th>
-                                        <th style="padding:10px 12px;text-align:left;color:#64748b;font-weight:600;">Details</th>
-                                        <th style="padding:10px 12px;text-align:center;color:#64748b;font-weight:600;">Receipt</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${trip.expenses.map(e => {
-                                        const isPerDiem = ['breakfast','lunch','dinner','incidentals'].includes(e.expense_type);
-                                        const isKm = e.expense_type === 'mileage' || e.expense_type === 'kilometric';
-                                        const noReceiptNeeded = isPerDiem || isKm;
-                                        const hasReceipt = e.has_receipt || e.receipt_photo;
-                                        const receiptCell = noReceiptNeeded
-                                            ? '<span style="color:#999;">N/A</span>'
-                                            : hasReceipt
-                                                ? `<span onclick="viewExpenseReceipt(${e.id})" style="color:#0D9488;text-decoration:underline;cursor:pointer;">📎 View</span>`
-                                                : '<span style="color:#dc3545;">⚠️ Missing</span>';
-                                        const details = e.vendor ? sanitizeForDisplay(e.vendor) : (sanitizeForDisplay(e.description || ''));
-                                        return `
-                                        <tr style="border-bottom:1px solid #f1f5f9;">
-                                            <td style="padding:8px 12px;color:#1e293b;font-weight:500;">${capitalize(e.meal_name || e.expense_type || '')}</td>
-                                            <td style="padding:8px 12px;text-align:right;color:#059669;font-weight:600;">$${parseFloat(e.amount).toFixed(2)}</td>
-                                            <td style="padding:8px 12px;color:#64748b;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${details}</td>
-                                            <td style="padding:8px 12px;text-align:center;">${receiptCell}</td>
-                                        </tr>`;
-                                    }).join('')}
-                                    <tr style="background:#f0fdf4;border-top:2px solid #e2e8f0;">
-                                        <td style="padding:10px 12px;font-weight:700;color:#1e293b;">TOTAL</td>
-                                        <td style="padding:10px 12px;text-align:right;font-weight:700;color:#059669;font-size:14px;">$${tripTotal.toFixed(2)}</td>
-                                        <td colspan="2" style="padding:10px 12px;"></td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>`;
-                }
-            }
-
-            // === SECTION 2: BENEFITS ===
+            // === SECTION 1: BENEFITS (First, above everything else) ===
             if (benefits.length > 0) {
-                html += `<div style="margin:20px 0 8px;padding:8px 0;border-bottom:2px solid #0891b2;"><strong style="color:#0891b2;font-size:14px;text-transform:uppercase;letter-spacing:1px;">Benefits</strong></div>`;
+                html += `<div style="margin-bottom:8px;padding:8px 0;border-bottom:2px solid #0891b2;"><strong style="color:#0891b2;font-size:14px;text-transform:uppercase;letter-spacing:1px;">Benefits</strong></div>`;
                 benefits.forEach(b => {
                     let pdfBtn = '';
                     let icon = '🚍';
-                    let label = 'Public Transit';
+                    let label = 'Transit Benefit';
                     let borderColor = '#0891b2';
                     
                     if (b._isPhone) {
@@ -6149,7 +6077,109 @@
                 });
             }
 
-            // === SECTION 3: OTHER STANDALONE EXPENSES ===
+            // === SECTION 2: TRIPS ===
+            if (sortedTrips.length > 0) {
+                html += `<div style="margin:20px 0 8px;padding:8px 0;border-bottom:2px solid #0D9488;"><strong style="color:#0D9488;font-size:14px;text-transform:uppercase;letter-spacing:1px;">Trips</strong></div>`;
+                for (const [tripName, trip] of sortedTrips) {
+                    const tripTotal = trip.expenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+                    const tripStatuses = [...new Set(trip.expenses.map(e => e.status))];
+                    const overallStatus = trip.status || (tripStatuses.length === 1 ? tripStatuses[0] : 'mixed');
+                    const tripId = 'trip-' + tripName.replace(/[^a-zA-Z0-9]/g, '-');
+                    
+                    // Format date range for collapsed view
+                    let dateRange = '';
+                    if (trip.start && trip.end) {
+                        const startDate = new Date(trip.start);
+                        const endDate = new Date(trip.end);
+                        const startMonth = startDate.toLocaleDateString('en-US', { month: 'short' });
+                        const endMonth = endDate.toLocaleDateString('en-US', { month: 'short' });
+                        const startDay = startDate.getDate();
+                        const endDay = endDate.getDate();
+                        const year = startDate.getFullYear();
+                        
+                        if (startMonth === endMonth) {
+                            dateRange = `${startMonth} ${startDay}-${endDay}, ${year}`;
+                        } else {
+                            dateRange = `${startMonth} ${startDay} - ${endMonth} ${endDay}, ${year}`;
+                        }
+                    }
+
+                    // Group expenses by date for day-by-day breakdown
+                    const expensesByDate = {};
+                    trip.expenses.forEach(exp => {
+                        const date = exp.date || 'Unknown';
+                        if (!expensesByDate[date]) expensesByDate[date] = [];
+                        expensesByDate[date].push(exp);
+                    });
+
+                    // Sort dates
+                    const sortedDates = Object.keys(expensesByDate).sort((a, b) => new Date(a) - new Date(b));
+
+                    // Create collapsed card format: "✈️ Montreal to Toronto — Mar 6-13, 2026 — 31 items — $1,026.56 — APPROVED — [PDF]"
+                    html += `
+                    <div style="margin-bottom:16px;">
+                        <div onclick="toggleTripExpenses('${tripId}')" style="background:linear-gradient(135deg,#F0FDFA 0%,#CCFBF1 100%);padding:16px 20px;border-radius:12px;border-left:4px solid #0D9488;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;" role="button" aria-expanded="false">
+                            <div style="flex: 1;">
+                                <strong style="font-size:15px;color:#1e293b;">
+                                    <span id="${tripId}-arrow" style="display:inline-block;transition:transform 0.2s;margin-right:6px;">▶</span>
+                                    ✈️ ${capitalize(tripName)}${dateRange ? ` — ${dateRange}` : ''}${trip.expenses.length ? ` — ${trip.expenses.length} item${trip.expenses.length > 1 ? 's' : ''}` : ''} — <span style="color:#059669;">$${tripTotal.toFixed(2)}</span>
+                                </strong>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                ${trip.status === 'approved' && trip.tripId ? `<button onclick="event.stopPropagation();downloadTripPDF(${trip.tripId})" style="background:#0D9488;color:white;border:none;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600;">📄 PDF</button>` : ''}
+                                ${statusBadge(overallStatus)}
+                            </div>
+                        </div>
+                        <div id="${tripId}" style="display:none;border-radius:0 0 12px 12px;overflow:hidden;background:#fff;border:1px solid #e2e8f0;border-top:none;">
+                            ${sortedDates.map(date => {
+                                const dayExpenses = expensesByDate[date];
+                                const dayTotal = dayExpenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+                                const formattedDate = date !== 'Unknown' ? fmtDate(date, true) : 'Unknown Date';
+                                
+                                // Order expenses consistently: Breakfast → Lunch → Dinner → Incidentals → Hotel → Others
+                                const orderMap = { 'breakfast': 1, 'lunch': 2, 'dinner': 3, 'incidentals': 4, 'hotel': 5 };
+                                dayExpenses.sort((a, b) => {
+                                    const orderA = orderMap[a.expense_type] || 99;
+                                    const orderB = orderMap[b.expense_type] || 99;
+                                    if (orderA !== orderB) return orderA - orderB;
+                                    return (a.expense_type || '').localeCompare(b.expense_type || '');
+                                });
+                                
+                                return `
+                                <div style="border-bottom:1px solid #f1f5f9;padding:12px;">
+                                    <div style="font-weight:600;color:#1e293b;font-size:14px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0;">
+                                        📅 ${formattedDate} — <span style="color:#059669;">$${dayTotal.toFixed(2)}</span>
+                                    </div>
+                                    <div style="display:grid;grid-template-columns:1fr 80px 2fr 80px;gap:12px;font-size:13px;">
+                                        ${dayExpenses.map(e => {
+                                            const isPerDiem = ['breakfast','lunch','dinner','incidentals'].includes(e.expense_type);
+                                            const isKm = e.expense_type === 'mileage' || e.expense_type === 'kilometric';
+                                            const noReceiptNeeded = isPerDiem || isKm;
+                                            const hasReceipt = e.has_receipt || e.receipt_photo;
+                                            const receiptCell = noReceiptNeeded
+                                                ? '<span style="color:#999;font-size:12px;">N/A</span>'
+                                                : hasReceipt
+                                                    ? `<span onclick="viewExpenseReceipt(${e.id})" style="color:#0D9488;text-decoration:underline;cursor:pointer;font-size:12px;">📎 View</span>`
+                                                    : '<span style="color:#dc3545;font-size:12px;">⚠️ Missing</span>';
+                                            const details = e.vendor ? sanitizeForDisplay(e.vendor) : (sanitizeForDisplay(e.description || ''));
+                                            return `
+                                            <div style="color:#64748b;font-weight:500;">${capitalize(e.meal_name || e.expense_type || '')}</div>
+                                            <div style="text-align:right;color:#059669;font-weight:600;">$${parseFloat(e.amount).toFixed(2)}</div>
+                                            <div style="color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${details}</div>
+                                            <div style="text-align:center;">${receiptCell}</div>`;
+                                        }).join('')}
+                                    </div>
+                                </div>`;
+                            }).join('')}
+                            <div style="padding:12px;background:#F0FDFA;border-top:2px solid #e2e8f0;font-weight:700;color:#1e293b;text-align:center;">
+                                Trip Total: <span style="color:#059669;font-size:16px;">$${tripTotal.toFixed(2)}</span>
+                            </div>
+                        </div>
+                    </div>`;
+                }
+            }
+
+            // === SECTION 3: EXPENSE CLAIMS (Standalone expenses) ===
             if (standalone.length > 0) {
                 html += `<div style="margin:20px 0 8px;padding:8px 0;border-bottom:2px solid #6c757d;"><strong style="color:#6c757d;font-size:14px;text-transform:uppercase;letter-spacing:1px;">Expense Claims</strong></div>`;
                 // Group by claim_group
