@@ -5994,7 +5994,8 @@
             expenses.forEach(exp => {
                 if (exp._isTransit || exp._isPhone || exp._isHwa) {
                     benefits.push(exp);
-                } else if (exp.trip_name) {
+                } else if (exp.trip_name && exp.trip_name.trim() !== '') {
+                    // Group by trip_name
                     if (!trips[exp.trip_name]) {
                         trips[exp.trip_name] = {
                             expenses: [],
@@ -6011,6 +6012,24 @@
                     if (exp.trip_end) trips[exp.trip_name].end = exp.trip_end;
                     if (exp.trip_status) trips[exp.trip_name].status = exp.trip_status;
                     if (exp.trip_id) trips[exp.trip_name].tripId = exp.trip_id;
+                } else if (exp.trip_id && exp.trip_id > 0) {
+                    // Group by trip_id if trip_name is missing but trip_id exists
+                    const tripKey = `Trip ${exp.trip_id}`;
+                    if (!trips[tripKey]) {
+                        trips[tripKey] = {
+                            expenses: [],
+                            start: exp.trip_start || null,
+                            end: exp.trip_end || null,
+                            status: exp.trip_status || null,
+                            destination: exp.trip_destination || '',
+                            tripId: exp.trip_id || null
+                        };
+                    }
+                    trips[tripKey].expenses.push(exp);
+                    // Update trip dates from any expense that has them
+                    if (exp.trip_start) trips[tripKey].start = exp.trip_start;
+                    if (exp.trip_end) trips[tripKey].end = exp.trip_end;
+                    if (exp.trip_status) trips[tripKey].status = exp.trip_status;
                 } else {
                     standalone.push(exp);
                 }
@@ -6235,10 +6254,12 @@
                                 <tbody>
                                     ${exps.map(e => {
                                         const icon = catIcons[e.expense_type] || '📋';
+                                        const isPerDiem = ['breakfast','lunch','dinner','incidentals'].includes(e.expense_type);
                                         const isKm = e.expense_type === 'kilometric';
+                                        const noReceiptNeeded = isPerDiem || isKm;
                                         const kmMatch = e.description && e.description.match(/(\d+(?:\.\d+)?)km/);
                                         const hasReceipt = e.has_receipt || e.receipt_photo;
-                                        const receiptCell = isKm
+                                        const receiptCell = noReceiptNeeded
                                             ? '<span style="color:#999;">N/A</span>'
                                             : hasReceipt
                                                 ? `<span onclick="viewExpenseReceipt(${e.id})" style="color:#0D9488;text-decoration:underline;cursor:pointer;">📎 View</span>`
@@ -6270,9 +6291,11 @@
                         return;
                     }
                     const icon = catIcons[exp.expense_type] || '📋';
+                    const isPerDiem = ['breakfast','lunch','dinner','incidentals'].includes(exp.expense_type);
                     const isKm = exp.expense_type === 'kilometric';
+                    const noReceiptNeeded = isPerDiem || isKm;
                     const hasReceipt = exp.has_receipt || exp.receipt_photo;
-                    const receiptCell = isKm
+                    const receiptCell = noReceiptNeeded
                         ? '<span style="color:#999;font-size:12px;">N/A</span>'
                         : hasReceipt
                             ? `<span onclick="viewExpenseReceipt(${exp.id})" style="color:#0D9488;font-size:12px;text-decoration:underline;cursor:pointer;">📎 View</span>`
