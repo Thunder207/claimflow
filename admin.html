@@ -1771,49 +1771,56 @@ try {
                             </div>`;
                         });
 
-                        // Render ungrouped expenses
+                        // Render ungrouped expenses with receipt + PDF buttons
                         ungrouped.forEach(expense => {
-                            const statusClass = expense.status === 'approved' ? 'status-approved' : 
-                                              expense.status === 'rejected' ? 'status-rejected' : 
-                                              expense.status === 'returned' ? 'status-returned' : 'status-pending';
-                            const statusText = expense.status === 'approved' ? '✅ Approved' :
-                                             expense.status === 'rejected' ? '❌ Rejected' :
-                                             expense.status === 'returned' ? '↩️ Returned for Correction' : '⏳ Pending';
+                            const statusBdg4 = { approved: {bg:'#ECFDF5',color:'#065F46',text:'✅ APPROVED'}, rejected: {bg:'#FEF2F2',color:'#DC2626',text:'❌ REJECTED'}, returned: {bg:'#FEF3C7',color:'#D97706',text:'↩️ RETURNED'}, pending: {bg:'#FFFBEB',color:'#D97706',text:'⏳ PENDING'} };
+                            const badge4 = statusBdg4[expense.status] || statusBdg4.pending;
+                            const isKm4 = expense.expense_type === 'kilometric';
+                            const hasReceipt4 = expense.has_receipt || expense.receipt_photo;
+                            const receiptBtn4 = isKm4
+                                ? '<span style="color:#999;font-size:12px;">N/A</span>'
+                                : hasReceipt4
+                                    ? `<span onclick="viewExpenseReceipt(${expense.id})" style="color:#2196f3;font-size:12px;text-decoration:underline;cursor:pointer;">📎 View</span>`
+                                    : '<span style="color:#dc3545;font-size:12px;">⚠️ Missing</span>';
+                            let pdfBtn4 = '';
+                            if (expense.status === 'approved') {
+                                pdfBtn4 = expense.report_generated_at
+                                    ? `<button onclick="downloadExpensePDF(${expense.id})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`
+                                    : `<button onclick="generateExpensePDF(${expense.id},this)" style="background:#f0ad4e;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 Generate</button>`;
+                            }
                             let actionButtons = '';
                             if (expense.status === 'pending') {
                                 if (currentUserRole === 'supervisor') {
                                     actionButtons = `
-                                        <button class="btn btn-success" onclick="approveExpense(${expense.id}, this)">✅ Approve</button>
-                                        <button class="btn btn-warning" onclick="returnExpense(${expense.id})" style="background: #fd7e14; color: white;">↩️ Return</button>
-                                        <button class="btn btn-danger" onclick="rejectExpense(${expense.id}, this)">❌ Reject</button>
-                                    `;
+                                        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+                                            <button class="btn btn-success" onclick="approveExpense(${expense.id}, this)" style="font-size:13px;padding:6px 14px;">✅ Approve</button>
+                                            <button class="btn btn-warning" onclick="returnExpense(${expense.id})" style="background:#fd7e14;color:white;font-size:13px;padding:6px 14px;">↩️ Return</button>
+                                            <button class="btn btn-danger" onclick="rejectExpense(${expense.id}, this)" style="font-size:13px;padding:6px 14px;">❌ Reject</button>
+                                        </div>`;
                                 } else if (currentUserRole === 'admin') {
-                                    actionButtons = `<button class="btn btn-warning" onclick="deleteExpense(${expense.id})">🗑️ Delete</button>`;
+                                    actionButtons = `<div style="margin-top:10px;"><button class="btn btn-warning" onclick="deleteExpense(${expense.id})">🗑️ Delete</button></div>`;
                                 }
                             }
-                            const isKm = expense.expense_type === 'kilometric';
-                            const hasReceipt = expense.has_receipt || expense.receipt_photo;
-                            const receiptBtn = isKm ? '' : hasReceipt ? `<button onclick="viewExpenseReceipt(${expense.id})" style="background:#17a2b8;color:white;border:none;padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;">📎 Receipt</button>` : '';
+                            const icon4 = catIcons2[expense.expense_type] || '📋';
+                            const label4 = expense.category || expense.meal_name || expense.expense_type || 'Expense';
                             html += `
-                            <div class="expense-item">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap;">
-                                    <div style="flex-grow: 1;">
-                                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
-                                            <div style="font-weight: bold; color: #2c3e50; font-size: 18px;">
-                                                ${expense.meal_name || expense.expense_type} • ${expense.employee_name}
-                                            </div>
-                                            <div class="status-badge ${statusClass}">${statusText}</div>
-                                        </div>
-                                        <div style="color: #666; font-size: 14px; margin-bottom: 12px;">
-                                            <span style="color: #27ae60; font-size: 20px; font-weight: bold;">$${parseFloat(expense.amount).toFixed(2)}</span> • 
-                                            📅 ${expense.date} • 📍 ${expense.location || 'N/A'}
-                                        </div>
-                                        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
-                                            ${receiptBtn}
-                                            ${actionButtons}
+                            <div style="background:#fff;border-radius:10px;padding:14px 18px;margin-bottom:10px;border-left:4px solid #94a3b8;">
+                                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                                    <div>
+                                        <strong style="color:#1e293b;font-size:14px;">${icon4} ${sanitizeForDisplay(label4)} · ${sanitizeForDisplay(expense.employee_name || '')}</strong>
+                                        <div style="font-size:13px;color:#64748b;margin-top:3px;">
+                                            <strong style="color:#059669;">$${parseFloat(expense.amount).toFixed(2)}</strong>
+                                            ${expense.vendor ? ' — ' + sanitizeForDisplay(expense.vendor) : ''}
+                                            ${expense.date ? ` · ${expense.date}` : ''}
                                         </div>
                                     </div>
+                                    <div style="display:flex;align-items:center;gap:8px;">
+                                        ${receiptBtn4}
+                                        ${pdfBtn4}
+                                        <span style="background:${badge4.bg};color:${badge4.color};padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap;">${badge4.text}</span>
+                                    </div>
                                 </div>
+                                ${actionButtons}
                             </div>`;
                         });
                     }
@@ -2124,44 +2131,59 @@ try {
                         </div>`;
                     });
 
-                    // Render ungrouped expenses (original flat cards)
+                    // Render ungrouped expenses with receipt + PDF buttons
                     ungroupedExps.forEach(expense => {
-                        const statusClass = expense.status === 'approved' ? 'status-approved' : 
-                                          expense.status === 'rejected' ? 'status-rejected' : 'status-pending';
-                        const statusText = expense.status === 'approved' ? '✅ Approved' :
-                                         expense.status === 'rejected' ? '❌ Rejected' : '⏳ Pending';
+                        const statusBdg3 = { approved: {bg:'#ECFDF5',color:'#065F46',text:'✅ APPROVED'}, rejected: {bg:'#FEF2F2',color:'#DC2626',text:'❌ REJECTED'}, pending: {bg:'#FFFBEB',color:'#D97706',text:'⏳ PENDING'} };
+                        const badge3 = statusBdg3[expense.status] || statusBdg3.pending;
+                        const isKm = expense.expense_type === 'kilometric';
+                        const hasReceipt = expense.has_receipt || expense.receipt_photo;
+                        const receiptBtn = expense._isTransit
+                            ? (expense.status === 'approved' ? `<button onclick="viewTransitReceipt(${expense._transitId})" style="background:#17a2b8;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📎 Receipt</button>` : '')
+                            : isKm
+                                ? '<span style="color:#999;font-size:12px;">N/A</span>'
+                                : hasReceipt
+                                    ? `<span onclick="viewExpenseReceipt(${expense.id})" style="color:#2196f3;font-size:12px;text-decoration:underline;cursor:pointer;">📎 View</span>`
+                                    : '<span style="color:#dc3545;font-size:12px;">⚠️ Missing</span>';
+                        let pdfBtn3 = '';
+                        if (expense._isTransit && expense.status === 'approved') {
+                            pdfBtn3 = `<button onclick="downloadTransitPDFAdmin(${expense._transitId})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`;
+                        } else if (!expense._isTransit && expense.status === 'approved') {
+                            pdfBtn3 = expense.report_generated_at
+                                ? `<button onclick="downloadExpensePDF(${expense.id})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`
+                                : `<button onclick="generateExpensePDF(${expense.id},this)" style="background:#f0ad4e;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 Generate</button>`;
+                        }
                         let actionButtons = '';
                         if (expense.status === 'pending') {
                             if (currentUserRole === 'supervisor') {
                                 actionButtons = `
-                                    <button class="btn btn-success" onclick="approveExpense(${expense.id}, this)">✅ Approve</button>
-                                    <button class="btn btn-danger" onclick="rejectExpense(${expense.id}, this)">❌ Reject</button>
-                                `;
+                                    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+                                        <button class="btn btn-success" onclick="approveExpense(${expense.id}, this)" style="font-size:13px;padding:6px 14px;">✅ Approve</button>
+                                        <button class="btn btn-danger" onclick="rejectExpense(${expense.id}, this)" style="font-size:13px;padding:6px 14px;">❌ Reject</button>
+                                    </div>`;
                             } else if (currentUserRole === 'admin') {
-                                actionButtons = `<button class="btn btn-warning" onclick="deleteExpense(${expense.id})">🗑️ Delete</button>`;
+                                actionButtons = `<div style="margin-top:10px;"><button class="btn btn-warning" onclick="deleteExpense(${expense.id})">🗑️ Delete</button></div>`;
                             }
                         }
+                        const icon3 = catIcons[expense.expense_type] || '📋';
+                        const label3 = expense.category || expense.meal_name || expense.expense_type || 'Expense';
                         html += `
-                        <div class="expense-item">
-                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap;">
-                                <div style="flex-grow: 1;">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
-                                        <div style="font-weight: bold; color: #2c3e50; font-size: 18px;">${expense.meal_name || expense.expense_type} • ${expense.employee_name}</div>
-                                        <div class="status-badge ${statusClass}">${statusText}</div>
+                        <div style="background:#fff;border-radius:10px;padding:14px 18px;margin-bottom:10px;border-left:4px solid #94a3b8;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                                <div>
+                                    <strong style="color:#1e293b;font-size:14px;">${icon3} ${sanitizeForDisplay(label3)} · ${sanitizeForDisplay(expense.employee_name || '')}</strong>
+                                    <div style="font-size:13px;color:#64748b;margin-top:3px;">
+                                        <strong style="color:#059669;">$${parseFloat(expense.amount).toFixed(2)}</strong>
+                                        ${expense.vendor ? ' — ' + sanitizeForDisplay(expense.vendor) : ''}
+                                        ${expense.date ? ` · ${expense.date}` : ''}
                                     </div>
-                                    <div style="color: #666; font-size: 14px; margin-bottom: 12px;">
-                                        <span style="color: #27ae60; font-size: 20px; font-weight: bold;">$${parseFloat(expense.amount).toFixed(2)}</span> • 
-                                        📅 ${expense.date} • 📍 ${expense.location || 'N/A'}
-                                    </div>
-                                    ${actionButtons ? `<div style="margin-top: 10px;">${actionButtons}</div>` : ''}
-                                    ${expense._isTransit && expense.status === 'approved' ? `
-                                    <div style="display:flex;gap:8px;margin-top:10px;">
-                                        <button onclick="viewTransitReceipt(${expense._transitId})" style="background:#17a2b8;color:white;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">📎 Receipt</button>
-                                        <button onclick="downloadTransitPDFAdmin(${expense._transitId})" style="background:#667eea;color:white;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;">📄 PDF Report</button>
-                                    </div>` : ''}
                                 </div>
-                                ${!expense._isTransit && expense.receipt_path ? `<button class="btn btn-secondary" onclick="viewReceipt('${expense.receipt_path}')" style="font-size: 12px;">📎 Receipt</button>` : ''}
+                                <div style="display:flex;align-items:center;gap:8px;">
+                                    ${receiptBtn}
+                                    ${pdfBtn3}
+                                    <span style="background:${badge3.bg};color:${badge3.color};padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap;">${badge3.text}</span>
+                                </div>
                             </div>
+                            ${actionButtons}
                         </div>`;
                     });
                 }
@@ -2328,6 +2350,29 @@ try {
                 const url = URL.createObjectURL(blob);
                 triggerBlobDownload(url, 'expense-report.pdf');
             } catch(e) { console.error('Error downloading claim PDF:', e); }
+        }
+
+        async function downloadExpensePDF(expenseId) {
+            try {
+                const resp = await fetch(`/api/expenses/${expenseId}/pdf`, { headers: { 'Authorization': 'Bearer ' + sessionId } });
+                if (!resp.ok) { console.error('Expense PDF not available'); return; }
+                const blob = await resp.blob();
+                triggerBlobDownload(URL.createObjectURL(blob), 'expense-report.pdf');
+            } catch(e) { console.error('Expense PDF error:', e); }
+        }
+
+        async function generateExpensePDF(expenseId, btn) {
+            if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
+            try {
+                const resp = await fetch(`/api/expenses/${expenseId}/generate-pdf`, {
+                    method: 'POST', headers: { 'Authorization': 'Bearer ' + sessionId }
+                });
+                if (resp.ok) {
+                    if (btn) { btn.textContent = '📄 PDF'; btn.disabled = false; btn.onclick = function() { downloadExpensePDF(expenseId); }; }
+                } else {
+                    if (btn) { btn.textContent = '❌ Failed'; btn.disabled = false; }
+                }
+            } catch(e) { console.error('Generate PDF error:', e); if (btn) { btn.textContent = '❌ Error'; btn.disabled = false; } }
         }
 
         let _transitActionInProgress = false;

@@ -3136,6 +3136,29 @@
                 .then(b => { const u = URL.createObjectURL(b); triggerBlobDownload(u, 'trip-report.pdf'); })
                 .catch(e => console.error('Trip PDF error:', e));
         }
+
+        async function downloadExpensePDF(expenseId) {
+            try {
+                const resp = await fetch(`/api/expenses/${expenseId}/pdf`, { headers: { 'Authorization': 'Bearer ' + sessionId } });
+                if (!resp.ok) { console.error('Expense PDF not available'); return; }
+                const blob = await resp.blob();
+                triggerBlobDownload(URL.createObjectURL(blob), 'expense-report.pdf');
+            } catch(e) { console.error('Expense PDF error:', e); }
+        }
+
+        async function generateExpensePDF(expenseId, btn) {
+            if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
+            try {
+                const resp = await fetch(`/api/expenses/${expenseId}/generate-pdf`, {
+                    method: 'POST', headers: { 'Authorization': 'Bearer ' + sessionId }
+                });
+                if (resp.ok) {
+                    if (btn) { btn.textContent = '📄 PDF'; btn.disabled = false; btn.onclick = function() { downloadExpensePDF(expenseId); }; }
+                } else {
+                    if (btn) { btn.textContent = '❌ Failed'; btn.disabled = false; }
+                }
+            } catch(e) { console.error('Generate PDF error:', e); if (btn) { btn.textContent = '❌ Error'; btn.disabled = false; } }
+        }
         
         // Generate PDF retroactively for old approved claim
         async function generateTransitPDF(claimId, btn) {
@@ -6209,7 +6232,7 @@
                         </div>
                     </div>`;
                 });
-                // Render ungrouped as single-item collapsible cards
+                // Render ungrouped as single-item cards with receipt + PDF
                 ungrouped.forEach(exp => {
                     if (exp._isTransit || exp._isPhone || exp._isHwa) {
                         html += renderExpenseItem(exp);
@@ -6219,11 +6242,19 @@
                     const isKm = exp.expense_type === 'kilometric';
                     const hasReceipt = exp.has_receipt || exp.receipt_photo;
                     const receiptCell = isKm
-                        ? '<span style="color:#999;">N/A</span>'
+                        ? '<span style="color:#999;font-size:12px;">N/A</span>'
                         : hasReceipt
-                            ? `<span onclick="viewExpenseReceipt(${exp.id})" style="color:#2196f3;text-decoration:underline;cursor:pointer;">📎 View</span>`
-                            : '<span style="color:#dc3545;">⚠️ Missing</span>';
+                            ? `<span onclick="viewExpenseReceipt(${exp.id})" style="color:#2196f3;font-size:12px;text-decoration:underline;cursor:pointer;">📎 View</span>`
+                            : '<span style="color:#dc3545;font-size:12px;">⚠️ Missing</span>';
                     const label = capitalize(exp.category || exp.meal_name || exp.expense_type || '');
+                    let pdfBtn = '';
+                    if (exp.status === 'approved') {
+                        if (exp.report_generated_at) {
+                            pdfBtn = `<button onclick="event.stopPropagation();downloadExpensePDF(${exp.id})" style="background:#667eea;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 PDF</button>`;
+                        } else {
+                            pdfBtn = `<button onclick="event.stopPropagation();generateExpensePDF(${exp.id},this)" style="background:#f0ad4e;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📄 Generate</button>`;
+                        }
+                    }
                     html += `
                     <div style="background:#fff;border-radius:10px;padding:14px 18px;margin-bottom:10px;border-left:4px solid #94a3b8;">
                         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
@@ -6237,6 +6268,7 @@
                             </div>
                             <div style="display:flex;align-items:center;gap:8px;">
                                 ${receiptCell}
+                                ${pdfBtn}
                                 ${statusBadge(exp.status)}
                             </div>
                         </div>

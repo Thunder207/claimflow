@@ -790,6 +790,17 @@ function insertDefaultData() {
             if (err && !err.message.includes('duplicate column')) {}
         });
 
+        // Add standalone_pdf for individual expense PDFs
+        db.run(`ALTER TABLE expenses ADD COLUMN standalone_pdf BLOB DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {}
+        });
+        db.run(`ALTER TABLE expenses ADD COLUMN report_ref TEXT DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {}
+        });
+        db.run(`ALTER TABLE expenses ADD COLUMN report_generated_at DATETIME DEFAULT NULL`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {}
+        });
+
         // Transit claims PDF columns
         db.run(`ALTER TABLE transit_claims ADD COLUMN report_ref TEXT DEFAULT NULL`, (err) => {
             if (err && !err.message.includes('duplicate column')) {}
@@ -1193,7 +1204,7 @@ app.get('/api/expenses', requireAuth, (req, res) => {
     if (req.user.role === 'admin') {
         // Admin sees all expenses
         query = `
-            SELECT e.id, e.employee_name, e.employee_id, e.expense_type, e.date, e.amount, e.vendor, e.description, e.receipt_photo, e.receipt_type, e.category, e.claim_group, e.status, e.trip_id, e.created_at, e.rejection_reason,
+            SELECT e.id, e.employee_name, e.employee_id, e.expense_type, e.date, e.amount, e.vendor, e.description, e.receipt_photo, e.receipt_type, e.category, e.claim_group, e.status, e.trip_id, e.created_at, e.rejection_reason, e.report_ref, e.report_generated_at,
                    (CASE WHEN e.receipt_data IS NOT NULL THEN 1 ELSE 0 END) as has_receipt,
                    emp.name as employee_name_from_db,
                    emp.supervisor_id,
@@ -1206,7 +1217,7 @@ app.get('/api/expenses', requireAuth, (req, res) => {
     } else if (req.user.role === 'supervisor') {
         // 🚨 GOVERNANCE FIX: Supervisor sees ONLY direct reports' expenses (not indirect)
         query = `
-            SELECT e.id, e.employee_name, e.employee_id, e.expense_type, e.date, e.amount, e.vendor, e.description, e.receipt_photo, e.receipt_type, e.category, e.claim_group, e.status, e.trip_id, e.created_at, e.rejection_reason,
+            SELECT e.id, e.employee_name, e.employee_id, e.expense_type, e.date, e.amount, e.vendor, e.description, e.receipt_photo, e.receipt_type, e.category, e.claim_group, e.status, e.trip_id, e.created_at, e.rejection_reason, e.report_ref, e.report_generated_at,
                    (CASE WHEN e.receipt_data IS NOT NULL THEN 1 ELSE 0 END) as has_receipt,
                    emp.name as employee_name_from_db,
                    emp.supervisor_id,
@@ -1831,6 +1842,199 @@ app.post('/api/expense-claims/group/:claimGroup/generate-pdf', requireAuth, asyn
     } catch (error) {
         console.error('Error generating claim group PDF:', error);
         res.status(500).json({ error: 'Failed to generate PDF report' });
+    }
+});
+
+// === STANDALONE EXPENSE PDF ===
+// Generate PDF for individual (ungrouped) expense
+async function generateStandaloneExpensePDF(expenseId) {
+    const expense = await new Promise((resolve, reject) => {
+        db.get(`SELECT e.*, emp.name as emp_name, emp.department, emp.employee_number, emp.position
+                FROM expenses e JOIN employees emp ON e.employee_id = emp.id
+                WHERE e.id = ?`, [expenseId], (err, row) => {
+            if (err) reject(err); else resolve(row);
+        });
+    });
+    if (!expense) throw new Error('Expense not found');
+
+    // Also check expense_claim_receipts table
+    const receiptRow = await new Promise((resolve, reject) => {
+        db.get(`SELECT * FROM expense_claim_receipts WHERE expense_id = ?`, [expenseId], (err, row) => {
+            if (err) reject(err); else resolve(row);
+        });
+    }).catch(() => null);
+
+    const PDFDocument = require('pdfkit');
+    const { PDFDocument: PDFLib, rgb, StandardFonts } = require('pdf-lib');
+    const MARGIN = 50;
+
+    const empName = expense.emp_name || expense.employee_name || 'Unknown';
+    const empNum = expense.employee_number || '';
+    const dept = expense.department || '';
+    const position = expense.position || '';
+    const category = expense.category || expense.expense_type || 'Other';
+    const isKm = expense.expense_type === 'kilometric';
+    const kmMatch = expense.description && expense.description.match(/(\d+(?:\.\d+)?)km/);
+    const refNum = `STE-${new Date().getFullYear()}-${String(expenseId).padStart(5, '0')}`;
+    const approvedDate = expense.approved_at ? new Date(expense.approved_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+
+    const pdfBuffers = [];
+    const doc = new PDFDocument({ size: 'LETTER', margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN } });
+    doc.on('data', chunk => pdfBuffers.push(chunk));
+    const pdfReady = new Promise((resolve) => { doc.on('end', () => resolve(Buffer.concat(pdfBuffers))); });
+
+    // Header
+    doc.fontSize(20).font('Helvetica-Bold').text('STANDALONE EXPENSE REPORT', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(10).font('Helvetica').fillColor('#666').text('ClaimFlow - Expense Management System', { align: 'center' });
+    doc.moveDown(0.3);
+    doc.fontSize(9).fillColor('#999').text(`Reference: ${refNum}  |  Generated: ${new Date().toISOString().split('T')[0]}`, { align: 'center' });
+    doc.moveDown(1.5);
+
+    // Employee info
+    doc.fillColor('#000');
+    doc.fontSize(12).font('Helvetica-Bold').text('EMPLOYEE INFORMATION');
+    doc.moveDown(0.3);
+    doc.moveTo(MARGIN, doc.y).lineTo(562, doc.y).stroke('#ccc');
+    doc.moveDown(0.5);
+    doc.fontSize(10).font('Helvetica');
+    doc.text(`Name: ${empName}${empNum ? '  (Employee #' + empNum + ')' : ''}`);
+    doc.text(`Department: ${dept}`);
+    if (position) doc.text(`Position: ${position}`);
+    doc.moveDown(1);
+
+    // Expense details table
+    doc.fontSize(12).font('Helvetica-Bold').text('EXPENSE DETAILS');
+    doc.moveDown(0.3);
+    doc.moveTo(MARGIN, doc.y).lineTo(562, doc.y).stroke('#ccc');
+    doc.moveDown(0.5);
+
+    const tblTop = doc.y;
+    const cols = [MARGIN, MARGIN + 150, MARGIN + 300, MARGIN + 400];
+    doc.fontSize(9).font('Helvetica-Bold');
+    doc.text('Category', cols[0], tblTop);
+    doc.text('Amount', cols[1], tblTop);
+    doc.text('Vendor', cols[2], tblTop);
+    doc.text('Date', cols[3], tblTop);
+    doc.moveTo(MARGIN, tblTop + 14).lineTo(562, tblTop + 14).stroke('#ccc');
+
+    let rowY = tblTop + 22;
+    doc.font('Helvetica').fontSize(9);
+    doc.text(category + (isKm && kmMatch ? ` (${kmMatch[1]}km)` : ''), cols[0], rowY, { width: 140 });
+    doc.text('$' + parseFloat(expense.amount).toFixed(2), cols[1], rowY);
+    doc.text(expense.vendor || (isKm ? 'Kilometric' : '-'), cols[2], rowY, { width: 90 });
+    doc.text(expense.date || '-', cols[3], rowY);
+
+    rowY += 22;
+    doc.moveTo(MARGIN, rowY).lineTo(562, rowY).stroke('#ccc');
+    rowY += 6;
+    doc.font('Helvetica-Bold').fontSize(11);
+    doc.text('Total:', cols[2], rowY);
+    doc.text('$' + parseFloat(expense.amount).toFixed(2), cols[3], rowY);
+    doc.y = rowY + 25;
+
+    // Description
+    const desc = (expense.description || '').replace(/^\[.+?\]\s*/, '').trim();
+    if (desc) {
+        doc.fontSize(10).font('Helvetica-Bold').text('Description:');
+        doc.font('Helvetica').text(desc);
+        doc.moveDown(0.5);
+    }
+
+    // Approval section
+    doc.moveDown(0.5);
+    doc.fontSize(12).font('Helvetica-Bold').text('APPROVAL');
+    doc.moveDown(0.3);
+    doc.moveTo(MARGIN, doc.y).lineTo(562, doc.y).stroke('#ccc');
+    doc.moveDown(0.5);
+    doc.fontSize(10).font('Helvetica');
+    doc.text(`Submitted: ${expense.created_at ? new Date(expense.created_at).toISOString().split('T')[0] : '-'}  by ${empName}`);
+    doc.text(`Approved: ${approvedDate}  by ${expense.approved_by || 'Supervisor'}`);
+    if (expense.approval_comment) doc.text(`Comment: ${expense.approval_comment}`);
+
+    // Signature lines
+    doc.moveDown(2);
+    doc.moveTo(MARGIN, doc.y).lineTo(MARGIN + 200, doc.y).stroke('#000');
+    doc.text(`Employee: ${empName}`, MARGIN, doc.y + 5);
+    doc.moveDown(1.5);
+    doc.moveTo(MARGIN, doc.y).lineTo(MARGIN + 200, doc.y).stroke('#000');
+    doc.text(`Supervisor: ${expense.approved_by || 'Supervisor'}`, MARGIN, doc.y + 5);
+
+    doc.end();
+    let mainPdf = await pdfReady;
+
+    // Embed receipt using pdf-lib
+    const pdfDoc = await PDFLib.load(mainPdf);
+    const fileData = receiptRow ? receiptRow.file_data : expense.receipt_data;
+    const fileType = receiptRow ? receiptRow.file_type : expense.receipt_type;
+    if (fileData) {
+        try {
+            if (fileType && fileType.includes('pdf')) {
+                const rPdf = await PDFLib.load(fileData);
+                const pages = await pdfDoc.copyPages(rPdf, rPdf.getPageIndices());
+                pages.forEach(p => pdfDoc.addPage(p));
+            } else if (fileType && (fileType.includes('jpeg') || fileType.includes('jpg'))) {
+                const img = await pdfDoc.embedJpg(fileData);
+                const page = pdfDoc.addPage([612, 792]);
+                const scale = Math.min(512 / img.width, 692 / img.height, 1);
+                page.drawImage(img, { x: (612 - img.width * scale) / 2, y: (792 - img.height * scale) / 2, width: img.width * scale, height: img.height * scale });
+            } else if (fileType && fileType.includes('png')) {
+                const img = await pdfDoc.embedPng(fileData);
+                const page = pdfDoc.addPage([612, 792]);
+                const scale = Math.min(512 / img.width, 692 / img.height, 1);
+                page.drawImage(img, { x: (612 - img.width * scale) / 2, y: (792 - img.height * scale) / 2, width: img.width * scale, height: img.height * scale });
+            }
+        } catch (imgErr) { console.error('Error embedding receipt in standalone PDF:', imgErr.message); }
+    }
+
+    // Footers
+    const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const pageCount = pdfDoc.getPageCount();
+    for (let i = 0; i < pageCount; i++) {
+        const page = pdfDoc.getPage(i);
+        page.drawText(`Page ${i + 1} of ${pageCount} | ${refNum} | Generated ${new Date().toISOString().split('T')[0]}`, {
+            x: 50, y: 20, size: 8, font: helvetica, color: rgb(0.5, 0.5, 0.5)
+        });
+    }
+
+    const finalPdf = Buffer.from(await pdfDoc.save());
+
+    // Store in DB
+    await new Promise((resolve, reject) => {
+        db.run(`UPDATE expenses SET standalone_pdf = ?, report_ref = ?, report_generated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [finalPdf, refNum, expenseId], (err) => { if (err) reject(err); else resolve(); });
+    });
+
+    return { ref: refNum, size: finalPdf.length };
+}
+
+// Serve standalone expense PDF
+app.get('/api/expenses/:id/pdf', requireAuth, (req, res) => {
+    const { id } = req.params;
+    db.get(`SELECT standalone_pdf, report_ref FROM expenses WHERE id = ?`, [id], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row || !row.standalone_pdf) return res.status(404).json({ error: 'No PDF report found for this expense' });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${(row.report_ref || 'expense-report').replace(/"/g, '')}.pdf"`);
+        try {
+            const buf = Buffer.isBuffer(row.standalone_pdf) ? row.standalone_pdf : Buffer.from(row.standalone_pdf);
+            res.setHeader('Content-Length', buf.length);
+            res.end(buf);
+        } catch (e) {
+            console.error('Standalone PDF send error:', e);
+            if (!res.headersSent) res.status(500).json({ error: 'Failed to send PDF' });
+        }
+    });
+});
+
+// Generate standalone expense PDF on demand
+app.post('/api/expenses/:id/generate-pdf', requireAuth, async (req, res) => {
+    try {
+        const result = await generateStandaloneExpensePDF(parseInt(req.params.id));
+        res.json({ success: true, message: 'PDF generated', ref: result.ref, size: result.size });
+    } catch (error) {
+        console.error('Error generating standalone PDF:', error);
+        res.status(500).json({ error: 'Failed to generate PDF' });
     }
 });
 
@@ -2582,6 +2786,15 @@ app.post('/api/expenses/:id/approve', requireAuth, (req, res) => {
                 // Notify employee
                 createNotification(expense.employee_id, 'expense_approved',
                     `Your expense #${id} has been approved by ${approverName}.`);
+
+                // Generate PDF for standalone (ungrouped) expenses
+                db.get(`SELECT claim_group FROM expenses WHERE id = ?`, [id], (err4, expRow) => {
+                    if (!err4 && expRow && !expRow.claim_group) {
+                        generateStandaloneExpensePDF(parseInt(id)).catch(pdfErr => {
+                            console.error('Standalone PDF generation error (non-blocking):', pdfErr.message);
+                        });
+                    }
+                });
                 
                 res.json({ 
                     success: true, 
