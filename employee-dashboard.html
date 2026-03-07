@@ -1182,6 +1182,20 @@
                 </div>
 
                 <!-- Day Cards Container -->
+                <!-- Quick Actions Bar -->
+                <div id="tdp-quick-actions" style="background: #F1F5F9; border-radius: 10px; padding: 10px 16px; margin-bottom: 14px; display: none; justify-content: space-between; align-items: center;">
+                    <span style="color: #64748b; font-weight: 600; font-size: 14px;">Quick Actions</span>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="tdpSelectAllMeals()" style="border: 1px solid #0D9488; background: transparent; color: #0D9488; border-radius: 8px; padding: 6px 16px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;" 
+                                onmouseover="this.style.background='#0D9488'; this.style.color='white';" onmouseout="this.style.background='transparent'; this.style.color='#0D9488';">
+                            ✅ Select All Meals
+                        </button>
+                        <button onclick="tdpClearAll()" style="border: 1px solid #0D9488; background: transparent; color: #0D9488; border-radius: 8px; padding: 6px 16px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;"
+                                onmouseover="this.style.background='#0D9488'; this.style.color='white';" onmouseout="this.style.background='transparent'; this.style.color='#0D9488';">
+                            ✕ Clear All
+                        </button>
+                    </div>
+                </div>
                 <div id="tdp-day-cards" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;"></div>
 
                 <!-- 🚗 SMART TRANSPORTATION SECTION -->
@@ -1496,6 +1510,20 @@
                     </div>
                 </div>
 
+                <!-- Quick Actions Bar -->
+                <div id="dp-quick-actions" style="background: #F1F5F9; border-radius: 10px; padding: 10px 16px; margin-bottom: 14px; display: none; justify-content: space-between; align-items: center;">
+                    <span style="color: #64748b; font-weight: 600; font-size: 14px;">Quick Actions</span>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="dpSelectAllMeals()" style="border: 1px solid #0D9488; background: transparent; color: #0D9488; border-radius: 8px; padding: 6px 16px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;" 
+                                onmouseover="this.style.background='#0D9488'; this.style.color='white';" onmouseout="this.style.background='transparent'; this.style.color='#0D9488';">
+                            ✅ Select All Meals
+                        </button>
+                        <button onclick="dpClearAll()" style="border: 1px solid #0D9488; background: transparent; color: #0D9488; border-radius: 8px; padding: 6px 16px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;"
+                                onmouseover="this.style.background='#0D9488'; this.style.color='white';" onmouseout="this.style.background='transparent'; this.style.color='#0D9488';">
+                            ✕ Clear All
+                        </button>
+                    </div>
+                </div>
                 <div id="dp-day-cards" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;"></div>
 
                 <!-- 🚗 SMART TRANSPORTATION SECTION -->
@@ -4917,6 +4945,12 @@
             const container = document.getElementById('dp-day-cards');
             const { days, canEdit } = dpState;
             const readonlyClass = canEdit ? '' : ' readonly';
+            
+            // Control quick actions visibility
+            const quickActions = document.getElementById('dp-quick-actions');
+            if (quickActions) {
+                quickActions.style.display = (canEdit && days.length > 0) ? 'flex' : 'none';
+            }
 
             let html = '';
             days.forEach((day, idx) => {
@@ -4991,6 +5025,36 @@
             } else {
                 day.perDiem[type] = !day.perDiem[type];
             }
+            dpRenderCards();
+            dpRecalcTotal();
+        }
+
+        function dpSelectAllMeals() {
+            if (!dpState.canEdit) return;
+            const mealTypes = ['breakfast', 'lunch', 'dinner', 'incidentals'];
+            
+            dpState.days.forEach((day, dayIdx) => {
+                mealTypes.forEach(type => {
+                    // Don't affect incidentals on last day
+                    if (type === 'incidentals' && day.isLast) return;
+                    day.perDiem[type] = true;
+                });
+            });
+            
+            dpRenderCards();
+            dpRecalcTotal();
+        }
+
+        function dpClearAll() {
+            if (!dpState.canEdit) return;
+            const mealTypes = ['breakfast', 'lunch', 'dinner', 'incidentals'];
+            
+            dpState.days.forEach((day, dayIdx) => {
+                mealTypes.forEach(type => {
+                    day.perDiem[type] = false;
+                });
+            });
+            
             dpRenderCards();
             dpRecalcTotal();
         }
@@ -9012,6 +9076,12 @@
             const { days, canEdit } = tdpState;
             const readonlyClass = canEdit ? '' : ' readonly';
             let hasHotel = false;
+            
+            // Control quick actions visibility
+            const quickActions = document.getElementById('tdp-quick-actions');
+            if (quickActions) {
+                quickActions.style.display = (canEdit && days.length > 0) ? 'flex' : 'none';
+            }
 
             let html = '';
             days.forEach((day, idx) => {
@@ -9364,6 +9434,56 @@
 
             tdpRenderCards();
             tdpRecalcTotal();
+        }
+
+        async function tdpSelectAllMeals() {
+            if (!tdpState.canEdit || tdpSaving) return;
+            const mealTypes = ['breakfast', 'lunch', 'dinner', 'incidentals'];
+            
+            try {
+                for (let dayIdx = 0; dayIdx < tdpState.days.length; dayIdx++) {
+                    const day = tdpState.days[dayIdx];
+                    for (const type of mealTypes) {
+                        // Don't affect incidentals on last day
+                        if (type === 'incidentals' && day.isLast) continue;
+                        
+                        if (!day.perDiem[type]) {
+                            day.perDiem[type] = true;
+                            await tdpCreateExpense(dayIdx, type);
+                        }
+                    }
+                }
+                
+                tdpRenderCards();
+                tdpRecalcTotal();
+            } catch (error) {
+                console.error('Error selecting all meals:', error);
+            }
+        }
+
+        async function tdpClearAll() {
+            if (!tdpState.canEdit || tdpSaving) return;
+            const mealTypes = ['breakfast', 'lunch', 'dinner', 'incidentals'];
+            
+            try {
+                for (let dayIdx = 0; dayIdx < tdpState.days.length; dayIdx++) {
+                    const day = tdpState.days[dayIdx];
+                    for (const type of mealTypes) {
+                        if (day.perDiem[type]) {
+                            day.perDiem[type] = false;
+                            if (day.expenseIds[type]) {
+                                await tdpDeleteExpense(day.expenseIds[type]);
+                                delete day.expenseIds[type];
+                            }
+                        }
+                    }
+                }
+                
+                tdpRenderCards();
+                tdpRecalcTotal();
+            } catch (error) {
+                console.error('Error clearing all meals:', error);
+            }
         }
 
         async function tdpCreateExpense(dayIdx, type) {
