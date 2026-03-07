@@ -2564,12 +2564,12 @@ try {
                 if (!resp.ok) { section.style.display = 'none'; return; }
                 const claims = await resp.json();
                 
-                section.style.display = 'block';
                 const list = document.getElementById('phone-claims-list');
                 
                 if (claims.length === 0) {
-                    list.innerHTML = '<div style="text-align:center;color:#6c757d;padding:20px;">No pending phone benefit claims</div>';
+                    section.style.display = 'none';
                 } else {
+                    section.style.display = 'block';
                     const mn = ['January','February','March','April','May','June','July','August','September','October','November','December'];
                     list.innerHTML = claims.map(c => `
                         <div id="phone-claim-${c.id}" style="background:white;border-radius:10px;padding:16px;margin-bottom:12px;border-left:4px solid #0D9488;">
@@ -2812,12 +2812,12 @@ try {
                 if (!resp.ok) { section.style.display = 'none'; return; }
                 const claims = await resp.json();
                 
-                section.style.display = 'block';
                 const list = document.getElementById('hwa-claims-list');
                 
                 if (claims.length === 0) {
-                    list.innerHTML = '<div style="text-align:center;color:#6c757d;padding:20px;">No pending Health & Wellness claims</div>';
+                    section.style.display = 'none';
                 } else {
+                    section.style.display = 'block';
                     list.innerHTML = claims.map(c => `
                         <div id="hwa-claim-${c.id}" style="background:white;border-radius:10px;padding:16px;margin-bottom:12px;border-left:4px solid #28a745;">
                             <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
