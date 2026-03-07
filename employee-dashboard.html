@@ -756,6 +756,22 @@
             #dp-day-cards, #tdp-day-cards {
                 grid-template-columns: 1fr !important;
             }
+            /* Cost breakdown bar mobile layout */
+            #dp-cost-breakdown, #tdp-cost-breakdown {
+                display: grid !important;
+                grid-template-columns: 1fr 1fr !important;
+            }
+            #dp-cost-breakdown > div, #tdp-cost-breakdown > div {
+                border-right: none !important;
+                border-bottom: 1px solid rgba(13,148,136,0.1);
+            }
+            #dp-cost-breakdown > div:nth-child(2), #tdp-cost-breakdown > div:nth-child(2) {
+                border-right: none !important;
+            }
+            #dp-cost-breakdown > div:nth-child(3), #tdp-cost-breakdown > div:nth-child(3),
+            #dp-cost-breakdown > div:nth-child(4), #tdp-cost-breakdown > div:nth-child(4) {
+                border-bottom: none !important;
+            }
         }
         .dp-day-label {
             font-weight: 700;
@@ -1165,6 +1181,26 @@
                     </div>
                 </div>
 
+                <!-- Cost Breakdown Bar -->
+                <div id="tdp-cost-breakdown" style="display: none; background: #F0FDFA; border: 1px solid #CCFBF1; border-radius: 12px; margin-bottom: 16px; overflow: hidden;">
+                    <div style="flex: 1; text-align: center; padding: 14px 12px; border-right: 1px solid rgba(13,148,136,0.1);">
+                        <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">🍽️ Meals</div>
+                        <div id="tdp-meals-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
+                    </div>
+                    <div style="flex: 1; text-align: center; padding: 14px 12px; border-right: 1px solid rgba(13,148,136,0.1);">
+                        <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">🏨 Lodging</div>
+                        <div id="tdp-lodging-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
+                    </div>
+                    <div style="flex: 1; text-align: center; padding: 14px 12px; border-right: 1px solid rgba(13,148,136,0.1);">
+                        <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">🚗 Transport</div>
+                        <div id="tdp-transport-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
+                    </div>
+                    <div style="flex: 1; text-align: center; padding: 14px 12px;">
+                        <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">📦 Other</div>
+                        <div id="tdp-other-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
+                    </div>
+                </div>
+
                 <!-- Saving indicator -->
                 <div id="tdp-saving" style="display: none; text-align: center; padding: 8px; background: #fff3cd; border-radius: 8px; margin-bottom: 12px; font-size: 13px; color: #856404;">
                     ⏳ Saving...
@@ -1475,6 +1511,26 @@
                             <div style="font-size: 13px; color: #666; font-weight: 600;">Estimated Total</div>
                             <div id="dp-running-total" style="font-size: 28px; font-weight: bold; color: #17a2b8;">$0.00</div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Cost Breakdown Bar -->
+                <div id="dp-cost-breakdown" style="display: none; background: #F0FDFA; border: 1px solid #CCFBF1; border-radius: 12px; margin-bottom: 16px; overflow: hidden;">
+                    <div style="flex: 1; text-align: center; padding: 14px 12px; border-right: 1px solid rgba(13,148,136,0.1);">
+                        <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">🍽️ Meals</div>
+                        <div id="dp-meals-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
+                    </div>
+                    <div style="flex: 1; text-align: center; padding: 14px 12px; border-right: 1px solid rgba(13,148,136,0.1);">
+                        <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">🏨 Lodging</div>
+                        <div id="dp-lodging-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
+                    </div>
+                    <div style="flex: 1; text-align: center; padding: 14px 12px; border-right: 1px solid rgba(13,148,136,0.1);">
+                        <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">🚗 Transport</div>
+                        <div id="dp-transport-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
+                    </div>
+                    <div style="flex: 1; text-align: center; padding: 14px 12px;">
+                        <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">📦 Other</div>
+                        <div id="dp-other-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
                     </div>
                 </div>
 
@@ -4951,6 +5007,12 @@
             if (quickActions) {
                 quickActions.style.display = (canEdit && days.length > 0) ? 'flex' : 'none';
             }
+            
+            // Control cost breakdown visibility
+            const costBreakdown = document.getElementById('dp-cost-breakdown');
+            if (costBreakdown) {
+                costBreakdown.style.display = (days.length > 0) ? 'flex' : 'none';
+            }
 
             let html = '';
             days.forEach((day, idx) => {
@@ -5067,13 +5129,22 @@
 
         function dpRecalcTotal() {
             let total = 0;
+            let mealsTotal = 0;
+            let lodgingTotal = 0;
 
             // Per diems + hotels
             dpState.days.forEach(day => {
                 for (const [type, info] of Object.entries(DP_RATES)) {
-                    if (day.perDiem[type]) total += info.rate;
+                    if (day.perDiem[type]) {
+                        const amount = info.rate;
+                        total += amount;
+                        mealsTotal += amount;
+                    }
                 }
-                if (day.showHotel && day.hotelOn) total += day.hotelRate;
+                if (day.showHotel && day.hotelOn) {
+                    total += day.hotelRate;
+                    lodgingTotal += day.hotelRate;
+                }
             });
 
             // Vehicle (Personal Vehicle mode)
@@ -5092,6 +5163,12 @@
             // Transportation costs (Flight, Train, Bus, Rental, Taxi)
             const transportModes = ['flight', 'train', 'bus', 'rental', 'taxi'];
             let transportTotal = 0;
+            
+            // Add vehicle costs to transport total
+            if (isPersonalActive) {
+                const vehicleTotal = dpState.vehicleKm * DP_VEHICLE_RATE;
+                transportTotal += vehicleTotal;
+            }
             
             transportModes.forEach(mode => {
                 const button = document.querySelector(`#dp-transport-toggles [data-mode="${mode}"]`);
@@ -5140,10 +5217,27 @@
             if (transportTotalEl) transportTotalEl.textContent = `$${transportTotal.toFixed(2)}`;
 
             // Other expenses
-            dpState.otherExpenses.forEach(o => { total += parseFloat(o.amount) || 0; });
+            let otherTotal = 0;
+            dpState.otherExpenses.forEach(o => { 
+                const amount = parseFloat(o.amount) || 0;
+                total += amount;
+                otherTotal += amount;
+            });
 
+            // Update main totals
             document.getElementById('dp-running-total').textContent = `$${total.toFixed(2)}`;
             document.getElementById('dp-grand-total').textContent = `$${total.toFixed(2)}`;
+            
+            // Update cost breakdown bar
+            const mealsEl = document.getElementById('dp-meals-total');
+            const lodgingEl = document.getElementById('dp-lodging-total');
+            const transportEl = document.getElementById('dp-transport-total');
+            const otherEl = document.getElementById('dp-other-total');
+            
+            if (mealsEl) mealsEl.textContent = `$${mealsTotal.toFixed(2)}`;
+            if (lodgingEl) lodgingEl.textContent = `$${lodgingTotal.toFixed(2)}`;
+            if (transportEl) transportEl.textContent = `$${transportTotal.toFixed(2)}`;
+            if (otherEl) otherEl.textContent = `$${otherTotal.toFixed(2)}`;
         }
 
         function dpAddOtherExpense() {
@@ -9082,6 +9176,12 @@
             if (quickActions) {
                 quickActions.style.display = (canEdit && days.length > 0) ? 'flex' : 'none';
             }
+            
+            // Control cost breakdown visibility
+            const costBreakdown = document.getElementById('tdp-cost-breakdown');
+            if (costBreakdown) {
+                costBreakdown.style.display = (days.length > 0) ? 'flex' : 'none';
+            }
 
             let html = '';
             days.forEach((day, idx) => {
@@ -9679,15 +9779,27 @@
 
         function tdpRecalcTotal() {
             let total = 0;
+            let mealsTotal = 0;
+            let lodgingTotal = 0;
             
             // Per diem totals
             tdpState.days.forEach(day => {
                 for (const [type, info] of Object.entries(DP_RATES)) {
-                    if (day.perDiem[type]) total += info.rate;
+                    if (day.perDiem[type]) {
+                        const amount = info.rate;
+                        total += amount;
+                        mealsTotal += amount;
+                    }
                 }
-                if (day.showHotel && day.hotelOn) total += day.hotelRate;
+                if (day.showHotel && day.hotelOn) {
+                    total += day.hotelRate;
+                    lodgingTotal += day.hotelRate;
+                }
             });
 
+            // Transportation costs
+            let transportTotal = 0;
+            
             // Vehicle/Mileage costs (only if personal vehicle is selected)
             const personalButton = document.querySelector('#tdp-transport-toggles [data-mode="personal"]');
             const isPersonalVehicleActive = personalButton && personalButton.classList.contains('active');
@@ -9696,13 +9808,13 @@
                 const km = parseFloat(document.getElementById('tdp-vehicle-km')?.value || 0);
                 tdpState.vehicleKm = km;
                 const vehicleTotal = km * DP_VEHICLE_RATE;
-                total += vehicleTotal;
+                transportTotal += vehicleTotal;
                 const vtEl = document.getElementById('tdp-vehicle-total');
                 if (vtEl) vtEl.textContent = `$${vehicleTotal.toFixed(2)}`;
             }
 
-            // Transportation costs
-            const transportTotal = getAllTransportTotals();
+            // Add other transport costs
+            transportTotal += getAllTransportTotals();
             total += transportTotal;
             
             // Update transportation total display
@@ -9712,6 +9824,7 @@
             }
 
             // Other expenses (if any)
+            let otherTotal = 0;
             // TODO: Add other expenses calculation when implemented
 
             // Update main total displays
@@ -9720,6 +9833,17 @@
             if (grandTotalEl) {
                 grandTotalEl.textContent = `$${total.toFixed(2)}`;
             }
+            
+            // Update cost breakdown bar
+            const mealsEl = document.getElementById('tdp-meals-total');
+            const lodgingEl = document.getElementById('tdp-lodging-total');
+            const transportEl = document.getElementById('tdp-transport-total');
+            const otherEl = document.getElementById('tdp-other-total');
+            
+            if (mealsEl) mealsEl.textContent = `$${mealsTotal.toFixed(2)}`;
+            if (lodgingEl) lodgingEl.textContent = `$${lodgingTotal.toFixed(2)}`;
+            if (transportEl) transportEl.textContent = `$${transportTotal.toFixed(2)}`;
+            if (otherEl) otherEl.textContent = `$${otherTotal.toFixed(2)}`;
             
             // Load variance comparison if trip has linked AT
             tdpLoadVariance();
