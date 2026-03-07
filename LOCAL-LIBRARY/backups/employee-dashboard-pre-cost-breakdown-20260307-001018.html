@@ -756,22 +756,6 @@
             #dp-day-cards, #tdp-day-cards {
                 grid-template-columns: 1fr !important;
             }
-            /* Cost breakdown bar mobile layout */
-            #dp-cost-breakdown, #tdp-cost-breakdown {
-                display: grid !important;
-                grid-template-columns: 1fr 1fr !important;
-            }
-            #dp-cost-breakdown > div, #tdp-cost-breakdown > div {
-                border-right: none !important;
-                border-bottom: 1px solid rgba(13,148,136,0.1);
-            }
-            #dp-cost-breakdown > div:nth-child(2), #tdp-cost-breakdown > div:nth-child(2) {
-                border-right: none !important;
-            }
-            #dp-cost-breakdown > div:nth-child(3), #tdp-cost-breakdown > div:nth-child(3),
-            #dp-cost-breakdown > div:nth-child(4), #tdp-cost-breakdown > div:nth-child(4) {
-                border-bottom: none !important;
-            }
         }
         .dp-day-label {
             font-weight: 700;
@@ -855,104 +839,6 @@
         }
         @media (max-width: 480px) {
             .dp-tile { width: 68px; padding: 6px 2px; }
-        }
-
-        /* Progress Indicator Styles */
-        .progress-indicator {
-            display: flex;
-            align-items: center;
-            padding: 18px 24px;
-            background: #FAFBFC;
-            border: 1px solid #E2E8F0;
-            border-radius: 12px;
-            margin-bottom: 16px;
-        }
-        
-        .progress-step {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            flex: 1;
-            position: relative;
-        }
-        
-        .progress-dot {
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            font-weight: 700;
-            margin-bottom: 8px;
-            z-index: 2;
-            position: relative;
-        }
-        
-        .progress-dot.completed {
-            background: #10B981;
-            color: white;
-        }
-        
-        .progress-dot.current {
-            background: #0D9488;
-            color: white;
-        }
-        
-        .progress-dot.future {
-            background: white;
-            border: 2px solid #E2E8F0;
-            color: #94A3B8;
-        }
-        
-        .progress-label {
-            font-size: 11px;
-            font-weight: 600;
-            text-align: center;
-            line-height: 1.3;
-        }
-        
-        .progress-label.completed {
-            color: #10B981;
-        }
-        
-        .progress-label.current {
-            color: #0D9488;
-            font-weight: 700;
-        }
-        
-        .progress-label.future {
-            color: #94A3B8;
-        }
-        
-        .progress-line {
-            position: absolute;
-            top: 14px;
-            left: 50%;
-            width: 100%;
-            height: 2px;
-            z-index: 1;
-        }
-        
-        .progress-line.completed {
-            background: #10B981;
-        }
-        
-        .progress-line.future {
-            background: #E2E8F0;
-        }
-        
-        @media (max-width: 768px) {
-            .progress-indicator {
-                padding: 12px 16px;
-            }
-            .progress-label {
-                display: none;
-            }
-            .progress-dot {
-                margin-bottom: 0;
-            }
         }
     </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -1279,54 +1165,6 @@
                     </div>
                 </div>
 
-                <!-- Cost Breakdown Bar -->
-                <div id="tdp-cost-breakdown" style="display: none; background: #F0FDFA; border: 1px solid #CCFBF1; border-radius: 12px; margin-bottom: 16px; overflow: hidden;">
-                    <div style="flex: 1; text-align: center; padding: 14px 12px; border-right: 1px solid rgba(13,148,136,0.1);">
-                        <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">🍽️ Meals</div>
-                        <div id="tdp-meals-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
-                    </div>
-                    <div style="flex: 1; text-align: center; padding: 14px 12px; border-right: 1px solid rgba(13,148,136,0.1);">
-                        <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">🏨 Lodging</div>
-                        <div id="tdp-lodging-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
-                    </div>
-                    <div style="flex: 1; text-align: center; padding: 14px 12px; border-right: 1px solid rgba(13,148,136,0.1);">
-                        <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">🚗 Transport</div>
-                        <div id="tdp-transport-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
-                    </div>
-                    <div style="flex: 1; text-align: center; padding: 14px 12px;">
-                        <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">📦 Other</div>
-                        <div id="tdp-other-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
-                    </div>
-                </div>
-
-                <!-- Progress Indicator -->
-                <div id="tdp-progress-indicator" class="progress-indicator" style="display: none;">
-                    <div class="progress-step">
-                        <div id="tdp-progress-dot-1" class="progress-dot">1</div>
-                        <div id="tdp-progress-label-1" class="progress-label">Create<br>AT</div>
-                    </div>
-                    <div class="progress-step">
-                        <div class="progress-line" id="tdp-progress-line-1"></div>
-                        <div id="tdp-progress-dot-2" class="progress-dot">2</div>
-                        <div id="tdp-progress-label-2" class="progress-label">Awaiting<br>Approval</div>
-                    </div>
-                    <div class="progress-step">
-                        <div class="progress-line" id="tdp-progress-line-2"></div>
-                        <div id="tdp-progress-dot-3" class="progress-dot">3</div>
-                        <div id="tdp-progress-label-3" class="progress-label">Take<br>Trip</div>
-                    </div>
-                    <div class="progress-step">
-                        <div class="progress-line" id="tdp-progress-line-3"></div>
-                        <div id="tdp-progress-dot-4" class="progress-dot">4</div>
-                        <div id="tdp-progress-label-4" class="progress-label">Submit<br>Expenses</div>
-                    </div>
-                    <div class="progress-step">
-                        <div class="progress-line" id="tdp-progress-line-4"></div>
-                        <div id="tdp-progress-dot-5" class="progress-dot">5</div>
-                        <div id="tdp-progress-label-5" class="progress-label">Get<br>Reimbursed</div>
-                    </div>
-                </div>
-
                 <!-- Saving indicator -->
                 <div id="tdp-saving" style="display: none; text-align: center; padding: 8px; background: #fff3cd; border-radius: 8px; margin-bottom: 12px; font-size: 13px; color: #856404;">
                     ⏳ Saving...
@@ -1637,54 +1475,6 @@
                             <div style="font-size: 13px; color: #666; font-weight: 600;">Estimated Total</div>
                             <div id="dp-running-total" style="font-size: 28px; font-weight: bold; color: #17a2b8;">$0.00</div>
                         </div>
-                    </div>
-                </div>
-
-                <!-- Cost Breakdown Bar -->
-                <div id="dp-cost-breakdown" style="display: none; background: #F0FDFA; border: 1px solid #CCFBF1; border-radius: 12px; margin-bottom: 16px; overflow: hidden;">
-                    <div style="flex: 1; text-align: center; padding: 14px 12px; border-right: 1px solid rgba(13,148,136,0.1);">
-                        <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">🍽️ Meals</div>
-                        <div id="dp-meals-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
-                    </div>
-                    <div style="flex: 1; text-align: center; padding: 14px 12px; border-right: 1px solid rgba(13,148,136,0.1);">
-                        <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">🏨 Lodging</div>
-                        <div id="dp-lodging-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
-                    </div>
-                    <div style="flex: 1; text-align: center; padding: 14px 12px; border-right: 1px solid rgba(13,148,136,0.1);">
-                        <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">🚗 Transport</div>
-                        <div id="dp-transport-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
-                    </div>
-                    <div style="flex: 1; text-align: center; padding: 14px 12px;">
-                        <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">📦 Other</div>
-                        <div id="dp-other-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
-                    </div>
-                </div>
-
-                <!-- Progress Indicator -->
-                <div id="dp-progress-indicator" class="progress-indicator" style="display: none;">
-                    <div class="progress-step">
-                        <div id="dp-progress-dot-1" class="progress-dot">1</div>
-                        <div id="dp-progress-label-1" class="progress-label">Create<br>AT</div>
-                    </div>
-                    <div class="progress-step">
-                        <div class="progress-line" id="dp-progress-line-1"></div>
-                        <div id="dp-progress-dot-2" class="progress-dot">2</div>
-                        <div id="dp-progress-label-2" class="progress-label">Awaiting<br>Approval</div>
-                    </div>
-                    <div class="progress-step">
-                        <div class="progress-line" id="dp-progress-line-2"></div>
-                        <div id="dp-progress-dot-3" class="progress-dot">3</div>
-                        <div id="dp-progress-label-3" class="progress-label">Take<br>Trip</div>
-                    </div>
-                    <div class="progress-step">
-                        <div class="progress-line" id="dp-progress-line-3"></div>
-                        <div id="dp-progress-dot-4" class="progress-dot">4</div>
-                        <div id="dp-progress-label-4" class="progress-label">Submit<br>Expenses</div>
-                    </div>
-                    <div class="progress-step">
-                        <div class="progress-line" id="dp-progress-line-4"></div>
-                        <div id="dp-progress-dot-5" class="progress-dot">5</div>
-                        <div id="dp-progress-label-5" class="progress-label">Get<br>Reimbursed</div>
                     </div>
                 </div>
 
@@ -5050,10 +4840,6 @@
                 authExpenses = [];
             }
             dpBuildGrid(canEdit);
-            
-            // Update progress indicator for Travel Auth
-            const currentStep = getProgressStep(status, null);
-            updateProgressIndicator('dp', currentStep);
         }
 
         // ═══════════════════════════════════════════════════════════════════════════════
@@ -5164,12 +4950,6 @@
             const quickActions = document.getElementById('dp-quick-actions');
             if (quickActions) {
                 quickActions.style.display = (canEdit && days.length > 0) ? 'flex' : 'none';
-            }
-            
-            // Control cost breakdown visibility
-            const costBreakdown = document.getElementById('dp-cost-breakdown');
-            if (costBreakdown) {
-                costBreakdown.style.display = (days.length > 0) ? 'flex' : 'none';
             }
 
             let html = '';
@@ -5287,22 +5067,13 @@
 
         function dpRecalcTotal() {
             let total = 0;
-            let mealsTotal = 0;
-            let lodgingTotal = 0;
 
             // Per diems + hotels
             dpState.days.forEach(day => {
                 for (const [type, info] of Object.entries(DP_RATES)) {
-                    if (day.perDiem[type]) {
-                        const amount = info.rate;
-                        total += amount;
-                        mealsTotal += amount;
-                    }
+                    if (day.perDiem[type]) total += info.rate;
                 }
-                if (day.showHotel && day.hotelOn) {
-                    total += day.hotelRate;
-                    lodgingTotal += day.hotelRate;
-                }
+                if (day.showHotel && day.hotelOn) total += day.hotelRate;
             });
 
             // Vehicle (Personal Vehicle mode)
@@ -5321,12 +5092,6 @@
             // Transportation costs (Flight, Train, Bus, Rental, Taxi)
             const transportModes = ['flight', 'train', 'bus', 'rental', 'taxi'];
             let transportTotal = 0;
-            
-            // Add vehicle costs to transport total
-            if (isPersonalActive) {
-                const vehicleTotal = dpState.vehicleKm * DP_VEHICLE_RATE;
-                transportTotal += vehicleTotal;
-            }
             
             transportModes.forEach(mode => {
                 const button = document.querySelector(`#dp-transport-toggles [data-mode="${mode}"]`);
@@ -5375,27 +5140,10 @@
             if (transportTotalEl) transportTotalEl.textContent = `$${transportTotal.toFixed(2)}`;
 
             // Other expenses
-            let otherTotal = 0;
-            dpState.otherExpenses.forEach(o => { 
-                const amount = parseFloat(o.amount) || 0;
-                total += amount;
-                otherTotal += amount;
-            });
+            dpState.otherExpenses.forEach(o => { total += parseFloat(o.amount) || 0; });
 
-            // Update main totals
             document.getElementById('dp-running-total').textContent = `$${total.toFixed(2)}`;
             document.getElementById('dp-grand-total').textContent = `$${total.toFixed(2)}`;
-            
-            // Update cost breakdown bar
-            const mealsEl = document.getElementById('dp-meals-total');
-            const lodgingEl = document.getElementById('dp-lodging-total');
-            const transportEl = document.getElementById('dp-transport-total');
-            const otherEl = document.getElementById('dp-other-total');
-            
-            if (mealsEl) mealsEl.textContent = `$${mealsTotal.toFixed(2)}`;
-            if (lodgingEl) lodgingEl.textContent = `$${lodgingTotal.toFixed(2)}`;
-            if (transportEl) transportEl.textContent = `$${transportTotal.toFixed(2)}`;
-            if (otherEl) otherEl.textContent = `$${otherTotal.toFixed(2)}`;
         }
 
         function dpAddOtherExpense() {
@@ -9136,12 +8884,6 @@
                 tdpExpenses = Array.isArray(trip.expenses) ? trip.expenses : [];
                 tdpBuildGrid();
                 
-                // Update progress indicator for Trip
-                // For trips, we assume AT is approved (step 3+) since trip exists
-                const atStatus = 'approved'; // Trip can only exist if AT was approved
-                const currentStep = getProgressStep(atStatus, tdpState.tripStatus);
-                updateProgressIndicator('tdp', currentStep);
-                
                 // Distribute hotels after grid is built
                 if (tdpHotels.length > 0) {
                     tdpDistributeAllHotels();
@@ -9197,11 +8939,6 @@
                 tdpExpenses = [];
             }
             tdpBuildGrid();
-            
-            // Update progress indicator for Trip (second call location)
-            const atStatus = 'approved'; // Trip can only exist if AT was approved
-            const currentStep = getProgressStep(atStatus, tdpState.tripStatus);
-            updateProgressIndicator('tdp', currentStep);
         }
 
         function tdpBuildGrid() {
@@ -9344,12 +9081,6 @@
             const quickActions = document.getElementById('tdp-quick-actions');
             if (quickActions) {
                 quickActions.style.display = (canEdit && days.length > 0) ? 'flex' : 'none';
-            }
-            
-            // Control cost breakdown visibility
-            const costBreakdown = document.getElementById('tdp-cost-breakdown');
-            if (costBreakdown) {
-                costBreakdown.style.display = (days.length > 0) ? 'flex' : 'none';
             }
 
             let html = '';
@@ -9948,27 +9679,15 @@
 
         function tdpRecalcTotal() {
             let total = 0;
-            let mealsTotal = 0;
-            let lodgingTotal = 0;
             
             // Per diem totals
             tdpState.days.forEach(day => {
                 for (const [type, info] of Object.entries(DP_RATES)) {
-                    if (day.perDiem[type]) {
-                        const amount = info.rate;
-                        total += amount;
-                        mealsTotal += amount;
-                    }
+                    if (day.perDiem[type]) total += info.rate;
                 }
-                if (day.showHotel && day.hotelOn) {
-                    total += day.hotelRate;
-                    lodgingTotal += day.hotelRate;
-                }
+                if (day.showHotel && day.hotelOn) total += day.hotelRate;
             });
 
-            // Transportation costs
-            let transportTotal = 0;
-            
             // Vehicle/Mileage costs (only if personal vehicle is selected)
             const personalButton = document.querySelector('#tdp-transport-toggles [data-mode="personal"]');
             const isPersonalVehicleActive = personalButton && personalButton.classList.contains('active');
@@ -9977,13 +9696,13 @@
                 const km = parseFloat(document.getElementById('tdp-vehicle-km')?.value || 0);
                 tdpState.vehicleKm = km;
                 const vehicleTotal = km * DP_VEHICLE_RATE;
-                transportTotal += vehicleTotal;
+                total += vehicleTotal;
                 const vtEl = document.getElementById('tdp-vehicle-total');
                 if (vtEl) vtEl.textContent = `$${vehicleTotal.toFixed(2)}`;
             }
 
-            // Add other transport costs
-            transportTotal += getAllTransportTotals();
+            // Transportation costs
+            const transportTotal = getAllTransportTotals();
             total += transportTotal;
             
             // Update transportation total display
@@ -9993,7 +9712,6 @@
             }
 
             // Other expenses (if any)
-            let otherTotal = 0;
             // TODO: Add other expenses calculation when implemented
 
             // Update main total displays
@@ -10003,17 +9721,6 @@
                 grandTotalEl.textContent = `$${total.toFixed(2)}`;
             }
             
-            // Update cost breakdown bar
-            const mealsEl = document.getElementById('tdp-meals-total');
-            const lodgingEl = document.getElementById('tdp-lodging-total');
-            const transportEl = document.getElementById('tdp-transport-total');
-            const otherEl = document.getElementById('tdp-other-total');
-            
-            if (mealsEl) mealsEl.textContent = `$${mealsTotal.toFixed(2)}`;
-            if (lodgingEl) lodgingEl.textContent = `$${lodgingTotal.toFixed(2)}`;
-            if (transportEl) transportEl.textContent = `$${transportTotal.toFixed(2)}`;
-            if (otherEl) otherEl.textContent = `$${otherTotal.toFixed(2)}`;
-            
             // Load variance comparison if trip has linked AT
             tdpLoadVariance();
         }
@@ -10021,68 +9728,6 @@
         function tdpShowSaving(show) {
             tdpSaving = show;
             document.getElementById('tdp-saving').style.display = show ? 'block' : 'none';
-        }
-
-        // ═══════════════════════════════════════════════════════════════════════
-        // 📊 PROGRESS INDICATOR FUNCTIONS
-        // ═══════════════════════════════════════════════════════════════════════
-
-        function getProgressStep(atStatus, tripStatus) {
-            // Step 1: Create AT - DRAFT AT
-            // Step 2: Awaiting Approval - PENDING AT
-            // Step 3: Take Trip - APPROVED AT, no trip or DRAFT trip
-            // Step 4: Submit Expenses - Trip PENDING
-            // Step 5: Get Reimbursed - Trip APPROVED (all steps complete)
-
-            if (atStatus === 'draft') return 1;
-            if (atStatus === 'pending') return 2;
-            if (atStatus === 'approved') {
-                if (!tripStatus || tripStatus === 'draft') return 3;
-                if (tripStatus === 'pending') return 4;
-                if (tripStatus === 'approved') return 5;
-            }
-            return 1; // default
-        }
-
-        function updateProgressIndicator(prefix, currentStep) {
-            const progressIndicator = document.getElementById(`${prefix}-progress-indicator`);
-            if (!progressIndicator) return;
-            
-            // Show the progress indicator
-            progressIndicator.style.display = 'flex';
-            
-            // Update each step
-            for (let i = 1; i <= 5; i++) {
-                const dot = document.getElementById(`${prefix}-progress-dot-${i}`);
-                const label = document.getElementById(`${prefix}-progress-label-${i}`);
-                const line = document.getElementById(`${prefix}-progress-line-${i}`);
-                
-                if (!dot || !label) continue;
-                
-                // Clear existing classes
-                dot.className = 'progress-dot';
-                label.className = 'progress-label';
-                
-                if (i < currentStep) {
-                    // Completed step
-                    dot.classList.add('completed');
-                    dot.innerHTML = '✓';
-                    label.classList.add('completed');
-                    if (line) line.className = 'progress-line completed';
-                } else if (i === currentStep) {
-                    // Current step
-                    dot.classList.add('current');
-                    dot.innerHTML = i.toString();
-                    label.classList.add('current');
-                    if (line) line.className = 'progress-line future';
-                } else {
-                    // Future step
-                    dot.classList.add('future');
-                    dot.innerHTML = i.toString();
-                    label.classList.add('future');
-                    if (line) line.className = 'progress-line future';
-                }
-            }
         }
 
         // ═══════════════════════════════════════════════════════════════════════
