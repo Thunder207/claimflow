@@ -1761,10 +1761,12 @@ try {
                                         <tbody>
                                             ${claimExpenses.map(exp => {
                                                 const icon = catIcons2[exp.expense_type] || '📋';
+                                                const isPerDiem = ['breakfast','lunch','dinner','incidentals'].includes(exp.expense_type);
                                                 const isKm = exp.expense_type === 'kilometric';
+                                                const noReceiptNeeded = isPerDiem || isKm;
                                                 const kmMatch = exp.description && exp.description.match(/(\d+(?:\.\d+)?)km/);
                                                 const hasReceipt = exp.has_receipt || exp.receipt_photo;
-                                                const receiptCell = isKm
+                                                const receiptCell = noReceiptNeeded
                                                     ? '<span style="color:#999;">N/A</span>'
                                                     : hasReceipt
                                                         ? `<span onclick="viewExpenseReceipt(${exp.id})" style="color:#0D9488;text-decoration:underline;cursor:pointer;">📎 View</span>`
@@ -1799,9 +1801,11 @@ try {
                         ungrouped.forEach(expense => {
                             const statusBdg4 = { approved: {bg:'#ECFDF5',color:'#065F46',text:'✅ APPROVED'}, rejected: {bg:'#FEF2F2',color:'#DC2626',text:'❌ REJECTED'}, returned: {bg:'#FEF3C7',color:'#D97706',text:'↩️ RETURNED'}, pending: {bg:'#FFFBEB',color:'#D97706',text:'⏳ PENDING'} };
                             const badge4 = statusBdg4[expense.status] || statusBdg4.pending;
+                            const isPerDiem4 = ['breakfast','lunch','dinner','incidentals'].includes(expense.expense_type);
                             const isKm4 = expense.expense_type === 'kilometric';
+                            const noReceiptNeeded4 = isPerDiem4 || isKm4;
                             const hasReceipt4 = expense.has_receipt || expense.receipt_photo;
-                            const receiptBtn4 = isKm4
+                            const receiptBtn4 = noReceiptNeeded4
                                 ? '<span style="color:#999;font-size:12px;">N/A</span>'
                                 : hasReceipt4
                                     ? `<span onclick="viewExpenseReceipt(${expense.id})" style="color:#0D9488;font-size:12px;text-decoration:underline;cursor:pointer;">📎 View</span>`
@@ -2127,10 +2131,12 @@ try {
                                     <tbody>
                                         ${claimExpenses.map(exp => {
                                             const icon = catIcons[exp.expense_type] || '📋';
+                                            const isPerDiem = ['breakfast','lunch','dinner','incidentals'].includes(exp.expense_type);
                                             const isKm = exp.expense_type === 'kilometric';
+                                            const noReceiptNeeded = isPerDiem || isKm;
                                             const kmMatch = exp.description && exp.description.match(/(\d+(?:\.\d+)?)km/);
                                             const hasReceipt = exp.has_receipt || exp.receipt_photo;
-                                            const receiptCell = isKm
+                                            const receiptCell = noReceiptNeeded
                                                 ? '<span style="color:#999;">N/A</span>'
                                                 : hasReceipt
                                                     ? `<span onclick="viewExpenseReceipt(${exp.id})" style="color:#0D9488;text-decoration:underline;cursor:pointer;">📎 View</span>`
@@ -2165,11 +2171,13 @@ try {
                     ungroupedExps.forEach(expense => {
                         const statusBdg3 = { approved: {bg:'#ECFDF5',color:'#065F46',text:'✅ APPROVED'}, rejected: {bg:'#FEF2F2',color:'#DC2626',text:'❌ REJECTED'}, pending: {bg:'#FFFBEB',color:'#D97706',text:'⏳ PENDING'} };
                         const badge3 = statusBdg3[expense.status] || statusBdg3.pending;
+                        const isPerDiem = ['breakfast','lunch','dinner','incidentals'].includes(expense.expense_type);
                         const isKm = expense.expense_type === 'kilometric';
+                        const noReceiptNeeded = isPerDiem || isKm;
                         const hasReceipt = expense.has_receipt || expense.receipt_photo;
                         const receiptBtn = expense._isTransit
                             ? (expense.status === 'approved' ? `<button onclick="viewTransitReceipt(${expense._transitId})" style="background:#17a2b8;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;">📎 Receipt</button>` : '')
-                            : isKm
+                            : noReceiptNeeded
                                 ? '<span style="color:#999;font-size:12px;">N/A</span>'
                                 : hasReceipt
                                     ? `<span onclick="viewExpenseReceipt(${expense.id})" style="color:#0D9488;font-size:12px;text-decoration:underline;cursor:pointer;">📎 View</span>`
@@ -3911,7 +3919,16 @@ try {
                 const result = await response.json();
                 
                 if (result.success) {
-                    showMessage('success', '✅ Expense approved! Employee will be notified and expense is ready for payment.');
+                    // Auto-generate PDF for individual approved expense
+                    try {
+                        await fetch(`/api/expenses/${expenseId}/generate-pdf`, {
+                            method: 'POST',
+                            headers: { 'Authorization': 'Bearer ' + sessionId }
+                        });
+                    } catch(pdfError) {
+                        console.warn('PDF auto-generation failed:', pdfError);
+                    }
+                    showMessage('success', '✅ Expense approved! Employee will be notified and PDF report generated.');
                     loadExpensesWithSearch();
                 } else {
                     showMessage('danger', result.error || 'Failed to approve expense - please try again');
