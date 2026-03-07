@@ -2049,7 +2049,10 @@ try {
                                                 <span style="font-weight: 600; color: #27ae60;">$${dayTotal.toFixed(2)}</span>
                                             </div>
                                             <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-                                                ${byDate[date].map(e => {
+                                                ${byDate[date].sort((a, b) => {
+                                                    const orderMap = { 'breakfast': 1, 'lunch': 2, 'dinner': 3, 'incidentals': 4, 'hotel': 5 };
+                                                    return (orderMap[a.expense_type] || 99) - (orderMap[b.expense_type] || 99);
+                                                }).map(e => {
                                                     const emoji = typeEmoji[e.expense_type] || '📋';
                                                     const label = e.meal_name || e.expense_type;
                                                     const sColor = e.status === 'approved' ? '#d4edda' : e.status === 'rejected' ? '#f8d7da' : '#fff3cd';
@@ -4355,7 +4358,10 @@ try {
                             <span style="font-weight: 600; color: #27ae60;">$${dayTotal.toFixed(2)}</span>
                         </div>
                         <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-                            ${byDate[date].map(e => {
+                            ${byDate[date].sort((a, b) => {
+                                const orderMap = { 'breakfast': 1, 'lunch': 2, 'dinner': 3, 'incidentals': 4, 'hotel': 5 };
+                                return (orderMap[a.expense_type] || 99) - (orderMap[b.expense_type] || 99);
+                            }).map(e => {
                                 const emoji = typeEmoji[e.expense_type] || '📋';
                                 const label = e.meal_name || e.expense_type;
                                 return `<span style="background: white; border: 1px solid #dee2e6; border-radius: 6px; padding: 4px 10px; font-size: 13px;">${emoji} ${label} <strong>$${parseFloat(e.amount).toFixed(2)}</strong></span>`;
