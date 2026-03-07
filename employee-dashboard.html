@@ -741,10 +741,21 @@
         /* Day Planner Styles */
         .dp-day-card {
             background: white;
-            border-radius: 12px;
+            border-radius: 14px;
             padding: 16px;
-            border: 1px solid #dee2e6;
+            border: 1px solid #E2E8F0;
+            border-left: 4px solid #0D9488;
             box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        .dp-day-card.return-day {
+            border-left: 4px solid #F59E0B;
+        }
+        
+        /* Day card grid responsive layout */
+        @media (max-width: 768px) {
+            #dp-day-cards, #tdp-day-cards {
+                grid-template-columns: 1fr !important;
+            }
         }
         .dp-day-label {
             font-weight: 700;
@@ -1171,7 +1182,7 @@
                 </div>
 
                 <!-- Day Cards Container -->
-                <div id="tdp-day-cards" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;"></div>
+                <div id="tdp-day-cards" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;"></div>
 
                 <!-- 🚗 SMART TRANSPORTATION SECTION -->
                 <div id="tdp-transport-section" style="background: linear-gradient(135deg, #e8f4f8 0%, #d1ecf1 100%); padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #17a2b8;">
@@ -1485,7 +1496,7 @@
                     </div>
                 </div>
 
-                <div id="dp-day-cards" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;"></div>
+                <div id="dp-day-cards" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;"></div>
 
                 <!-- 🚗 SMART TRANSPORTATION SECTION -->
                 <div id="dp-transport-section" style="background: linear-gradient(135deg, #e8f4f8 0%, #d1ecf1 100%); padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #17a2b8;">
@@ -4910,8 +4921,20 @@
             let html = '';
             days.forEach((day, idx) => {
                 const labelExtra = day.dayLabel ? ` (${day.dayLabel})` : '';
-                html += `<div class="dp-day-card">`;
-                html += `<div class="dp-day-label">📅 ${day.monthDay} - Day ${day.dayNum}${labelExtra}</div>`;
+                const returnClass = day.isLast ? ' return-day' : '';
+                
+                // Calculate daily total
+                let dayTotal = 0;
+                for (const [type, info] of Object.entries(DP_RATES)) {
+                    if (day.perDiem[type]) dayTotal += info.rate;
+                }
+                if (day.showHotel && day.hotelOn) dayTotal += day.hotelRate;
+                
+                html += `<div class="dp-day-card${returnClass}">`;
+                html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">`;
+                html += `<div style="font-weight: 700; color: #2c3e50; font-size: 15px;">📅 ${day.monthDay} — Day ${day.dayNum}${labelExtra}</div>`;
+                html += `<div style="color: #0D9488; font-weight: 800; font-size: 16px;">$${dayTotal.toFixed(2)}</div>`;
+                html += `</div>`;
                 html += `<div class="dp-tiles">`;
 
                 // Per diem tiles
@@ -8993,8 +9016,20 @@
             let html = '';
             days.forEach((day, idx) => {
                 const labelExtra = day.dayLabel ? ` (${day.dayLabel})` : '';
-                html += `<div class="dp-day-card">`;
-                html += `<div class="dp-day-label">📅 ${day.monthDay} - Day ${day.dayNum}${labelExtra}</div>`;
+                const returnClass = day.isLast ? ' return-day' : '';
+                
+                // Calculate daily total
+                let dayTotal = 0;
+                for (const [type, info] of Object.entries(DP_RATES)) {
+                    if (day.perDiem[type]) dayTotal += info.rate;
+                }
+                if (day.showHotel && day.hotelOn) dayTotal += day.hotelRate;
+                
+                html += `<div class="dp-day-card${returnClass}">`;
+                html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">`;
+                html += `<div style="font-weight: 700; color: #2c3e50; font-size: 15px;">📅 ${day.monthDay} — Day ${day.dayNum}${labelExtra}</div>`;
+                html += `<div style="color: #0D9488; font-weight: 800; font-size: 16px;">$${dayTotal.toFixed(2)}</div>`;
+                html += `</div>`;
                 html += `<div class="dp-tiles">`;
 
                 for (const [type, info] of Object.entries(DP_RATES)) {
