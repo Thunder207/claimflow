@@ -1,2 +1,4 @@
 v8.5 - Add 5-step progress indicator to Travel Auth/Trips - Sat Mar  7 15:30:15 EST 2026
 v8.5 - DEPLOYED - Sat Mar  7 15:33:56 EST 2026 - Progress indicator implemented
+v8.6 - Change day cards to 2-column grid on desktop - Sat Mar  7 19:03:42 EST 2026
+v8.6 - DEPLOYED - Sat Mar  7 19:05:02 EST 2026 - 2-column day cards grid with departure day styling

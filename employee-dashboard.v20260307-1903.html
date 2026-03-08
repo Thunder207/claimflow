@@ -750,9 +750,6 @@
         .dp-day-card.return-day {
             border-left: 4px solid #F59E0B;
         }
-        .dp-day-card.departure-day {
-            border-left: 4px solid #0A4F4A;
-        }
         
         /* Day card grid responsive layout */
         @media (max-width: 768px) {
@@ -5178,7 +5175,6 @@
             let html = '';
             days.forEach((day, idx) => {
                 const labelExtra = day.dayLabel ? ` (${day.dayLabel})` : '';
-                const departureClass = day.isFirst ? ' departure-day' : '';
                 const returnClass = day.isLast ? ' return-day' : '';
                 
                 // Calculate daily total
@@ -5188,10 +5184,10 @@
                 }
                 if (day.showHotel && day.hotelOn) dayTotal += day.hotelRate;
                 
-                html += `<div class="dp-day-card${departureClass}${returnClass}">`;
+                html += `<div class="dp-day-card${returnClass}">`;
                 html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">`;
                 html += `<div style="font-weight: 700; color: #2c3e50; font-size: 15px;">📅 ${day.monthDay} — Day ${day.dayNum}${labelExtra}</div>`;
-                html += `<div style="color: #0D9488; font-weight: 800; font-size: 17px;">$${dayTotal.toFixed(2)}</div>`;
+                html += `<div style="color: #0D9488; font-weight: 800; font-size: 16px;">$${dayTotal.toFixed(2)}</div>`;
                 html += `</div>`;
                 html += `<div class="dp-tiles">`;
 
@@ -9359,7 +9355,6 @@
             let html = '';
             days.forEach((day, idx) => {
                 const labelExtra = day.dayLabel ? ` (${day.dayLabel})` : '';
-                const departureClass = day.isFirst ? ' departure-day' : '';
                 const returnClass = day.isLast ? ' return-day' : '';
                 
                 // Calculate daily total
@@ -9369,10 +9364,10 @@
                 }
                 if (day.showHotel && day.hotelOn) dayTotal += day.hotelRate;
                 
-                html += `<div class="dp-day-card${departureClass}${returnClass}">`;
+                html += `<div class="dp-day-card${returnClass}">`;
                 html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">`;
                 html += `<div style="font-weight: 700; color: #2c3e50; font-size: 15px;">📅 ${day.monthDay} — Day ${day.dayNum}${labelExtra}</div>`;
-                html += `<div style="color: #0D9488; font-weight: 800; font-size: 17px;">$${dayTotal.toFixed(2)}</div>`;
+                html += `<div style="color: #0D9488; font-weight: 800; font-size: 16px;">$${dayTotal.toFixed(2)}</div>`;
                 html += `</div>`;
                 html += `<div class="dp-tiles">`;
 
