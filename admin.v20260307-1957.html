@@ -28,7 +28,7 @@
             background: transparent;
             color: #333;
             cursor: pointer;
-            border-radius: 14px;
+            border-radius: 16px;
             transition: all 0.2s ease;
             font-weight: 600;
             font-size: 12px;
@@ -56,7 +56,7 @@
             background: linear-gradient(135deg, #0D9488 0%, #0D6B63 50%, #0A4F4A 100%); 
             color: white; 
             padding: 30px 20px; 
-            border-radius: 14px; 
+            border-radius: 16px; 
             margin-bottom: 20px; 
             box-shadow: 0 8px 25px rgba(26, 35, 126, 0.25), 0 4px 10px rgba(0,0,0,0.1); 
             display: flex; 
@@ -64,7 +64,7 @@
             align-items: center; 
             backdrop-filter: blur(10px);
         }
-        .role-selector { background: white; padding: 20px; border-radius: 14px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); border-left: 5px solid #0D9488; }
+        .role-selector { background: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); border-left: 5px solid #0D9488; }
         .nav-tabs { margin: 20px 0; }
         .nav-tab { padding: 15px 25px; margin: 0 8px; background: white; border: 1px solid #E2E8F0; cursor: pointer; border-radius: 20px; display: inline-block; transition: all 0.3s ease; font-weight: 600; color: #6c757d; }
         .nav-tab.active { background: #0D9488; color: white; border-color: #0D9488; transform: translateY(-2px); box-shadow: 0 4px 15px rgba(13, 148, 136, 0.3); }
@@ -276,7 +276,7 @@
         /* MOBILE RESPONSIVE - Enhanced mobile experience */
         @media (max-width: 768px) {
             body { padding: 12px; }
-            .container { max-width: 100%; border-radius: 14px; }
+            .container { max-width: 100%; border-radius: 15px; }
             
             .header { 
                 padding: 20px 16px; 
@@ -383,7 +383,7 @@
                 padding: 10px 12px; 
                 font-size: 12px; 
                 min-width: 90px;
-                border-radius: 14px;
+                border-radius: 16px;
             }
             
             .stats { grid-template-columns: 1fr; gap: 10px; }
@@ -934,7 +934,7 @@ try {
             
             <!-- Export Preview Modal -->
             <div id="export-preview-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000;">
-                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 14px; max-width: 90%; max-height: 80%; overflow: auto;">
+                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; max-width: 90%; max-height: 80%; overflow: auto;">
                     <h3 style="margin-bottom: 20px;">📋 Sage 300 Export Preview</h3>
                     <div id="export-preview-content" style="font-family: monospace; background: #f8f9fa; padding: 15px; border-radius: 8px; max-height: 400px; overflow: auto; white-space: pre-wrap;"></div>
                     <div style="margin-top: 20px; text-align: right;">
@@ -947,7 +947,7 @@ try {
         
         <!-- Signup Link Modal -->
         <div id="signup-link-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000;">
-            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 14px; max-width: 500px; width: 90%;">
+            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; max-width: 500px; width: 90%;">
                 <h3 style="margin-bottom: 20px; color: #28a745;">🔗 Employee Invitation Created</h3>
                 <p style="margin-bottom: 15px;">
                     <strong id="signup-employee-name"></strong> has been added to the system. 
@@ -1065,7 +1065,7 @@ try {
             <div class="section-header">⚙️ Variance Threshold Settings</div>
             
             <div style="max-width: 600px; margin: 0 auto;">
-                <div style="background: #f8f9fa; padding: 20px; border-radius: 14px; margin-bottom: 20px; border-left: 4px solid #0D9488;">
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #0D9488;">
                     <p style="color: #495057; font-size: 14px; line-height: 1.6;">
                         A category is flagged <span style="color: #dc3545; font-weight: bold;">RED</span> when <strong>BOTH</strong> conditions are met:
                     </p>
@@ -1123,7 +1123,7 @@ try {
             <div style="margin-top: 40px; border-top: 2px solid #eee; padding-top: 30px;">
                 <div class="section-header" style="background: linear-gradient(135deg, #0D9488 0%, #0D9488 100%);">📱 Phone Benefit Settings</div>
                 <div style="max-width: 600px; margin: 0 auto;">
-                    <div style="background: #f8f9fa; padding: 20px; border-radius: 14px; margin-bottom: 20px; border-left: 4px solid #0D9488;">
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #0D9488;">
                         <p style="color: #495057; font-size: 14px; line-height: 1.6; margin-bottom: 10px;">
                             Configure the monthly maximum and claim window for phone benefit claims.
                         </p>
@@ -1172,7 +1172,7 @@ try {
             <div style="margin-top: 40px; border-top: 2px solid #eee; padding-top: 30px;">
                 <div class="section-header">🚍 Public Transit Benefit Settings</div>
                 <div style="max-width: 600px; margin: 0 auto;">
-                    <div style="background: #f8f9fa; padding: 20px; border-radius: 14px; margin-bottom: 20px; border-left: 4px solid #17a2b8;">
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #17a2b8;">
                         <p style="color: #495057; font-size: 14px; line-height: 1.6; margin-bottom: 10px;">
                             Configure the monthly maximum and claim window for public transit benefit claims.
                         </p>
@@ -1218,7 +1218,7 @@ try {
             <div style="margin-top: 40px; border-top: 2px solid #eee; padding-top: 30px;">
                 <div class="section-header" style="background: linear-gradient(135deg, #28a745 0%, #218838 100%);">💪 Health & Wellness Account Settings</div>
                 <div style="max-width: 600px; margin: 0 auto;">
-                    <div style="background: #f8f9fa; padding: 20px; border-radius: 14px; margin-bottom: 20px; border-left: 4px solid #28a745;">
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #28a745;">
                         <p style="color: #495057; font-size: 14px; line-height: 1.6; margin-bottom: 10px;">
                             Configure the annual maximum for Health & Wellness Account claims.
                         </p>
@@ -5148,8 +5148,8 @@ try {
                             rates.forEach((rate, index) => {
                                 const isCurrentRate = !rate.end_date;
                                 const statusBadge = isCurrentRate 
-                                    ? '<span style="background: #28a745; color: white; padding: 4px 12px; border-radius: 14px; font-size: 0.8em; font-weight: 600;">CURRENT</span>'
-                                    : '<span style="background: #6c757d; color: white; padding: 4px 12px; border-radius: 14px; font-size: 0.8em; font-weight: 600;">HISTORICAL</span>';
+                                    ? '<span style="background: #28a745; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.8em; font-weight: 600;">CURRENT</span>'
+                                    : '<span style="background: #6c757d; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.8em; font-weight: 600;">HISTORICAL</span>';
                                 
                                 html += `
                                     <div style="display: flex; justify-content: between; align-items: center; padding: 15px; background: ${isCurrentRate ? '#f8fcff' : '#f8f9fa'}; border-radius: 8px; border-left: 4px solid ${isCurrentRate ? '#28a745' : '#6c757d'};">

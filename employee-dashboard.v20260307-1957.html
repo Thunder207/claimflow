@@ -59,7 +59,7 @@
             background: transparent;
             color: white;
             cursor: pointer;
-            border-radius: 14px;
+            border-radius: 16px;
             transition: all 0.2s ease;
             font-weight: 600;
             font-size: 12px;
@@ -67,7 +67,7 @@
 
         .language-toggle button.active {
             background: rgba(255,255,255,0.3);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
 
         .language-toggle button:hover {
@@ -80,10 +80,10 @@
         }
 
         .header {
-            background: linear-gradient(135deg, #0D9488 0%, #0D6B63 50%, #0A4F4A 100%);
+            background: linear-gradient(135deg, #0A4F4A 0%, #0D6B63 50%, #0F766E 100%);
             color: white;
             padding: 25px 30px;
-            border-radius: 14px;
+            border-radius: 16px;
             margin-bottom: 25px;
             box-shadow: 0 8px 25px rgba(26, 35, 126, 0.25), 0 4px 10px rgba(0,0,0,0.1);
             display: flex;
@@ -253,7 +253,7 @@
         .tab-content {
             display: none;
             background: white;
-            border-radius: 14px;
+            border-radius: 15px;
             padding: 30px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         }
@@ -272,7 +272,7 @@
         .stat-card {
             background: linear-gradient(135deg, #ffffff 0%, #f8fcff 100%);
             padding: 25px;
-            border-radius: 14px;
+            border-radius: 16px;
             text-align: center;
             box-shadow: 0 4px 20px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.1);
             border: none;
@@ -351,7 +351,7 @@
         .expense-form {
             background: linear-gradient(135deg, #ffffff 0%, #f8fcff 100%);
             padding: 28px;
-            border-radius: 14px;
+            border-radius: 16px;
             margin-bottom: 25px;
             border: 1px solid #F0FDFA;
             box-shadow: 0 6px 25px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.05);
@@ -371,7 +371,7 @@
 
         .photo-section {
             border: 3px dashed #bdc3c7;
-            border-radius: 14px;
+            border-radius: 15px;
             padding: 30px;
             text-align: center;
             cursor: pointer;
@@ -462,9 +462,9 @@
             box-shadow: 0 2px 6px rgba(107, 114, 128, 0.25);
         }
         .status-awaiting-signup {
-            background: linear-gradient(135deg, #0D9488 0%, #0F766E 100%);
+            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
             color: white;
-            box-shadow: 0 2px 6px rgba(13, 148, 136, 0.25);
+            box-shadow: 0 2px 6px rgba(139, 92, 246, 0.25);
         }
         .status-active {
             background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
@@ -712,7 +712,7 @@
                 padding: 10px 12px;
                 font-size: 12px;
                 min-width: 90px;
-                border-radius: 14px;
+                border-radius: 16px;
             }
 
             .tab-content { padding: 16px 12px; }
@@ -979,7 +979,7 @@
     <div class="container">
         <div class="header">
             <div class="header-info">
-                <h1><span style="font-weight:800; font-size:24px; letter-spacing:-0.5px;"><span style="color:#FBBF24;">Claim</span><span style="color:#FFFFFF;">Flow</span></span> <span style="font-weight:600; font-size:18px; opacity:0.9;">— Employee Portal</span></h1>
+                <h1 id="welcome-text">👤 Employee Dashboard</h1>
                 <p id="user-info" data-i18n="loading">Loading...</p>
             </div>
             <div class="header-actions">
@@ -1082,11 +1082,11 @@
                     <span id="claim-total" style="font-size: 22px; font-weight: bold; color: #28a745;">$0.00</span>
                 </div>
 
-                <button type="button" onclick="addStandaloneDraft()" class="btn" style="width: 100%; padding: 14px 30px; font-size: 17px; font-weight: 700; background: linear-gradient(135deg, #0D9488, #0F766E); color: white; border: none; border-radius: 10px; cursor: pointer; letter-spacing: 0.5px; min-height: 44px; transition: all 0.2s ease;" data-i18n="add_to_draft">✅ Add to Draft</button>
+                <button type="button" onclick="addStandaloneDraft()" class="btn" style="width: 100%; padding: 14px 30px; font-size: 17px; font-weight: 700; background: linear-gradient(135deg, #28a745 0%, #20963c 100%); color: white; border: none; border-radius: 10px; cursor: pointer; letter-spacing: 0.5px;" data-i18n="add_to_draft">✅ Add to Draft</button>
             </div>
 
             <!-- 🚍 Public Transit Benefit Form (shown when category selected) -->
-            <div id="transit-form-container" style="display: none; margin-top: 20px; border: 2px solid #17a2b8; border-radius: 14px; padding: 20px; background: linear-gradient(135deg, #e3f8fd 0%, #f0fbfc 100%);">
+            <div id="transit-form-container" style="display: none; margin-top: 20px; border: 2px solid #17a2b8; border-radius: 12px; padding: 20px; background: linear-gradient(135deg, #e3f8fd 0%, #f0fbfc 100%);">
                 <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 15px;">
                     <h4 style="color: #17a2b8; margin: 0; display: flex; align-items: center; gap: 8px;">
                         🚍 <span>Public Transit Benefit</span>
@@ -1120,7 +1120,7 @@
                     <div style="font-size: 16px; color: #495057; font-weight: 600;">
                         Total Claim: <span id="transit-total-amount" style="color: #28a745;">$0.00</span>
                     </div>
-                    <button type="button" onclick="submitTransitClaimDirect();" id="transit-submit-btn" style="padding: 12px 25px; font-size: 14px; background: linear-gradient(135deg, #0D9488, #0F766E); color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: 600; min-height: 44px; transition: all 0.2s ease;">
+                    <button type="button" onclick="submitTransitClaimDirect();" id="transit-submit-btn" style="padding: 12px 25px; font-size: 14px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
                         🚍 Submit for Approval
                     </button>
                 </div>
@@ -1138,7 +1138,7 @@
             </div>
 
             <!-- 📱 Phone Benefit Form (shown when category selected) -->
-            <div id="phone-form-container" style="display: none; margin-top: 20px; border: 2px solid #7c4dff; border-radius: 14px; padding: 20px; background: linear-gradient(135deg, #ede7f6 0%, #f3e5f5 100%);">
+            <div id="phone-form-container" style="display: none; margin-top: 20px; border: 2px solid #7c4dff; border-radius: 12px; padding: 20px; background: linear-gradient(135deg, #ede7f6 0%, #f3e5f5 100%);">
                 <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 15px;">
                     <h4 style="color: #7c4dff; margin: 0; display: flex; align-items: center; gap: 8px;">
                         📱 <span>Phone Benefit</span>
@@ -1175,7 +1175,7 @@
             </div>
 
             <!-- 💪 Health & Wellness Account Form (shown when category selected) -->
-            <div id="hwa-form-container" style="display: none; margin-top: 20px; border: 2px solid #28a745; border-radius: 14px; padding: 20px; background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%);">
+            <div id="hwa-form-container" style="display: none; margin-top: 20px; border: 2px solid #28a745; border-radius: 12px; padding: 20px; background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%);">
                 <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 15px;">
                     <h4 style="color: #28a745; margin: 0; display: flex; align-items: center; gap: 8px;">
                         💪 <span>Health & Wellness Account</span>
@@ -1216,7 +1216,7 @@
                 </div>
                 
                 <button type="button" onclick="submitHwaClaim()" id="hwa-submit-btn"
-                        style="width: 100%; padding: 14px; background: linear-gradient(135deg, #0D9488, #0F766E); color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; min-height: 44px; transition: all 0.2s ease;">
+                        style="width: 100%; padding: 14px; background: linear-gradient(135deg, #28a745 0%, #218838 100%); color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer;">
                     💪 Submit for Approval
                 </button>
                 
@@ -1238,7 +1238,7 @@
                 </div>
                 <div id="sa-draft-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
                 <div style="margin-top: 20px; display: flex; gap: 12px;">
-                    <button id="sa-submit-all-btn" onclick="submitAllStandaloneExpenses()" class="btn btn-primary" style="flex: 3; padding: 14px 20px; font-size: 16px; font-weight: 700; background: linear-gradient(135deg, #0D9488, #0F766E); color: white; border: none; border-radius: 10px; cursor: pointer; min-height: 44px; transition: all 0.2s ease;">📤 Submit All for Approval</button>
+                    <button id="sa-submit-all-btn" onclick="submitAllStandaloneExpenses()" class="btn btn-primary" style="flex: 3; padding: 14px 20px; font-size: 16px; font-weight: 700; background: linear-gradient(135deg, #007bff 0%, #0056b3 100%); color: white; border: none; border-radius: 10px; cursor: pointer;">📤 Submit All for Approval</button>
                     <button onclick="clearStandaloneDrafts(this)" class="btn" style="flex: 1; padding: 14px 16px; font-size: 14px; font-weight: 600; background: #dc3545; color: white; border: none; border-radius: 10px; cursor: pointer;">🗑️ Clear All</button>
                 </div>
             </div>
@@ -1273,7 +1273,7 @@
             <div id="tdp-section" style="display: none;">
 
                 <!-- Day Planner Header -->
-                <div id="tdp-header" style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 20px; border-radius: 14px; margin-bottom: 20px; border-left: 4px solid #28a745;">
+                <div id="tdp-header" style="background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #28a745;">
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                         <div>
                             <h4 style="color: #1b5e20; margin: 0 0 4px 0;" id="tdp-trip-name">🧳 Trip Name</h4>
@@ -1288,7 +1288,7 @@
                 </div>
 
                 <!-- Cost Breakdown Bar -->
-                <div id="tdp-cost-breakdown" style="display: none; background: #F0FDFA; border: 1px solid #CCFBF1; border-radius: 14px; margin-bottom: 16px; overflow: hidden;">
+                <div id="tdp-cost-breakdown" style="display: none; background: #F0FDFA; border: 1px solid #CCFBF1; border-radius: 12px; margin-bottom: 16px; overflow: hidden;">
                     <div style="flex: 1; text-align: center; padding: 14px 12px; border-right: 1px solid rgba(13,148,136,0.1);">
                         <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">🍽️ Meals</div>
                         <div id="tdp-meals-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
@@ -1369,7 +1369,7 @@
                 <div id="tdp-day-cards" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;"></div>
 
                 <!-- 🚗 SMART TRANSPORTATION SECTION -->
-                <div id="tdp-transport-section" style="background: linear-gradient(135deg, #e8f4f8 0%, #d1ecf1 100%); padding: 20px; border-radius: 14px; margin-bottom: 16px; border: 1px solid #17a2b8;">
+                <div id="tdp-transport-section" style="background: linear-gradient(135deg, #e8f4f8 0%, #d1ecf1 100%); padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #17a2b8;">
                     <h4 style="color: #0c5460; margin: 0 0 15px 0;">🚗 Transportation</h4>
                     <div style="margin-bottom: 15px;">
                         <p style="color: #0c5460; font-size: 13px; margin-bottom: 10px;">How are you traveling to your destination? (select all that apply)</p>
@@ -1401,7 +1401,7 @@
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                             <label style="min-width: 130px; font-weight: 600; font-size: 13px;">Estimated Cost:</label>
                             <span style="font-size: 15px;">$</span>
-                            <input type="number" id="tdp-taxi-cost" step="0.01" min="0" value="0" oninput="tdpUpdateTransportTotal()" style="flex: 1; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #E2E8F0; transition: all 0.2s ease; font-size: 14px;">
+                            <input type="number" id="tdp-taxi-cost" step="0.01" min="0" value="0" oninput="tdpUpdateTransportTotal()" style="flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px;">
                         </div>
                         <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 8px;">
                             <label style="color: #e65100; font-size: 13px; font-weight: 600;">📎 Receipt(s):</label>
@@ -1420,21 +1420,21 @@
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 10px;">
                             <div>
                                 <label style="color: #856404; font-size: 13px; font-weight: 600;">Departure Flight Cost: $</label>
-                                <input type="number" id="tdp-flight-dep" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #E2E8F0; transition: all 0.2s ease; font-size: 14px;" oninput="calculateTransportSubtotal('flight'); tdpRecalcTotal(); saveTdpTransport();">
+                                <input type="number" id="tdp-flight-dep" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="calculateTransportSubtotal('flight'); tdpRecalcTotal(); saveTdpTransport();">
                             </div>
                             <div>
                                 <label style="color: #856404; font-size: 13px; font-weight: 600;">Return Flight Cost: $</label>
-                                <input type="number" id="tdp-flight-ret" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #E2E8F0; transition: all 0.2s ease; font-size: 14px;" oninput="calculateTransportSubtotal('flight'); tdpRecalcTotal(); saveTdpTransport();">
+                                <input type="number" id="tdp-flight-ret" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="calculateTransportSubtotal('flight'); tdpRecalcTotal(); saveTdpTransport();">
                             </div>
                         </div>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 10px;">
                             <div>
                                 <label style="color: #856404; font-size: 13px; font-weight: 600;">Baggage Fees: $</label>
-                                <input type="number" id="tdp-flight-bag" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #E2E8F0; transition: all 0.2s ease; font-size: 14px;" oninput="calculateTransportSubtotal('flight'); tdpRecalcTotal(); saveTdpTransport();">
+                                <input type="number" id="tdp-flight-bag" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="calculateTransportSubtotal('flight'); tdpRecalcTotal(); saveTdpTransport();">
                             </div>
                             <div>
                                 <label style="color: #856404; font-size: 13px; font-weight: 600;">Route (optional):</label>
-                                <input type="text" id="tdp-flight-route" placeholder="e.g., YOW → YUL" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #E2E8F0; transition: all 0.2s ease; font-size: 14px;" oninput="saveTdpTransport();">
+                                <input type="text" id="tdp-flight-route" placeholder="e.g., YOW → YUL" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="saveTdpTransport();">
                             </div>
                         </div>
                         <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 8px;">
@@ -1545,7 +1545,7 @@
                 </div>
 
                 <!-- Vehicle Section (conditionally shown) -->
-                <div style="background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); padding: 20px; border-radius: 14px; margin-bottom: 16px; border: 1px solid #ffc107;">
+                <div style="background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #ffc107;">
                     <h4 style="color: #856404; margin: 0 0 12px 0;">🚗 Vehicle / Mileage</h4>
                     <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                         <label style="margin: 0; white-space: nowrap; color: #856404; font-weight: 600;">Kilometers:</label>
@@ -1562,7 +1562,7 @@
                     <!-- Variance content will be loaded here -->
                 </div>
                 
-                <div id="tdp-justification-section" style="display: none; background: #FFF8E1; border: 2px solid #ffc107; border-radius: 14px; padding: 20px; margin-bottom: 16px;">
+                <div id="tdp-justification-section" style="display: none; background: #FFF8E1; border: 2px solid #ffc107; border-radius: 12px; padding: 20px; margin-bottom: 16px;">
                     <div style="color: #856404; font-weight: 600; font-size: 15px; margin-bottom: 12px;">
                         ⚠️ <span id="tdp-justification-message"></span>
                     </div>
@@ -1635,7 +1635,7 @@
             <div id="ta-expense-section" style="display: none;">
 
                 <!-- Day Planner Header -->
-                <div id="dp-header" style="background: linear-gradient(135deg, #F0FDFA 0%, #CCFBF1 100%); padding: 20px; border-radius: 14px; margin-bottom: 20px; border-left: 4px solid #17a2b8;">
+                <div id="dp-header" style="background: linear-gradient(135deg, #F0FDFA 0%, #CCFBF1 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border-left: 4px solid #17a2b8;">
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                         <div>
                             <h4 style="color: #0d47a1; margin: 0 0 4px 0;" id="dp-trip-name">✈️ Trip Name</h4>
@@ -1649,7 +1649,7 @@
                 </div>
 
                 <!-- Cost Breakdown Bar -->
-                <div id="dp-cost-breakdown" style="display: none; background: #F0FDFA; border: 1px solid #CCFBF1; border-radius: 14px; margin-bottom: 16px; overflow: hidden;">
+                <div id="dp-cost-breakdown" style="display: none; background: #F0FDFA; border: 1px solid #CCFBF1; border-radius: 12px; margin-bottom: 16px; overflow: hidden;">
                     <div style="flex: 1; text-align: center; padding: 14px 12px; border-right: 1px solid rgba(13,148,136,0.1);">
                         <div style="font-size: 11px; font-weight: 600; color: #0D9488; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">🍽️ Meals</div>
                         <div id="dp-meals-total" style="font-size: 20px; font-weight: 700; color: #0A4F4A;">$0.00</div>
@@ -1698,7 +1698,7 @@
 
                 <!-- Day Cards Container -->
                 <!-- 🏨 Hotel Summary Card (AT) -->
-                <div id="dp-hotel-summary-card" style="display: none; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); padding: 20px; border-radius: 14px; margin-bottom: 16px; border: 1px solid #ffc107;">
+                <div id="dp-hotel-summary-card" style="display: none; background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #ffc107;">
                     <h4 style="color: #856404; margin: 0 0 12px 0;">🏨 Hotel / Accommodation</h4>
                     <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin-bottom: 12px;">
                         <div style="flex: 1; min-width: 150px;">
@@ -1745,7 +1745,7 @@
                 <div id="dp-day-cards" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;"></div>
 
                 <!-- 🚗 SMART TRANSPORTATION SECTION -->
-                <div id="dp-transport-section" style="background: linear-gradient(135deg, #e8f4f8 0%, #d1ecf1 100%); padding: 20px; border-radius: 14px; margin-bottom: 16px; border: 1px solid #17a2b8;">
+                <div id="dp-transport-section" style="background: linear-gradient(135deg, #e8f4f8 0%, #d1ecf1 100%); padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #17a2b8;">
                     <h4 style="color: #0c5460; margin: 0 0 15px 0;">🚗 Transportation</h4>
                     <div style="margin-bottom: 15px;">
                         <p style="color: #0c5460; font-size: 13px; margin-bottom: 10px;">How are you traveling to your destination? (select all that apply)</p>
@@ -1777,7 +1777,7 @@
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                             <label style="min-width: 130px; font-weight: 600; font-size: 13px;">Cost:</label>
                             <span style="font-size: 15px;">$</span>
-                            <input type="number" id="dp-taxi-cost" step="0.01" min="0" value="0" oninput="dpRecalcTotal(); dpSaveTransport();" style="flex: 1; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #E2E8F0; transition: all 0.2s ease; font-size: 14px;">
+                            <input type="number" id="dp-taxi-cost" step="0.01" min="0" value="0" oninput="dpRecalcTotal(); dpSaveTransport();" style="flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px;">
                         </div>
                         <div style="font-size: 13px; color: #555; text-align: right;">
                             🚕 Taxi Subtotal: <span id="dp-taxi-total">$0.00</span>
@@ -1790,21 +1790,21 @@
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 10px;">
                             <div>
                                 <label style="color: #856404; font-size: 13px; font-weight: 600;">Departure Flight Cost: $</label>
-                                <input type="number" id="dp-flight-dep" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #E2E8F0; transition: all 0.2s ease; font-size: 14px;" oninput="dpRecalcTotal(); dpSaveTransport();">
+                                <input type="number" id="dp-flight-dep" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="dpRecalcTotal(); dpSaveTransport();">
                             </div>
                             <div>
                                 <label style="color: #856404; font-size: 13px; font-weight: 600;">Return Flight Cost: $</label>
-                                <input type="number" id="dp-flight-ret" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #E2E8F0; transition: all 0.2s ease; font-size: 14px;" oninput="dpRecalcTotal(); dpSaveTransport();">
+                                <input type="number" id="dp-flight-ret" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="dpRecalcTotal(); dpSaveTransport();">
                             </div>
                         </div>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 10px;">
                             <div>
                                 <label style="color: #856404; font-size: 13px; font-weight: 600;">Baggage Fees: $</label>
-                                <input type="number" id="dp-flight-bag" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #E2E8F0; transition: all 0.2s ease; font-size: 14px;" oninput="dpRecalcTotal(); dpSaveTransport();">
+                                <input type="number" id="dp-flight-bag" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="dpRecalcTotal(); dpSaveTransport();">
                             </div>
                             <div>
                                 <label style="color: #856404; font-size: 13px; font-weight: 600;">Route (optional):</label>
-                                <input type="text" id="dp-flight-route" placeholder="e.g., YOW → YUL" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #E2E8F0; transition: all 0.2s ease; font-size: 14px;" oninput="dpSaveTransport();">
+                                <input type="text" id="dp-flight-route" placeholder="e.g., YOW → YUL" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="dpSaveTransport();">
                             </div>
                         </div>
                         <div style="text-align: right; color: #856404; font-weight: bold;">
@@ -1891,7 +1891,7 @@
                 </div>
 
                 <!-- Vehicle Section (conditionally shown) -->
-                <div id="dp-vehicle-section" style="background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); padding: 20px; border-radius: 14px; margin-bottom: 16px; border: 1px solid #ffc107;">
+                <div id="dp-vehicle-section" style="background: linear-gradient(135deg, #fff8e1 0%, #fff3c4 100%); padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #ffc107;">
                     <h4 style="color: #856404; margin: 0 0 12px 0;">🚗 Vehicle / Mileage</h4>
                     <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                         <label style="margin: 0; white-space: nowrap; color: #856404; font-weight: 600;">Kilometers:</label>
@@ -1901,7 +1901,7 @@
                 </div>
 
                 <!-- Other Expenses Section -->
-                <div id="dp-other-section" style="background: #f8f9fa; padding: 20px; border-radius: 14px; margin-bottom: 16px; border: 1px solid #dee2e6;">
+                <div id="dp-other-section" style="background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #dee2e6;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                         <h4 style="color: #495057; margin: 0;">📝 Other Expenses</h4>
                         <button type="button" onclick="dpAddOtherExpense()" class="btn" style="background: #6c757d; color: white; padding: 6px 14px; font-size: 13px; min-height: 34px;">➕ Add Other</button>
@@ -2073,7 +2073,7 @@
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                             <label style="min-width: 130px; font-weight: 600; font-size: 13px;">Estimated Cost:</label>
                             <span style="font-size: 15px;">$</span>
-                            <input type="number" id="at-taxi-cost" step="0.01" min="0" value="0" oninput="atRecalcTotal()" style="flex: 1; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #E2E8F0; transition: all 0.2s ease; font-size: 14px;">
+                            <input type="number" id="at-taxi-cost" step="0.01" min="0" value="0" oninput="atRecalcTotal()" style="flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px;">
                         </div>
                         <div style="font-size: 13px; color: #555; text-align: right;">
                             🚕 Taxi Subtotal: <span id="at-taxi-total">$0.00</span>
@@ -2085,7 +2085,7 @@
                         <h5 style="color: #856404; margin: 0 0 12px 0;">🚗 Personal Vehicle</h5>
                         <div style="display: flex; align-items: center; gap: 12px;">
                             <label style="color: #856404; font-weight: 600;">Estimated Kilometers:</label>
-                            <input type="number" id="at-vehicle-km" step="0.1" min="0" placeholder="0" style="width: 120px; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #E2E8F0; transition: all 0.2s ease; font-size: 14px;" oninput="atRecalcTotal()">
+                            <input type="number" id="at-vehicle-km" step="0.1" min="0" placeholder="0" style="width: 120px; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="atRecalcTotal()">
                             <span style="color: #856404; font-size: 14px;">× $0.68/km = <strong id="at-vehicle-total">$0.00</strong></span>
                         </div>
                     </div>
@@ -2096,21 +2096,21 @@
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 10px;">
                             <div>
                                 <label style="color: #856404; font-size: 13px; font-weight: 600;">Departure Flight Cost: $</label>
-                                <input type="number" id="at-flight-dep" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #E2E8F0; transition: all 0.2s ease; font-size: 14px;" oninput="atRecalcTotal()">
+                                <input type="number" id="at-flight-dep" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="atRecalcTotal()">
                             </div>
                             <div>
                                 <label style="color: #856404; font-size: 13px; font-weight: 600;">Return Flight Cost: $</label>
-                                <input type="number" id="at-flight-ret" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #E2E8F0; transition: all 0.2s ease; font-size: 14px;" oninput="atRecalcTotal()">
+                                <input type="number" id="at-flight-ret" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="atRecalcTotal()">
                             </div>
                         </div>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 10px;">
                             <div>
                                 <label style="color: #856404; font-size: 13px; font-weight: 600;">Baggage Fees: $</label>
-                                <input type="number" id="at-flight-bag" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #E2E8F0; transition: all 0.2s ease; font-size: 14px;" oninput="atRecalcTotal()">
+                                <input type="number" id="at-flight-bag" step="0.01" min="0" placeholder="0.00" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;" oninput="atRecalcTotal()">
                             </div>
                             <div>
                                 <label style="color: #856404; font-size: 13px; font-weight: 600;">Route (optional):</label>
-                                <input type="text" id="at-flight-route" placeholder="e.g., YOW → YUL" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1.5px solid #E2E8F0; transition: all 0.2s ease; font-size: 14px;">
+                                <input type="text" id="at-flight-route" placeholder="e.g., YOW → YUL" style="width: 100%; padding: 8px; border-radius: 6px; border: 2px solid #ffc107; font-size: 14px;">
                             </div>
                         </div>
                         <div style="text-align: right; color: #856404; font-weight: bold;">
@@ -2650,7 +2650,7 @@
             const total = draftIndividualExpenses.reduce((sum, exp) => sum + exp.amount, 0);
 
             let html = `
-                <div style="background: linear-gradient(135deg, #F0FDFA 0%, #CCFBF1 100%); padding: 20px; border-radius: 14px; margin-bottom: 20px; border: 2px solid #007bff; box-shadow: 0 4px 8px rgba(0,123,255,0.2);">
+                <div style="background: linear-gradient(135deg, #F0FDFA 0%, #CCFBF1 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid #007bff; box-shadow: 0 4px 8px rgba(0,123,255,0.2);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                         <div>
                             <h4 style="margin: 0; color: #004085;">💰 Individual Expense Batch</h4>
@@ -2688,7 +2688,7 @@
                                 ${expense.description ? '📝 ' + sanitizeForDisplay(expense.description) : '<em>No additional notes</em>'}
                             </div>
                         </div>
-                        <button onclick="removeIndividualDraftExpense(${index})" style="background: #dc3545; color: white; border: none; padding: 8px 12px; border-radius: 10px; font-size: 12px; cursor: pointer; transition: all 0.3s ease;" onmouseover="this.style.background='#c82333'" onmouseout="this.style.background='#dc3545'">
+                        <button onclick="removeIndividualDraftExpense(${index})" style="background: #dc3545; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.3s ease;" onmouseover="this.style.background='#c82333'" onmouseout="this.style.background='#dc3545'">
                             🗑️ Remove
                         </button>
                     </div>
@@ -3049,7 +3049,7 @@
                         </select>
                     </div>
                     ${transitClaimCardCounter > 1 ? `
-                    <button type="button" onclick="removeTransitClaimCard('${cardId}')" style="background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 10px; font-size: 12px; margin-left: 15px;">
+                    <button type="button" onclick="removeTransitClaimCard('${cardId}')" style="background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; margin-left: 15px;">
                         ✕ Remove
                     </button>
                     ` : ''}
@@ -7478,7 +7478,7 @@
             const total = draftTripExpenses.reduce((sum, exp) => sum + exp.amount, 0);
 
             let html = `
-                <div style="background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); padding: 20px; border-radius: 14px; margin-bottom: 20px; border: 2px solid #28a745; box-shadow: 0 4px 8px rgba(40,167,69,0.2);">
+                <div style="background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid #28a745; box-shadow: 0 4px 8px rgba(40,167,69,0.2);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                         <div>
                             <h4 style="margin: 0; color: #155724;">🧳 ${(draftTripExpenses[0].trip_name || 'Trip').replace(/\s*-\s*\d+\s*(draft\s+)?expenses?.*$/i, '').replace(/^\s*[⚠️🧳]\s*/g, '').trim()}</h4>
@@ -7515,13 +7515,13 @@
                                     <span style="color: ${missingReceipt ? '#dc3545' : '#28a745'}; font-weight: bold; margin-left: 10px; font-size: 16px;">$${expense.amount.toFixed(2)}</span>
                                 </div>
                             </div>
-                            ${missingReceipt ? '<div style="background: #dc3545; color: white; padding: 4px 10px; border-radius: 10px; font-size: 12px; font-weight: bold; margin-bottom: 6px; display: inline-block;">⚠️ RECEIPT MISSING - Required for hotel expenses</div><br>' : ''}
+                            ${missingReceipt ? '<div style="background: #dc3545; color: white; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: bold; margin-bottom: 6px; display: inline-block;">⚠️ RECEIPT MISSING - Required for hotel expenses</div><br>' : ''}
                             <div style="color: #666; font-size: 13px; line-height: 1.4;">
                                 📅 ${expense.date} • 📍 ${expense.location} • 🏪 ${vendorDisplay}<br>
                                 ${expense.description ? '📝 ' + sanitizeForDisplay(expense.description) : '<em>No additional notes</em>'}
                             </div>
                         </div>
-                        <button onclick="removeDraftExpense(${index})" style="background: #dc3545; color: white; border: none; padding: 8px 12px; border-radius: 10px; font-size: 12px; cursor: pointer; transition: all 0.3s ease;" onmouseover="this.style.background='#c82333'" onmouseout="this.style.background='#dc3545'">
+                        <button onclick="removeDraftExpense(${index})" style="background: #dc3545; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.3s ease;" onmouseover="this.style.background='#c82333'" onmouseout="this.style.background='#dc3545'">
                             🗑️ Remove
                         </button>
                     </div>
@@ -8564,7 +8564,7 @@
                     <div style="border: 1px solid #ddd; padding: 12px; margin: 8px 0; border-radius: 8px; background: #fff;">
                         <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 8px;">
                             <strong>${icon} Item ${j + 1}</strong>
-                            <button type="button" onclick="removeItemInEdit(${draftIndex}, ${j})" style="background: #dc3545; color: white; border: none; padding: 4px 8px; border-radius: 10px; font-size: 12px; margin-left: auto;">🗑️ Remove</button>
+                            <button type="button" onclick="removeItemInEdit(${draftIndex}, ${j})" style="background: #dc3545; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; margin-left: auto;">🗑️ Remove</button>
                         </div>
                         <div style="margin-bottom: 8px;">
                             Category: <select id="edit-category-${j}" onchange="handleCategoryChangeInEdit(${draftIndex}, ${j})" style="padding: 4px; border: 1px solid #ddd; border-radius: 4px;">
@@ -9541,7 +9541,7 @@
                     </div>`;
                 html += `</div>`;
                 if (distLines) {
-                    html += `<div style="margin-top: 10px; padding: 8px; background: #fce4ec; border-radius: 10px; font-size: 12px; color: #880e4f;">${distLines}</div>`;
+                    html += `<div style="margin-top: 10px; padding: 8px; background: #fce4ec; border-radius: 6px; font-size: 12px; color: #880e4f;">${distLines}</div>`;
                 }
                 html += `</div>`;
             });
@@ -9647,7 +9647,7 @@
             if (listEl) {
                 listEl.innerHTML = files.map((f, i) => {
                     const sizeKB = f.size ? (f.size / 1024).toFixed(0) : '?';
-                    return `<div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin: 2px 0; background: rgba(255,255,255,0.7); border-radius: 10px; font-size: 12px;">
+                    return `<div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin: 2px 0; background: rgba(255,255,255,0.7); border-radius: 6px; font-size: 12px;">
                         <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">📄 Page ${i + 1}: ${f.name} (${sizeKB} KB)</span>
                         <button type="button" onclick="tdpRemoveHotelReceipt(${idx}, ${i})" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 2px 6px; font-size: 11px; cursor: pointer;">✕</button>
                     </div>`;
@@ -10469,7 +10469,7 @@
 
             listEl.innerHTML = files.map((f, i) => {
                 const sizeKB = f.size ? (f.size / 1024).toFixed(0) : '?';
-                return `<div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin: 2px 0; background: rgba(255,255,255,0.7); border-radius: 10px; font-size: 12px;">
+                return `<div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin: 2px 0; background: rgba(255,255,255,0.7); border-radius: 6px; font-size: 12px;">
                     <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">📄 Page ${i + 1}: ${f.name} (${sizeKB} KB)</span>
                     <button type="button" onclick="tdpRemoveTransportReceipt('${mode}', ${i})" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 2px 6px; font-size: 11px; cursor: pointer;">✕</button>
                 </div>`;
@@ -10504,7 +10504,7 @@
                     const files = byMode[mode];
                     listEl.innerHTML = files.map(f => {
                         const sizeKB = f.file_size ? (f.file_size / 1024).toFixed(0) : '?';
-                        return `<div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin: 2px 0; background: rgba(255,255,255,0.7); border-radius: 10px; font-size: 12px;">
+                        return `<div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin: 2px 0; background: rgba(255,255,255,0.7); border-radius: 6px; font-size: 12px;">
                             <a href="/api/transport-receipts/${f.id}" target="_blank" style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #0066cc;">📄 ${f.file_name} (${sizeKB} KB)</a>
                             <span style="color: #28a745; font-size: 11px;">✅ Uploaded</span>
                         </div>`;
